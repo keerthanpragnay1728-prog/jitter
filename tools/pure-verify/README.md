@@ -12,12 +12,23 @@ It is **not** part of the app build: `settings.gradle.kts` at the root includes
 only `:app`, as the brief requires. Nothing in `:app` depends on this
 directory.
 
+It is a **standalone build with its own wrapper**, so:
+
 ```
-cd tools/pure-verify
-gradle test --rerun-tasks
+cd tools/pure-verify && ./gradlew test --rerun-tasks
 ```
 
-Covers `core/model`, `core/time`, `engine`, and the pure sensing maths
-(`CadenceAnalyzer`, `StepGate`, `FallbackImuGate`), plus the tests under
-`app/src/test`. `PurityTest` fails the build if anything in that set grows an
-`android.*` or `androidx.*` import.
+`./gradlew :tools:pure-verify` from the repo root will not resolve — the root
+`settings.gradle.kts` includes only `:app`.
+
+Covers all of `dev.molasses.core` and `dev.molasses.engine`, plus the pure
+sensing maths (`CadenceAnalyzer`, `StepGate`, `FallbackImuGate`,
+`GravitySplitter`, `Thresholds`) and the tests under `app/src/test`.
+
+`PurityTest` fails the build if anything in that set grows an `android.*` or
+`androidx.*` import, and cross-checks its own list against the `pureMain` list
+in this directory's `build.gradle.kts` so the two cannot drift apart.
+
+`CalibrationSweep` asserts nothing — it prints the measurement tables the
+thresholds are derived from. Its output is reproduced in the root README under
+"Threshold recalibration".

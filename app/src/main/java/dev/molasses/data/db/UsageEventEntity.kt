@@ -25,4 +25,13 @@ data class UsageEventEntity(
     /** `Settings.Global.BOOT_COUNT`. */
     val bootId: Int,
     val meta: String? = null,
+    /**
+     * Which sensing pipeline was live when this row was written
+     * ([dev.molasses.core.model.GateProgress.Path]), or null outside a gate.
+     *
+     * Stamped on *every* row, not just gate rows: when a gate pass looks wrong
+     * in hindsight, the first question is which calibration domain produced
+     * it, and that has to be answerable from the ledger alone.
+     */
+    val sensorPath: String? = null,
 )

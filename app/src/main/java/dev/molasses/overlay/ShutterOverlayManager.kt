@@ -19,6 +19,9 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
+import android.view.Choreographer
+import dev.molasses.core.latency.LatencyRegistry
+import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EventType
 import dev.molasses.engine.FrictionLedger
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +56,8 @@ class ShutterOverlayManager(
     private val windowManager: WindowManager,
     private val ledger: FrictionLedger,
     private val scope: CoroutineScope,
+    /** Shared with the service, which records segment A. */
+    val latency: LatencyRegistry = LatencyRegistry(),
 ) {
     private val sink = SinkView(service)
     private var added = false
@@ -132,7 +137,18 @@ class ShutterOverlayManager(
      * the *last* scroll, which is what "every scroll blacks out" has to mean;
      * queueing them would multiply a 5 s stall into half a minute.
      */
-    fun arm(ms: Long) {
+    @JvmOverloads
+    fun arm(
+        ms: Long,
+        /**
+         * `AccessibilityEvent.getEventTime()` of the scroll that triggered
+         * this, on the `uptimeMillis` clock. Segment D is measured from here.
+         * Zero disables latency accounting (the settings-screen preview).
+         */
+        scrollEventTimeUptimeMs: Long = 0,
+        /** `uptimeMillis` at entry to `onAccessibilityEvent`. Starts segment B. */
+        callbackEntryUptimeMs: Long = 0,
+    ) {
         if (!added) attach()
         if (!added) return
 
@@ -155,6 +171,32 @@ class ShutterOverlayManager(
 
         setFlags(ARMED_FLAGS)
         sink.setArmed(true)
+
+        // SS6 segments B, C and the D start marker. All four timestamps are on
+        // uptimeMillis, because MotionEvent.getEventTime() and
+        // AccessibilityEvent.getEventTime() are on that clock and can be
+        // subtracted directly; currentTimeMillis cannot be compared with
+        // either.
+        if (scrollEventTimeUptimeMs > 0) {
+            val pkg = sink.currentPkg
+            sink.pendingScrollEventTimeUptimeMs = scrollEventTimeUptimeMs
+            val afterUpdate = SystemClock.uptimeMillis()
+            if (callbackEntryUptimeMs > 0 && pkg != null) {
+                latency.forPackage(pkg).record(Segment.B, afterUpdate - callbackEntryUptimeMs)
+            }
+            // Segment C: updateViewLayout returning means only that the change
+            // is queued to WindowManagerService. The flag is not live in the
+            // input dispatcher until WMS relayouts and InputDispatcher
+            // refreshes its window handles, one or more frames later. Stopping
+            // at the call's return would under-report absorption latency by a
+            // frame or more.
+            Choreographer.getInstance().postFrameCallback {
+                pkg?.let {
+                    latency.forPackage(it)
+                        .record(Segment.C, SystemClock.uptimeMillis() - afterUpdate)
+                }
+            }
+        }
 
         disarmJob?.cancel()
         disarmJob = scope.launch(Dispatchers.Main.immediate) {
@@ -296,6 +338,9 @@ class ShutterOverlayManager(
         var currentPkg: String? = null
         var armedAtElapsed = 0L
 
+        /** Scroll eventTime of the arming event; 0 once segment D is recorded. */
+        var pendingScrollEventTimeUptimeMs = 0L
+
         private val tellPaint = Paint().apply {
             color = TELL_COLOR
             alpha = TELL_ALPHA
@@ -335,14 +380,38 @@ class ShutterOverlayManager(
                         return true
                     }
                 }
-                // SS11 latency_probe reads this: the delta between the scroll
-                // event that armed us and the first touch we actually ate.
-                Log.d(
-                    LATENCY_TAG,
-                    "sinkTouchDown armLatencyMs=${SystemClock.elapsedRealtime() - armedAtElapsed}",
-                )
+                recordGroundTruth(event)
             }
             return true
+        }
+
+        /**
+         * Segment D: scroll `eventTime` -> `eventTime` of the first touch this
+         * sink actually consumed. The number that decides the product.
+         */
+        private fun recordGroundTruth(event: MotionEvent) {
+            val scrollAt = pendingScrollEventTimeUptimeMs
+            if (scrollAt <= 0L) return
+            val pkg = currentPkg ?: return
+            val d = event.eventTime - scrollAt
+
+            // Only count a touch whose eventTime is after the arming scroll.
+            // The sink can consume a touch that was already in flight, which
+            // would report an absurdly low or negative D and flatter the
+            // result. LatencyRing.add discards negatives and counts them.
+            val recorded = latency.forPackage(pkg).record(Segment.D, d)
+            if (recorded) pendingScrollEventTimeUptimeMs = 0L
+
+            val p = latency.forPackage(pkg)
+            Log.d(
+                LATENCY_TAG,
+                p.formatLine(
+                    a = p[Segment.A].last,
+                    b = p[Segment.B].last,
+                    c = p[Segment.C].last,
+                    d = d,
+                ),
+            )
         }
 
         override fun onDraw(canvas: Canvas) {
@@ -357,7 +426,7 @@ class ShutterOverlayManager(
 
     companion object {
         private const val TAG = "Molasses.Shutter"
-        const val LATENCY_TAG = "Molasses.Latency"
+        const val LATENCY_TAG = "STALL_LATENCY"
 
         /** Touches pass straight through to the app below. */
         const val IDLE_FLAGS =

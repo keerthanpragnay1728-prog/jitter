@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.engine.TierPolicy
+import dev.molasses.sensing.Thresholds
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -46,6 +47,7 @@ fun DebugScreen(
     LifecycleRefresh { vm.refresh() }
 
     val ladder by vm.ladder.collectAsStateWithLifecycle()
+    val gateOutcomes by vm.gateOutcomes.collectAsStateWithLifecycle()
     val ledger by vm.ledger.collectAsStateWithLifecycle()
     val latency by vm.latency.collectAsStateWithLifecycle()
 
@@ -63,7 +65,33 @@ fun DebugScreen(
             Text("Debug", style = MaterialTheme.typography.headlineSmall)
         }
 
-        item { Header("Stall latency (requested vs actual)") }
+        item { Header("Stall latency: four segments") }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text(
+                        "A pipeline (not optimisable) · B our code · C relayout · D ground truth",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Mono("Per-package percentile tables come from the live service:")
+                    Mono("adb shell dumpsys activity service \\")
+                    Mono("  dev.molasses/.monitor.MolassesAccessibilityService")
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "The rings live in the accessibility service process and are not " +
+                            "persisted, so this screen cannot read them directly. D is the " +
+                            "number that decides the product; A is the number that decides " +
+                            "whether it is fixable.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+        }
+
+        item { Header("Stall duration (requested vs actual, from the ledger)") }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -95,6 +123,47 @@ fun DebugScreen(
                                     "d=${it.overshootMs}ms (${it.release})",
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        item { Header("Sensing calibration") }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    vm.thresholdSets.forEach { t ->
+                        val warn = t.calibration == Thresholds.Calibration.UNCALIBRATED
+                        Text(
+                            if (warn) "${t.id} — UNCALIBRATED" else "${t.id} — ${t.calibration}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (warn) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        )
+                        if (warn) {
+                            Text(
+                                "Seeded from IIR. The fused sensor has an internal high-pass " +
+                                    "we cannot query, so these numbers have never been measured " +
+                                    "for this pipeline.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                        }
+                        Mono("rms>${t.minRms}  peaks>=${t.minPeaks}  ${t.minHz}-${t.maxHz}Hz")
+                        Mono("cv ${t.minCv}-${t.maxCv} (floor over ${t.regularityWindowMs / 1000}s, >=${t.minCvIntervals} intervals)")
+                        Mono("vert>=${t.minVerticalShare}  peak<${t.maxPeakMagnitude}  tilt>${t.minTiltDegrees}deg")
+                        Mono("window ${t.windowMs}ms  refractory ${t.refractoryMs}ms")
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Text("Gate outcomes by pipeline", style = MaterialTheme.typography.bodyMedium)
+                    if (gateOutcomes.isEmpty()) {
+                        Mono("(none recorded)")
+                    } else {
+                        gateOutcomes.forEach { Mono("${it.path}  ${it.type}  ${it.count}") }
                     }
                 }
             }

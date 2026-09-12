@@ -13,7 +13,26 @@ data class GateProgress(
     val events: Int = 0,
     val passed: Boolean = false,
 ) {
-    enum class Path { NONE, STEP_DETECTOR, IMU_CADENCE, ALTERNATIVE_CHALLENGE }
+    /**
+     * Which pipeline produced this verdict. The two IMU paths are separate
+     * calibration domains, not one path with two front ends, so they are
+     * reported separately and stamped on every ledger row.
+     */
+    enum class Path {
+        NONE,
+        STEP_DETECTOR,
+
+        /** `TYPE_LINEAR_ACCELERATION` + `TYPE_GRAVITY`, platform-fused. */
+        IMU_FUSED,
+
+        /** Raw `TYPE_ACCELEROMETER` through [dev.molasses.sensing.GravitySplitter]. */
+        IMU_IIR,
+
+        ALTERNATIVE_CHALLENGE,
+        ;
+
+        val isImu: Boolean get() = this == IMU_FUSED || this == IMU_IIR
+    }
 
     /** Which single check is currently blocking a pass. */
     enum class Reason {
@@ -22,6 +41,12 @@ data class GateProgress(
         CADENCE_TOO_SLOW,
         CADENCE_TOO_FAST,
         CADENCE_IRREGULAR,
+
+        /**
+         * CV below the floor: more regular than human gait ever is. A
+         * metronome, or a thumb tapping a phone that is lying still.
+         */
+        TOO_REGULAR,
         NOT_ENOUGH_MOTION,
         TOO_VIOLENT,
         MOTION_NOT_VERTICAL,
@@ -32,6 +57,7 @@ data class GateProgress(
 
         val isDisqualifying: Boolean
             get() = this == CADENCE_TOO_FAST || this == TOO_VIOLENT ||
-                this == MOTION_NOT_VERTICAL || this == PHONE_STATIONARY
+                this == MOTION_NOT_VERTICAL || this == PHONE_STATIONARY ||
+                this == TOO_REGULAR
     }
 }

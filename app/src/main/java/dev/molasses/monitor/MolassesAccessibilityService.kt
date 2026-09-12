@@ -8,6 +8,8 @@ import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import dagger.hilt.android.AndroidEntryPoint
+import dev.molasses.core.latency.LatencyRegistry
+import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.FrictionAction
 import dev.molasses.core.time.MonotonicClock
@@ -20,6 +22,8 @@ import dev.molasses.engine.FrictionEngine
 import dev.molasses.overlay.GateOverlayManager
 import dev.molasses.overlay.ShutterOverlayManager
 import dev.molasses.sensing.MovementDetector
+import java.io.FileDescriptor
+import java.io.PrintWriter
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +73,9 @@ class MolassesAccessibilityService : AccessibilityService() {
     private var watchdogJob: Job? = null
     private var checkpointJob: Job? = null
 
+    /** SS6. Shared with the shutter, which records B, C and D. */
+    private val latency = LatencyRegistry()
+
     private val probe by lazy { ForegroundProbe(this) }
 
     private val monotonic = MonotonicClock { SystemClock.elapsedRealtime() }
@@ -94,9 +101,14 @@ class MolassesAccessibilityService : AccessibilityService() {
             windowManager = wm,
             ledger = ledger,
             scope = scope,
+            latency = latency,
         )
 
-        val detector = MovementDetector(this)
+        val detector = MovementDetector(this) { path ->
+            // Stamp the active calibration domain onto every subsequent
+            // ledger row.
+            ledger.sensorPath = path?.name
+        }
         gate = GateOverlayManager(
             service = this,
             windowManager = wm,
@@ -198,6 +210,9 @@ class MolassesAccessibilityService : AccessibilityService() {
     // ---------------------------------------------------------------- events
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // Taken first: segment B is measured from here, and anything done
+        // before this read is silently excluded from "our code".
+        val callbackEntryUptimeMs = SystemClock.uptimeMillis()
         if (!ready) return
         val pkg = event.packageName?.toString() ?: return
 
@@ -214,8 +229,27 @@ class MolassesAccessibilityService : AccessibilityService() {
 
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
                 if (pkg !in targets) return
+
+                // Segment A: how long the platform took to deliver this event.
+                // Nothing here can shorten it -- it is the number that decides
+                // whether the concept is viable at all, as distinct from
+                // whether this implementation is good.
+                //
+                // AccessibilityEvent.getEventTime() is on the uptimeMillis
+                // clock, the same one MotionEvent.getEventTime() uses, so the
+                // two are directly subtractable. currentTimeMillis is not
+                // comparable with either.
+                val eventTime = event.eventTime
+                if (eventTime > 0) {
+                    latency.forPackage(pkg).record(Segment.A, callbackEntryUptimeMs - eventTime)
+                }
+
                 when (val action = engine.onScroll(pkg, now())) {
-                    is FrictionAction.Stall -> shutter.arm(action.ms)
+                    is FrictionAction.Stall -> shutter.arm(
+                        ms = action.ms,
+                        scrollEventTimeUptimeMs = eventTime,
+                        callbackEntryUptimeMs = callbackEntryUptimeMs,
+                    )
                     is FrictionAction.Gate -> gate.show(pkg, action.tier, alternativeChallenge)
                     FrictionAction.None -> {}
                 }
@@ -302,6 +336,23 @@ class MolassesAccessibilityService : AccessibilityService() {
     }
 
     // ------------------------------------------------------------- teardown
+
+    /**
+     * `adb shell dumpsys activity service dev.molasses/.monitor.MolassesAccessibilityService`
+     *
+     * Per-package, per-segment percentile tables. Percentiles rather than a
+     * mean: latency distributions are right-skewed and a mean hides exactly
+     * the tail that breaks the illusion.
+     */
+    override fun dump(fd: FileDescriptor, writer: PrintWriter, args: Array<out String>?) {
+        writer.println("Molasses stall latency (SS6)")
+        writer.println("  A pipeline (not optimisable) | B our code | C relayout | D ground truth")
+        writer.println()
+        writer.print(latency.formatAll())
+        writer.println()
+        writer.println("targets: $targets")
+        writer.println("ready: $ready  foreground: $foregroundPkg")
+    }
 
     override fun onInterrupt() {
         // The system is telling us to stop whatever feedback we are giving.

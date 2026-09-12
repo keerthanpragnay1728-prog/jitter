@@ -16,17 +16,19 @@ val appTest = "${rootDir}/../../app/src/test/java"
 
 // The pure set, exactly as claimed in the README.
 val pureMain = listOf(
-    "dev/molasses/core/model",
-    "dev/molasses/core/time",
+    "dev/molasses/core",
     "dev/molasses/engine",
     "dev/molasses/sensing/CadenceAnalyzer.kt",
     "dev/molasses/sensing/StepGate.kt",
     "dev/molasses/sensing/FallbackImuGate.kt",
+    "dev/molasses/sensing/GravitySplitter.kt",
+    "dev/molasses/sensing/Thresholds.kt",
 )
 val pureTest = listOf(
     "dev/molasses/core",
     "dev/molasses/engine",
     "dev/molasses/sensing",
+    "dev/molasses/legacy",
 )
 
 sourceSets {

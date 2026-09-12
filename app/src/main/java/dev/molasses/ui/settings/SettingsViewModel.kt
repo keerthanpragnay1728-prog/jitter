@@ -10,7 +10,9 @@ import dev.molasses.data.db.UsageEventDao
 import dev.molasses.data.db.UsageEventEntity
 import dev.molasses.data.repo.InstalledApp
 import dev.molasses.data.repo.PermissionState
+import dev.molasses.data.db.GateOutcomeRow
 import dev.molasses.data.repo.SettingsRepository
+import dev.molasses.sensing.Thresholds
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,11 +85,21 @@ class SettingsViewModel @Inject constructor(
     private val _latency = MutableStateFlow<List<StallLatency>>(emptyList())
     val latency: StateFlow<List<StallLatency>> = _latency.asStateFlow()
 
+    private val _gateOutcomes = MutableStateFlow<List<GateOutcomeRow>>(emptyList())
+    val gateOutcomes: StateFlow<List<GateOutcomeRow>> = _gateOutcomes.asStateFlow()
+
+    /**
+     * Both threshold sets, so the debug screen can show which pipeline is
+     * running against numbers that were actually measured for it.
+     */
+    val thresholdSets: List<Thresholds> = listOf(Thresholds.IIR, Thresholds.FUSED)
+
     fun refresh() {
         _permissions.value = repo.permissionState()
         viewModelScope.launch {
             _installed.value = withContext(Dispatchers.IO) { repo.installedApps() }
             _latency.value = withContext(Dispatchers.IO) { parseLatencies() }
+            _gateOutcomes.value = withContext(Dispatchers.IO) { dao.gateOutcomesByPath() }
         }
     }
 
