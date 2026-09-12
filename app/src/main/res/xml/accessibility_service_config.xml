@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  notificationTimeout MUST stay 0. Any non-zero value makes the platform
+  coalesce same-type events, which collapses a scroll burst into one callback
+  and destroys stall responsiveness.
+
+  canRetrieveWindowContent MUST stay false. We only read event.packageName,
+  which arrives on the event object itself. Requesting content reads is a
+  privacy and performance cost with no benefit here, and it is the single flag
+  Play reviewers scrutinise hardest.
+
+  isAccessibilityTool MUST stay false. This is a friction tool, not an
+  assistive one; claiming otherwise is a Play Console policy violation.
+
+  packageNames scopes the event firehose. It is re-set at runtime via
+  setServiceInfo() when the user edits their target list -- see
+  MolassesAccessibilityService.applyTargets().
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeViewScrolled|typeWindowStateChanged|typeWindowsChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="false"
+    android:canPerformGestures="false"
+    android:notificationTimeout="0"
+    android:packageNames="com.instagram.android,com.twitter.android,com.google.android.youtube"
+    android:isAccessibilityTool="false"
+    android:settingsActivity="dev.molasses.ui.settings.SettingsActivity"
+    android:description="@string/a11y_service_description"/>
