@@ -76,7 +76,7 @@ fun GateScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = if (TierPolicy.isTerminal(tier)) "Tier $tier — terminal" else "Tier $tier",
+                text = if (TierPolicy.isTerminal(tier)) "Tier $tier (terminal)" else "Tier $tier",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.secondary,
             )
@@ -179,16 +179,16 @@ private fun AlternativeChallenge(phrase: String, onSubmit: (String) -> Unit) {
 
 private fun reasonText(p: GateProgress): String = when (p.reason) {
     GateProgress.Reason.WAITING_TO_START -> "Stand up and start walking."
-    GateProgress.Reason.NEED_MORE_STEPS -> "Keep walking — ${p.events} steps counted."
+    GateProgress.Reason.NEED_MORE_STEPS -> "Keep walking. ${p.events} steps counted."
     GateProgress.Reason.CADENCE_TOO_SLOW -> "A little faster."
-    GateProgress.Reason.CADENCE_TOO_FAST -> "Slower — that is faster than walking."
+    GateProgress.Reason.CADENCE_TOO_FAST -> "Slower. That is faster than walking."
     GateProgress.Reason.CADENCE_IRREGULAR -> "Keep an even pace."
     GateProgress.Reason.TOO_REGULAR -> "That is too even to be walking."
     GateProgress.Reason.NOT_ENOUGH_MOTION -> "Not enough movement yet."
     GateProgress.Reason.TOO_VIOLENT -> "Too much. Walk, do not shake."
     GateProgress.Reason.MOTION_NOT_VERTICAL -> "That is side-to-side, not walking."
     GateProgress.Reason.PHONE_STATIONARY -> "The phone is not moving with you."
-    GateProgress.Reason.SUSTAINING -> "Good — keep going."
+    GateProgress.Reason.SUSTAINING -> "Good, keep going."
     GateProgress.Reason.PASSED -> "Done."
 }
 
@@ -204,13 +204,13 @@ private fun whyBody(minutes: Int, tier: Int): String = buildString {
     append("You have used this app for $minutes minutes in the current cycle. ")
     append("Clearing this gate unlocks the next five minutes. ")
     append("It does not reset your accumulated time, and it does not reduce the ")
-    append("delay on scrolling — within a cycle the delay only ever grows. ")
+    append("delay on scrolling. Within a cycle the delay only ever grows. ")
     if (TierPolicy.isTerminal(tier)) {
         append("You are past twenty minutes, so this gate will return every five minutes ")
         append("until the cycle resets.")
     } else {
         append("The next gate is at ${(TierPolicy.entryAtMs(tier + 1) / 60_000)} minutes.")
     }
-    append("\n\nPressing HOME or RECENTS will leave this screen — that pauses the gate ")
+    append("\n\nPressing HOME or RECENTS will leave this screen. That pauses the gate ")
     append("rather than clearing it. The gate returns when you scroll again.")
 }

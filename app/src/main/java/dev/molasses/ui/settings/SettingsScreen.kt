@@ -226,10 +226,10 @@ private fun LadderCard() {
             TierPolicy.ladder.forEach { tier ->
                 val minutes = tier.entryAtMs / 60_000
                 val label = when {
-                    tier.index == 0 -> "0-5 min — normal"
+                    tier.index == 0 -> "0-5 min, normal"
                     TierPolicy.isTerminal(tier.index) ->
-                        "$minutes min+ — gate every 5 min, ${tier.stallMs} ms stall (terminal)"
-                    else -> "$minutes min — gate, then ${tier.stallMs} ms stall"
+                        "$minutes min+ (terminal), gate every 5 min, ${tier.stallMs} ms stall"
+                    else -> "$minutes min, gate then ${tier.stallMs} ms stall"
                 }
                 Text(label, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(4.dp))
