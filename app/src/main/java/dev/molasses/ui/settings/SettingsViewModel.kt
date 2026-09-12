@@ -1,0 +1,135 @@
+package dev.molasses.ui.settings
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.data.datastore.CycleStateStore
+import dev.molasses.data.datastore.toEngineSnapshot
+import dev.molasses.data.db.UsageEventDao
+import dev.molasses.data.db.UsageEventEntity
+import dev.molasses.data.repo.InstalledApp
+import dev.molasses.data.repo.PermissionState
+import dev.molasses.data.repo.SettingsRepository
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+data class LadderRow(
+    val pkg: String,
+    val accumulatedMs: Long,
+    val tierIndex: Int,
+    val gatesCleared: Int,
+    val tierUnlockedUntilMs: Long,
+)
+
+/** Requested vs. actual armed duration, parsed back out of the ledger. */
+data class StallLatency(
+    val requestedMs: Long,
+    val actualMs: Long,
+    val release: String,
+) {
+    val overshootMs: Long get() = actualMs - requestedMs
+}
+
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    private val repo: SettingsRepository,
+    private val store: CycleStateStore,
+    private val dao: UsageEventDao,
+) : ViewModel() {
+
+    private val _permissions = MutableStateFlow(repo.permissionState())
+    val permissions: StateFlow<PermissionState> = _permissions.asStateFlow()
+
+    private val _installed = MutableStateFlow<List<InstalledApp>>(emptyList())
+    val installed: StateFlow<List<InstalledApp>> = _installed.asStateFlow()
+
+    val targets: StateFlow<List<String>> = repo.targets
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val resetPolicy: StateFlow<CycleResetPolicy> = repo.resetPolicy
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CycleResetPolicy.DEFAULT)
+
+    val alternativeChallenge: StateFlow<Boolean> = repo.alternativeChallenge
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val ladder: StateFlow<List<LadderRow>> = store.data
+        .map { state ->
+            state.toEngineSnapshot().perApp.values
+                .map {
+                    LadderRow(
+                        pkg = it.pkg,
+                        accumulatedMs = it.accumulatedMs,
+                        tierIndex = it.tierIndex,
+                        gatesCleared = it.gatesCleared,
+                        tierUnlockedUntilMs = it.tierUnlockedUntilMs,
+                    )
+                }
+                .sortedByDescending { it.accumulatedMs }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val ledger: StateFlow<List<UsageEventEntity>> = dao.recent(300)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _latency = MutableStateFlow<List<StallLatency>>(emptyList())
+    val latency: StateFlow<List<StallLatency>> = _latency.asStateFlow()
+
+    fun refresh() {
+        _permissions.value = repo.permissionState()
+        viewModelScope.launch {
+            _installed.value = withContext(Dispatchers.IO) { repo.installedApps() }
+            _latency.value = withContext(Dispatchers.IO) { parseLatencies() }
+        }
+    }
+
+    /**
+     * The whole feasibility question is whether the observed stall latency is
+     * tolerable, so this parses the STALL_ARMED rows back out rather than
+     * relying on a claim about what was requested.
+     */
+    private suspend fun parseLatencies(): List<StallLatency> =
+        dao.stallMetas(500).mapNotNull { meta ->
+            meta ?: return@mapNotNull null
+            val requested = Regex("requestedMs=(\\d+)").find(meta)?.groupValues?.get(1)?.toLongOrNull()
+            val actual = Regex("actualMs=(-?\\d+)").find(meta)?.groupValues?.get(1)?.toLongOrNull()
+            val release = Regex("release=(\\S+)").find(meta)?.groupValues?.get(1) ?: "?"
+            if (requested == null || actual == null) null
+            else StallLatency(requested, actual, release)
+        }
+
+    fun toggleTarget(pkg: String) {
+        viewModelScope.launch {
+            val current = targets.value.toMutableList()
+            if (!current.remove(pkg)) current += pkg
+            repo.setTargets(current)
+        }
+    }
+
+    fun setResetPolicy(policy: CycleResetPolicy) {
+        viewModelScope.launch { repo.setResetPolicy(policy) }
+    }
+
+    fun setAlternativeChallenge(enabled: Boolean) {
+        viewModelScope.launch { repo.setAlternativeChallenge(enabled) }
+    }
+
+    fun clearLedger() {
+        viewModelScope.launch { withContext(Dispatchers.IO) { dao.clear() } }
+    }
+
+    fun resetAllState() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { dao.clear() }
+            store.clearAll()
+        }
+    }
+}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Molasses</string>
+    <string name="a11y_service_label">Molasses progressive friction</string>
+    <string name="a11y_service_description">Molasses watches only which of your chosen apps is in the foreground and when you scroll in it, so it can add deliberate friction as your usage adds up. It never reads the contents of your screen.</string>
+
+    <string name="gate_title">Movement gate</string>
+    <string name="gate_subtitle">%1$s minutes used. Move to continue.</string>
+    <string name="gate_why">Why am I seeing this?</string>
+    <string name="gate_why_body">You have used this app for %1$d minutes in the current cycle. Clearing this gate unlocks the next five minutes. It does not reset your accumulated time and it does not reduce the delay on scrolling — the delay only ever grows within a cycle.</string>
+    <string name="gate_alt_title">Alternative challenge</string>
+    <string name="gate_alt_prompt">Type the phrase below exactly.</string>
+
+    <string name="settings_title">Molasses</string>
+    <string name="settings_permissions">Setup</string>
+    <string name="settings_targets">Target apps</string>
+    <string name="settings_policy">Cycle reset policy</string>
+    <string name="settings_test_stall">Test Phantom Stall</string>
+    <string name="settings_debug">Debug / ledger</string>
+</resources>

@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+option java_package = "dev.molasses";
+option java_multiple_files = true;
+
+// Hot state, read on every accessibility event and written on a 15 s
+// checkpoint cadence. Room holds the append-only ledger; this holds only what
+// the engine needs synchronously.
+message CycleState {
+  int64 cycle_anchor_wall_ms = 1;      // start of current cycle
+  int64 last_target_use_wall_ms = 2;   // drives ABSTINENCE_6H
+  int32 boot_id = 3;
+  int64 last_seen_elapsed_ms = 4;
+  int64 last_seen_wall_ms = 5;
+  map<string, AppState> per_app = 6;
+  string open_session_pkg = 7;         // "" if none
+  int64 open_session_start_wall_ms = 8;
+
+  // Added beyond the brief: the open session's start on the monotonic clock.
+  // Without it a mid-session process death cannot distinguish "wall clock
+  // moved" from "time passed", which is exactly the case step 4 of the
+  // reconciler has to adjudicate.
+  int64 open_session_start_elapsed_ms = 9;
+  CycleResetPolicyProto reset_policy = 10;
+  repeated string target_packages = 11;
+  bool alternative_challenge = 12;     // accessibility escape hatch (SS8)
+}
+
+message AppState {
+  int64 accumulated_ms = 1;
+  int32 tier_index = 2;                // monotonic, never decremented
+  int32 gates_cleared = 3;
+  int64 tier_unlocked_until_ms = 4;
+}
+
+enum CycleResetPolicyProto {
+  ABSTINENCE_6H = 0;                   // default
+  FIXED_WINDOW_6H = 1;
+}
