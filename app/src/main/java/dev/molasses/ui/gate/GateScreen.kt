@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.model.GateProgress
+import dev.molasses.debug.DebugSurface
+import dev.molasses.debug.DebugSurface.debugBypassGesture
 import dev.molasses.engine.TierPolicy
 import kotlinx.coroutines.flow.StateFlow
 
@@ -55,6 +57,12 @@ fun GateScreen(
     alternativeChallenge: Boolean,
     challengePhrase: String,
     onChallengeAnswer: (String) -> Unit,
+    /**
+     * Debug builds only. Wired to a long press on the progress ring, and a
+     * no-op in release because [DebugSurface.debugBypassGesture] is a no-op
+     * there.
+     */
+    onDebugBypass: () -> Unit = {},
 ) {
     val progress by progressFlow.collectAsStateWithLifecycle()
     var whyExpanded by remember { mutableStateOf(false) }
@@ -104,7 +112,10 @@ fun GateScreen(
                     onSubmit = onChallengeAnswer,
                 )
             } else {
-                Box(contentAlignment = Alignment.Center) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.debugBypassGesture(onDebugBypass),
+                ) {
                     CircularProgressIndicator(
                         progress = { animated },
                         modifier = Modifier.size(140.dp),
@@ -143,6 +154,15 @@ fun GateScreen(
                         color = MaterialTheme.colorScheme.secondary,
                     )
                 }
+            }
+
+            if (DebugSurface.ENABLED) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = stringResource(R.string.gate_debug_bypass_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
             }
 
             Spacer(Modifier.height(40.dp))

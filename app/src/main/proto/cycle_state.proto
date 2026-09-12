@@ -24,6 +24,12 @@ message CycleState {
   CycleResetPolicyProto reset_policy = 10;
   repeated string target_packages = 11;
   bool alternative_challenge = 12;     // accessibility escape hatch (SS8)
+
+  // Bumped by the debug state editor. The accessibility service watches it and
+  // rebuilds the engine from this file when it changes. Without that the
+  // running engine holds per-app state in memory and overwrites any direct
+  // edit at its next checkpoint, so the editor would appear to do nothing.
+  int64 debug_override_nonce = 13;
 }
 
 message AppState {

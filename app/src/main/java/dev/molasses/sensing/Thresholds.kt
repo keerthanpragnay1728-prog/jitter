@@ -18,6 +18,20 @@ interface Thresholds {
     val id: String
     val calibration: Calibration
 
+    /**
+     * Evaluation cadence. The battery runs on this fixed tick regardless of
+     * sensor delivery rate, so a device delivering at 200 Hz and one at 25 Hz
+     * accumulate credit at the same rate. Evaluating per sample made the
+     * result depend on how often the OEM chose to call us.
+     */
+    val tickIntervalMs: Long
+
+    /** Net credit needed to clear, ms. See [SustainAccumulator]. */
+    val sustainRequiredMs: Long
+
+    /** Fraction of a tick removed by a failing tick. See [SustainAccumulator]. */
+    val sustainDecayFactor: Double
+
     /** Analysis window. */
     val windowMs: Long
 
@@ -33,26 +47,40 @@ interface Thresholds {
     /** Dynamic RMS floor, m/s^2. Rejects thumb tremor. */
     val minRms: Double
 
+    /**
+     * Exit threshold for the RMS Schmitt trigger, on the same 12.5% drop as
+     * the cadence pair. Band-edge chatter must not be able to zero the
+     * accumulator.
+     */
+    val minRmsExit: Double
+
     /** Peaks required inside [windowMs]. Rejects a single jerk. */
     val minPeaks: Int
 
     /**
      * Dominant cadence band, Hz.
      *
-     * [minHz] carries a guard band below the *stated* 1.2 Hz product floor.
-     * Measured cadence over a 3.5 s window is a 3-5 interval sample statistic:
-     * a walker whose true cadence is exactly 1.20 Hz measures 1.19 Hz as often
-     * as 1.21. A threshold placed at the value it is meant to admit rejects
-     * half of those windows, and since the gate needs 8 *continuous* seconds,
-     * a 1.2 Hz walker would never clear it.
+     * [minHz] sits at the stated product floor of 1.2 Hz and relies on
+     * [minHzExit] rather than on a guard band below it. An earlier version
+     * lowered the entry to 1.15 because measured cadence over a 3.5 s window
+     * is a 3 to 5 interval sample statistic, and a walker at exactly 1.20 Hz
+     * measures 1.19 as often as 1.21. Hysteresis solves that problem better:
+     * the walker needs one window at or above 1.20 to enter, and then stays in
+     * until cadence genuinely falls below 1.05.
      *
-     * [maxHz] deliberately carries no guard band. The two edges have opposite
-     * failure costs: the low edge exists to admit real users, so it errs
-     * toward admitting; the high edge exists to exclude shaking, so it errs
+     * [maxHz] deliberately has no hysteresis and no guard band. The two edges
+     * have opposite failure costs. The low edge exists to admit real users and
+     * errs toward admitting. The high edge exists to exclude shaking and errs
      * toward excluding.
      */
     val minHz: Double
     val maxHz: Double
+
+    /**
+     * Exit threshold for the cadence Schmitt trigger. Once measured cadence
+     * has reached [minHz] it counts as in band until it drops below this.
+     */
+    val minHzExit: Double
 
     /**
      * Two-sided coefficient of variation on peak intervals.
@@ -136,9 +164,14 @@ interface Thresholds {
             override val minSamples = 40
             override val refractoryMs = 250L
             override val peakMinMagnitude = 0.8
+            override val tickIntervalMs = 250L
+            override val sustainRequiredMs = 8_000L
+            override val sustainDecayFactor = 0.5
             override val minRms = 1.5
+            override val minRmsExit = 1.3
             override val minPeaks = 4
-            override val minHz = 1.15
+            override val minHz = 1.20
+            override val minHzExit = 1.05
             override val maxHz = 2.6
             override val minCv = 0.02
             override val maxCv = 0.35
@@ -166,9 +199,14 @@ interface Thresholds {
             override val minSamples = IIR.minSamples
             override val refractoryMs = IIR.refractoryMs
             override val peakMinMagnitude = IIR.peakMinMagnitude
+            override val tickIntervalMs = IIR.tickIntervalMs
+            override val sustainRequiredMs = IIR.sustainRequiredMs
+            override val sustainDecayFactor = IIR.sustainDecayFactor
             override val minRms = IIR.minRms
+            override val minRmsExit = IIR.minRmsExit
             override val minPeaks = IIR.minPeaks
             override val minHz = IIR.minHz
+            override val minHzExit = IIR.minHzExit
             override val maxHz = IIR.maxHz
             override val minCv = IIR.minCv
             override val maxCv = IIR.maxCv

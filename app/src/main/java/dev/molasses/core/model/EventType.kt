@@ -22,4 +22,11 @@ enum class EventType {
 
     /** `abs(wallDelta - elapsedDelta) > 60s`, or a boot-count change. */
     CLOCK_WARP,
+
+    /**
+     * A debug build skipped the movement gate by hand. Never written by a
+     * release build. Kept distinct from GATE_PASSED so a bypassed session can
+     * never be read back as a cleared one when reviewing a capture.
+     */
+    GATE_BYPASSED_DEBUG,
 }

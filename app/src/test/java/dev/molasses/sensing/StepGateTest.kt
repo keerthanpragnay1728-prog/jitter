@@ -8,7 +8,7 @@ import org.junit.Test
 
 class StepGateTest {
 
-    private fun feed(gate: StepGate, intervalsMs: List<Long>, startMs: Long = 0): GateProgress {
+    private fun feed(gate: StepGate, intervalsMs: List<Long>, startMs: Long = 0): GateEvaluation {
         var t = startMs
         var last = gate.onStep(t)
         for (i in intervalsMs) {
@@ -22,15 +22,15 @@ class StepGateTest {
     fun `metronomic gait at 2 Hz passes`() {
         val g = StepGate()
         val p = feed(g, List(13) { 500L })
-        assertTrue("reason=${p.reason}", p.passed)
-        assertEquals(GateProgress.Reason.PASSED, p.reason)
+        assertTrue("reason=${p.progress.reason}", p.passed)
+        assertEquals(GateProgress.Reason.PASSED, p.progress.reason)
     }
 
     @Test
     fun `slow walking at 1 Hz passes`() {
         val g = StepGate()
         val p = feed(g, List(13) { 850L })
-        assertTrue("reason=${p.reason}", p.passed)
+        assertTrue("reason=${p.progress.reason}", p.passed)
     }
 
     @Test
@@ -38,8 +38,8 @@ class StepGateTest {
         val g = StepGate()
         val p = feed(g, List(10) { 500L })
         assertFalse(p.passed)
-        assertEquals(GateProgress.Reason.NEED_MORE_STEPS, p.reason)
-        assertEquals(11, p.events)
+        assertEquals(GateProgress.Reason.NEED_MORE_STEPS, p.progress.reason)
+        assertEquals(11, p.progress.events)
     }
 
     @Test
@@ -51,8 +51,8 @@ class StepGateTest {
             310L, 880L, 300L, 760L, 320L, 700L, 330L, 850L, 290L, 820L, 300L, 900L, 310L,
         )
         val p = feed(g, erratic)
-        assertFalse("should reject shaking, reason=${p.reason}", p.passed)
-        assertEquals(GateProgress.Reason.CADENCE_IRREGULAR, p.reason)
+        assertFalse("should reject shaking, reason=${p.progress.reason}", p.passed)
+        assertEquals(GateProgress.Reason.CADENCE_IRREGULAR, p.progress.reason)
     }
 
     @Test
@@ -60,7 +60,7 @@ class StepGateTest {
         val g = StepGate()
         val p = feed(g, List(13) { 200L })
         assertFalse(p.passed)
-        assertEquals(GateProgress.Reason.CADENCE_TOO_FAST, p.reason)
+        assertEquals(GateProgress.Reason.CADENCE_TOO_FAST, p.progress.reason)
     }
 
     @Test
@@ -68,7 +68,7 @@ class StepGateTest {
         val g = StepGate()
         val p = feed(g, List(13) { 1_400L })
         assertFalse(p.passed)
-        assertEquals(GateProgress.Reason.CADENCE_TOO_SLOW, p.reason)
+        assertEquals(GateProgress.Reason.CADENCE_TOO_SLOW, p.progress.reason)
     }
 
     @Test
@@ -79,7 +79,7 @@ class StepGateTest {
         feed(g, List(12) { 500L })
         val p = g.onStep(120_000)
         assertFalse(p.passed)
-        assertTrue("expected pruning, events=${p.events}", p.events <= 2)
+        assertTrue("expected pruning, events=${p.progress.events}", p.progress.events <= 2)
     }
 
     @Test
@@ -87,7 +87,7 @@ class StepGateTest {
         val g = StepGate()
         feed(g, List(13) { 500L })
         g.reset()
-        assertEquals(GateProgress.Reason.WAITING_TO_START, g.evaluate(0).reason)
+        assertEquals(GateProgress.Reason.WAITING_TO_START, g.evaluate(0).progress.reason)
     }
 
     @Test
@@ -97,8 +97,8 @@ class StepGateTest {
         var prev = 0f
         repeat(12) {
             val p = g.onStep(t)
-            assertTrue(p.fraction >= prev)
-            prev = p.fraction
+            assertTrue(p.progress.fraction >= prev)
+            prev = p.progress.fraction
             t += 500
         }
         assertEquals(1f, prev, 1e-4f)

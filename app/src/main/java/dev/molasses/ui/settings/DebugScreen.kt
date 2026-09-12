@@ -16,11 +16,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -28,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
+import dev.molasses.debug.DebugSurface
 import dev.molasses.engine.TierPolicy
 import dev.molasses.sensing.Thresholds
 import java.text.SimpleDateFormat
@@ -205,6 +209,11 @@ fun DebugScreen(
             }
         }
 
+        if (DebugSurface.ENABLED) {
+            item { Header(R.string.debug_section_state_editor) }
+            item { StateEditor(targets = ladder.map { it.pkg }, onApply = vm::setAppStateForDebug) }
+        }
+
         item { Header(R.string.debug_section_appstate) }
         if (ladder.isEmpty()) {
             item { Mono(stringResource(R.string.debug_empty)) }
@@ -261,6 +270,65 @@ fun DebugScreen(
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = { vm.resetAllState() }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.debug_reset_all))
+            }
+        }
+    }
+}
+
+/**
+ * Debug builds only. Sets accumulated time and tier index for one package so
+ * the stall tiers can be exercised without walking off a gate first. More
+ * useful in practice than the gate bypass, because it reaches the tier under
+ * test directly.
+ */
+@Composable
+private fun StateEditor(targets: List<String>, onApply: (String, Long, Int) -> Unit) {
+    var pkg by remember(targets) { mutableStateOf(targets.firstOrNull().orEmpty()) }
+    var minutes by remember { mutableStateOf("") }
+    var tier by remember { mutableStateOf("") }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text(
+                stringResource(R.string.debug_state_editor_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = pkg,
+                onValueChange = { pkg = it },
+                singleLine = true,
+                label = { Text(stringResource(R.string.debug_state_editor_pkg)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = minutes,
+                onValueChange = { minutes = it.filter(Char::isDigit) },
+                singleLine = true,
+                label = { Text(stringResource(R.string.debug_state_editor_minutes)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = tier,
+                onValueChange = { tier = it.filter(Char::isDigit) },
+                singleLine = true,
+                label = { Text(stringResource(R.string.debug_state_editor_tier)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = {
+                    val ms = (minutes.toLongOrNull() ?: 0L) * 60_000
+                    val t = tier.toIntOrNull() ?: TierPolicy.indexFor(ms)
+                    if (pkg.isNotBlank()) onApply(pkg, ms, t)
+                },
+                enabled = pkg.isNotBlank() && (minutes.isNotBlank() || tier.isNotBlank()),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.debug_state_editor_apply))
             }
         }
     }

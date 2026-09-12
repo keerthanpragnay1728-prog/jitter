@@ -24,24 +24,27 @@ class StepGate(
 
     fun reset() = stepsMs.clear()
 
-    fun onStep(elapsedMs: Long): GateProgress {
+    fun onStep(elapsedMs: Long): GateEvaluation {
         stepsMs.addLast(elapsedMs)
         prune(elapsedMs)
         return evaluate(elapsedMs)
     }
 
-    fun evaluate(nowMs: Long): GateProgress {
+    fun evaluate(nowMs: Long): GateEvaluation {
         prune(nowMs)
         val n = stepsMs.size
         val fraction = (n.toFloat() / requiredSteps).coerceIn(0f, 1f)
 
         if (n < 2) {
-            return GateProgress(
-                fraction = fraction,
-                reason = if (n == 0) GateProgress.Reason.WAITING_TO_START
-                else GateProgress.Reason.NEED_MORE_STEPS,
-                path = GateProgress.Path.STEP_DETECTOR,
-                events = n,
+            return GateEvaluation(
+                progress = GateProgress(
+                    fraction = fraction,
+                    reason = if (n == 0) GateProgress.Reason.WAITING_TO_START
+                    else GateProgress.Reason.NEED_MORE_STEPS,
+                    path = GateProgress.Path.STEP_DETECTOR,
+                    events = n,
+                ),
+                passed = false,
             )
         }
 
@@ -61,11 +64,13 @@ class StepGate(
             else -> GateProgress.Reason.PASSED
         }
 
-        return GateProgress(
-            fraction = fraction,
-            reason = reason,
-            path = GateProgress.Path.STEP_DETECTOR,
-            events = n,
+        return GateEvaluation(
+            progress = GateProgress(
+                fraction = fraction,
+                reason = reason,
+                path = GateProgress.Path.STEP_DETECTOR,
+                events = n,
+            ),
             passed = reason == GateProgress.Reason.PASSED,
         )
     }

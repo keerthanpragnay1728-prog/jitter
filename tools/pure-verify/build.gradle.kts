@@ -23,6 +23,10 @@ val pureMain = listOf(
     "dev/molasses/sensing/FallbackImuGate.kt",
     "dev/molasses/sensing/GravitySplitter.kt",
     "dev/molasses/sensing/Thresholds.kt",
+    "dev/molasses/sensing/HysteresisGate.kt",
+    "dev/molasses/sensing/SustainAccumulator.kt",
+    "dev/molasses/sensing/GateEvaluation.kt",
+    "dev/molasses/sensing/TickEvaluation.kt",
 )
 val pureTest = listOf(
     "dev/molasses/core",

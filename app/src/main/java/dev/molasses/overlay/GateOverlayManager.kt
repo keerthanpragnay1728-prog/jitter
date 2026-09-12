@@ -3,6 +3,7 @@ package dev.molasses.overlay
 import android.content.Context
 import android.view.WindowManager
 import dev.molasses.core.model.EventType
+import dev.molasses.core.model.GateOutcome
 import dev.molasses.engine.FrictionLedger
 import dev.molasses.sensing.MovementDetector
 import dev.molasses.ui.gate.GateScreen
@@ -11,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -36,6 +38,13 @@ class GateOverlayManager(
     private var timeoutJob: Job? = null
     private var watchJob: Job? = null
 
+    /**
+     * One resolution per session. Without it a duplicate outcome, or a timeout
+     * racing a pass, would clear the same gate twice and increment
+     * `gatesCleared` twice.
+     */
+    private var resolved = false
+
     val isShowing: Boolean get() = host?.isShowing == true
 
     /** Idempotent: a second call for the same package and tier is a no-op. */
@@ -45,6 +54,7 @@ class GateOverlayManager(
 
         currentPkg = pkg
         currentTier = tier
+        resolved = false
 
         // A fresh host per gate: OverlayHost is single-use by construction.
         val h = OverlayHost(service, windowManager)
@@ -61,26 +71,56 @@ class GateOverlayManager(
                     alternativeChallenge = alternativeChallenge,
                     challengePhrase = detector.challengePhrase,
                     onChallengeAnswer = { detector.submitChallenge(it) },
+                    onDebugBypass = { detector.bypassForDebug() },
                 )
             }
         }
 
+        // first() rather than collect{}: it completes the collection before
+        // the handler runs, so teardown is not executing inside the very
+        // coroutine it is about to cancel. watchJob is nulled first for the
+        // same reason, so dismissInternal has nothing to cancel here.
         watchJob = scope.launch(Dispatchers.Main.immediate) {
-            detector.progress.collect { p ->
-                if (p.passed) pass()
-            }
+            val outcome = detector.outcome.first()
+            watchJob = null
+            resolve(outcome)
         }
 
         timeoutJob = scope.launch(Dispatchers.Main.immediate) {
             delay(GATE_TIMEOUT_MS)
+            timeoutJob = null
             // A gate left open forever would keep the IMU running. Timing out
             // is an abandon, not a pass: the toll is still owed.
             abandon("timeout")
         }
     }
 
-    private fun pass() {
+    /**
+     * The gate ended successfully. Idempotent: a second outcome, or an outcome
+     * racing the timeout, is dropped.
+     *
+     * Everything teardown needs is captured before [dismissInternal] runs,
+     * because that clears [currentPkg] and [currentTier].
+     */
+    private fun resolve(outcome: GateOutcome) {
         val pkg = currentPkg ?: return
+        if (resolved) return
+        resolved = true
+        val tier = currentTier
+
+        // GATE_PASSED belongs to FrictionEngine, which writes it from
+        // onGateCleared along with the tier accounting. Logging it here too
+        // would put two rows in the ledger for one event. The per-tick detail
+        // is in the GATE_EVAL logcat stream, and every ledger row already
+        // carries the sensing path.
+        if (outcome is GateOutcome.BypassedForDebug) {
+            ledger.log(
+                pkg,
+                EventType.GATE_BYPASSED_DEBUG,
+                "tier=$tier path=${outcome.path}",
+            )
+        }
+
         dismissInternal()
         onCleared(pkg)
     }
@@ -94,14 +134,21 @@ class GateOverlayManager(
      */
     fun abandon(reason: String) {
         val pkg = currentPkg ?: return
+        if (resolved) return
+        resolved = true
         ledger.log(pkg, EventType.GATE_ABANDONED, "reason=$reason tier=$currentTier")
         dismissInternal()
         onAbandoned(pkg)
     }
 
-    fun dismiss() = dismissInternal()
+    fun dismiss() {
+        resolved = true
+        dismissInternal()
+    }
 
     private fun dismissInternal() {
+        // Both jobs null themselves out before invoking a handler, so a cancel
+        // here never targets the coroutine that is currently running.
         timeoutJob?.cancel(); timeoutJob = null
         watchJob?.cancel(); watchJob = null
         detector.stop()

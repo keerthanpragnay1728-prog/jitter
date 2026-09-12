@@ -15,6 +15,7 @@ import dev.molasses.core.model.FrictionAction
 import dev.molasses.core.time.MonotonicClock
 import dev.molasses.core.time.WallClock
 import dev.molasses.data.datastore.CycleStateStore
+import dev.molasses.data.datastore.toEngineSnapshot
 import dev.molasses.data.db.UsageEventDao
 import dev.molasses.data.repo.DataStoreEngineStore
 import dev.molasses.data.repo.RoomFrictionLedger
@@ -75,6 +76,9 @@ class MolassesAccessibilityService : AccessibilityService() {
 
     /** SS6. Shared with the shutter, which records B, C and D. */
     private val latency = LatencyRegistry()
+
+    private var bootId = 0
+    private var debugOverrideNonce = 0L
 
     private val probe by lazy { ForegroundProbe(this) }
 
@@ -139,6 +143,8 @@ class MolassesAccessibilityService : AccessibilityService() {
                     "(${outcome.note})",
             )
 
+            bootId = outcome.bootId
+            debugOverrideNonce = cycleStore.current().debugOverrideNonce
             buildEngine(outcome.snapshot, outcome.bootId)
             observeSettings()
             startCheckpointing()
@@ -169,6 +175,20 @@ class MolassesAccessibilityService : AccessibilityService() {
                 if (next != targets) {
                     targets = next
                     applyTargets(next)
+                }
+
+                // Debug state editor. The engine holds per-app state in memory
+                // and writes it back at each checkpoint, so an edit to the
+                // store alone would be overwritten within 15 s. Rebuilding the
+                // engine from the edited snapshot is what makes the edit stick.
+                // This drops any open session, which is acceptable for a debug
+                // path and would not be for anything else.
+                if (state.debugOverrideNonce != debugOverrideNonce) {
+                    debugOverrideNonce = state.debugOverrideNonce
+                    if (ready) {
+                        Log.i(TAG, "debug state override, rebuilding engine")
+                        buildEngine(state.toEngineSnapshot(), bootId)
+                    }
                 }
             }
         }
