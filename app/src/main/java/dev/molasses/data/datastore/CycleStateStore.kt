@@ -131,6 +131,38 @@ class CycleStateStore(context: Context) {
         store.updateData { it.toBuilder().setAlternativeChallenge(enabled).build() }
     }
 
+    /**
+     * Debug builds only. Sets one package's accumulated time and tier index
+     * directly, bypassing the engine's monotonic guard, so the stall tiers can
+     * be exercised without first clearing a gate.
+     *
+     * Bumping the nonce is the part that makes this work. The engine keeps its
+     * per-app state in memory and writes it back on a 15 s checkpoint, so an
+     * edit made here alone would be silently overwritten. The service watches
+     * the nonce and rebuilds the engine when it moves.
+     */
+    suspend fun setAppStateForDebug(pkg: String, accumulatedMs: Long, tierIndex: Int) {
+        store.updateData { old ->
+            val existing = old.perAppMap[pkg] ?: AppState.getDefaultInstance()
+            old.toBuilder()
+                .putPerApp(
+                    pkg,
+                    existing.toBuilder()
+                        .setAccumulatedMs(accumulatedMs.coerceAtLeast(0))
+                        .setTierIndex(tierIndex.coerceAtLeast(0))
+                        // Unlock up to the start of the tier being set, so the
+                        // next scroll lands on that tier's stall rather than
+                        // immediately re-gating.
+                        .setTierUnlockedUntilMs(
+                            TierPolicy.entryAtMs(tierIndex.coerceAtLeast(0) + 1),
+                        )
+                        .build(),
+                )
+                .setDebugOverrideNonce(old.debugOverrideNonce + 1)
+                .build()
+        }
+    }
+
     suspend fun clearAll() {
         store.updateData { CycleStateSerializer.defaultValue }
     }

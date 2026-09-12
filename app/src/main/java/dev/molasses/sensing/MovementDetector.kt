@@ -9,9 +9,14 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import dev.molasses.core.model.GateOutcome
 import dev.molasses.core.model.GateProgress
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.random.Random
 
@@ -61,8 +66,32 @@ class MovementDetector(
     /** Rebuilt per gate, because the mode is decided at [start]. */
     private var imuGate: FallbackImuGate = FallbackImuGate(FallbackImuGate.Mode.IIR)
 
+    /**
+     * Sampled state, for the UI. Conflating is correct here: only the newest
+     * value matters and dropping an intermediate one costs nothing.
+     */
     private val _progress = MutableStateFlow(GateProgress())
     val progress: StateFlow<GateProgress> = _progress.asStateFlow()
+
+    /**
+     * The terminal event, on a channel that cannot conflate it away.
+     *
+     * `replay = 1` so a collector that attaches a moment late still sees it,
+     * and `extraBufferCapacity = 1` so [MutableSharedFlow.tryEmit] always
+     * succeeds from the sensor callback without suspending. The replay cache
+     * is cleared in [start], otherwise the previous session's pass would be
+     * delivered instantly to the next gate and clear it for free.
+     *
+     * Exactly one emission per session, guarded by [outcomeEmitted].
+     */
+    private val _outcome = MutableSharedFlow<GateOutcome>(
+        replay = 1,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val outcome: SharedFlow<GateOutcome> = _outcome.asSharedFlow()
+
+    private var outcomeEmitted = false
 
     private var active = false
     private var usingStepDetector = false
@@ -104,6 +133,11 @@ class MovementDetector(
         alternativeMode = alternativeChallenge
         stepGate.reset()
         haveFusedGravity = false
+
+        // Without this the previous session's Passed sits in the replay cache
+        // and the next gate clears itself the instant a collector attaches.
+        outcomeEmitted = false
+        _outcome.resetReplayCache()
 
         if (alternativeChallenge) {
             // Mandatory escape hatch. A friction app whose only unlock is
@@ -173,6 +207,7 @@ class MovementDetector(
     fun stop() {
         if (!active) return
         active = false
+        outcomeEmitted = true // no late emission after teardown
         runCatching { sensorManager?.unregisterListener(this) }
         activePath = GateProgress.Path.NONE
         haveFusedGravity = false
@@ -190,8 +225,27 @@ class MovementDetector(
             fraction = if (ok) 1f else 0f,
             reason = if (ok) GateProgress.Reason.PASSED else GateProgress.Reason.WAITING_TO_START,
             path = GateProgress.Path.ALTERNATIVE_CHALLENGE,
-            passed = ok,
         )
+        if (ok && !outcomeEmitted) {
+            outcomeEmitted = true
+            _outcome.tryEmit(
+                GateOutcome.Passed(
+                    path = GateProgress.Path.ALTERNATIVE_CHALLENGE,
+                    creditMs = 0,
+                    ticks = 0,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Debug builds only. Ends the session through the same channel a real pass
+     * uses, tagged so the ledger can keep the two apart.
+     */
+    fun bypassForDebug() {
+        if (outcomeEmitted) return
+        outcomeEmitted = true
+        _outcome.tryEmit(GateOutcome.BypassedForDebug(activePath))
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -200,7 +254,7 @@ class MovementDetector(
         when (event.sensor.type) {
             Sensor.TYPE_STEP_DETECTOR -> {
                 // SensorEvent.timestamp is nanoseconds on the elapsedRealtime base.
-                _progress.value = stepGate.onStep(event.timestamp / 1_000_000)
+                publish(stepGate.onStep(event.timestamp / 1_000_000))
             }
 
             Sensor.TYPE_GRAVITY -> {
@@ -216,12 +270,14 @@ class MovementDetector(
                 // vector at gate start, and seeding it with a guess would
                 // produce a spurious tilt reading for the first second.
                 if (!haveFusedGravity) return
-                _progress.value = imuGate.onFusedSample(
-                    event.timestamp,
-                    event.values[0].toDouble(),
-                    event.values[1].toDouble(),
-                    event.values[2].toDouble(),
-                    fusedGx, fusedGy, fusedGz,
+                publish(
+                    imuGate.onFusedSample(
+                        event.timestamp,
+                        event.values[0].toDouble(),
+                        event.values[1].toDouble(),
+                        event.values[2].toDouble(),
+                        fusedGx, fusedGy, fusedGz,
+                    ),
                 )
             }
 
@@ -229,11 +285,13 @@ class MovementDetector(
                 // Full nanosecond timestamp: GravitySplitter derives alpha from
                 // the inter-sample delta, so millisecond truncation would
                 // quantise the time constant at high delivery rates.
-                _progress.value = imuGate.onRawSample(
-                    event.timestamp,
-                    event.values[0].toDouble(),
-                    event.values[1].toDouble(),
-                    event.values[2].toDouble(),
+                publish(
+                    imuGate.onRawSample(
+                        event.timestamp,
+                        event.values[0].toDouble(),
+                        event.values[1].toDouble(),
+                        event.values[2].toDouble(),
+                    ),
                 )
             }
 
@@ -243,10 +301,43 @@ class MovementDetector(
         }
     }
 
+    /**
+     * Publish one evaluation. Progress goes to the conflating flow, a pass goes
+     * to the one-shot channel, and the tick goes to logcat.
+     *
+     * Null means the sample did not close a tick, which is the common case.
+     */
+    private fun publish(evaluation: GateEvaluation?) {
+        if (evaluation == null) return
+        _progress.value = evaluation.progress
+
+        evaluation.tick?.let { Log.d(EVAL_TAG, it.logLine()) }
+
+        if (!evaluation.passed || outcomeEmitted) return
+        outcomeEmitted = true
+        _outcome.tryEmit(
+            GateOutcome.Passed(
+                path = activePath,
+                creditMs = imuGate.creditMs,
+                ticks = imuGate.ticks,
+            ),
+        )
+    }
+
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
     companion object {
         private const val TAG = "Molasses.Movement"
+
+        /**
+         * One line per evaluation tick, every measured value and every
+         * per-test verdict. The thresholds here came from synthetic gait that
+         * the first device session showed to be unrepresentative, so this is
+         * how they get set from real walking.
+         *
+         * `adb logcat -s GATE_EVAL`
+         */
+        const val EVAL_TAG = "GATE_EVAL"
 
         /**
          * 25 s untimed transcription task. Phrases are deliberately mundane

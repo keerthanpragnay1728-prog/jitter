@@ -202,9 +202,35 @@ object SignalGen {
 
     // ------------------------------------------------------------- feeding
 
-    /** Feed raw samples through the IIR path. */
-    fun feedIir(gate: FallbackImuGate, samples: List<Sample>) =
-        samples.map { gate.onRawSample(it.timestampNs, it.x, it.y, it.z) }.last()
+    /**
+     * Feed raw samples through the IIR path and return the last tick, or null
+     * if the run was too short to close one. Most samples do not close a tick
+     * now that the battery runs at a fixed 4 Hz.
+     */
+    fun feedIir(gate: FallbackImuGate, samples: List<Sample>): GateEvaluation? {
+        var last: GateEvaluation? = null
+        for (s in samples) gate.onRawSample(s.timestampNs, s.x, s.y, s.z)?.let { last = it }
+        return last
+    }
+
+    /** Feed the fused path from the generator's exact gravity. */
+    fun feedFused(gate: FallbackImuGate, samples: List<Sample>): GateEvaluation? {
+        var last: GateEvaluation? = null
+        for (s in samples) {
+            gate.onFusedSample(
+                s.timestampNs, s.linearX, s.linearY, s.linearZ,
+                s.trueGx, s.trueGy, s.trueGz,
+            )?.let { last = it }
+        }
+        return last
+    }
+
+    /** Every tick of a run, for accumulator and instrumentation tests. */
+    fun ticksIir(gate: FallbackImuGate, samples: List<Sample>): List<GateEvaluation> {
+        val out = mutableListOf<GateEvaluation>()
+        for (s in samples) gate.onRawSample(s.timestampNs, s.x, s.y, s.z)?.let { out += it }
+        return out
+    }
 
     /** Feed through the IIR path and return the analyzer verdict. */
     fun verdictIir(

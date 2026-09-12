@@ -56,7 +56,7 @@ without the Android toolchain and marked the rest honestly.
 
 | | |
 |---|---|
-| **137 JVM tests, 0 failures** | `core/**`, `engine`, and the pure sensing maths, compiled and executed for real |
+| **173 JVM tests, 0 failures** | `core/**`, `engine`, and the pure sensing maths, compiled and executed for real |
 | **Purity is enforced, not asserted** | `PurityTest` walks the source tree and fails if the pure set grows an `android.*`/`androidx.*` import, and cross-checks its own list against the harness's, so the two cannot drift |
 | **Six real bugs found and fixed** | see "Bugs the harness caught" |
 
@@ -71,23 +71,28 @@ The root `settings.gradle.kts` includes only `:app`, as the brief requires. So
 `./gradlew :tools:pure-verify` will not resolve; it has its own wrapper.
 
 ```
+BucketProbe                  1 tests, 0 failed
 CadenceAnalyzerTest          9 tests, 0 failed
-CadenceBandEdgeTest          3 tests, 0 failed
+CadenceBandEdgeTest          4 tests, 0 failed
 CalibrationSweep             1 tests, 0 failed
 ChannelSpecTest              7 tests, 0 failed
 ClockTamperClampTest         8 tests, 0 failed
 CvEstimatorTest              4 tests, 0 failed
-FallbackImuGateTest         15 tests, 0 failed
+FallbackImuGateTest         19 tests, 0 failed
 ForegroundReplayTest        12 tests, 0 failed
 FrictionEngineTest          25 tests, 0 failed
+HysteresisGateTest           8 tests, 0 failed
 IirFilterTest                6 tests, 0 failed
 LatencySegmentsTest         14 tests, 0 failed
 MonotonicIntTest             4 tests, 0 failed
 MovementRejectionTest       13 tests, 0 failed
 PurityTest                   2 tests, 0 failed
 StepGateTest                 9 tests, 0 failed
+SustainAccumulatorTest      11 tests, 0 failed
+TerminalEventDeliveryTest    5 tests, 0 failed
+TickEvaluationTest           6 tests, 0 failed
 TierPolicyTest               5 tests, 0 failed
-TOTAL                      137 tests, 0 failed
+TOTAL                      173 tests, 0 failed
 ```
 
 ### What is NOT verified
@@ -233,6 +238,146 @@ because both were code that pretended to work:
    explicitly single-use and `GateOverlayManager` builds a fresh host per gate.
 
 ---
+
+## Device session 1: the gate was unclearable
+
+First device build. The progress ring reached 100%, the gate never cleared, and
+the streak reset to 0 with "a little faster". Two separate defects.
+
+### A terminal event was riding on a conflating channel
+
+Pass was a boolean on `GateProgress`, and `GateProgress` travels on a
+`StateFlow`. A StateFlow conflates. A `passed = true` that holds for one sensor
+sample can be overwritten by the next sample before the collector is scheduled,
+and then it is gone. The ring reaching 100% proved the sustain had completed,
+so the failure was delivery rather than sensing.
+
+`GateOutcome` now travels on its own `MutableSharedFlow(replay = 1,
+extraBufferCapacity = 1)`. `tryEmit` always succeeds, so the sensor callback
+never suspends. The replay cache is cleared on every `start()`, without which
+the previous session's pass would be delivered to the next gate and clear it
+for free. `GateProgress` has no `passed` field at all now, so no collector can
+re-create the inference.
+
+`TerminalEventDeliveryTest` reproduces the loss on a StateFlow and the survival
+on a SharedFlow through the same producer burst.
+
+Two smaller faults on the same path are fixed with it. `pass()` ran inside the
+very coroutine it then cancelled, and it was not idempotent, so a duplicate
+outcome or an outcome racing the 90 s timeout would have cleared one gate
+twice.
+
+### The sustain streak was too brittle
+
+Requiring all seven tests to hold on every window for 8 continuous seconds is
+the defect already found for the CV floor, and it applied to the other six just
+as hard. On the device a marginal cadence window reset a completed streak.
+
+**Fixed 4 Hz tick.** The battery is evaluated every 250 ms of sample time, not
+per sample. The grid is anchored, so a tick is always worth exactly 250 ms. An
+earlier version reset the grid to the sample time, which made the realised
+period 280 ms at 25 Hz against 250 ms at 200 Hz. A delivery gap longer than two
+intervals resyncs instead of firing a backlog, because catching up would
+evaluate one stale window many times and could credit seconds of movement that
+never happened.
+
+**Leaky bucket instead of a streak.** A passing tick adds its duration, a
+failing tick removes half of it, floor 0, pass at 8 s of net credit. Credit is
+capped at the requirement so a long walk cannot bank progress toward the next
+gate. Break-even is a 33% pass rate, which is what stops alternating pass and
+fail from being a bypass.
+
+**Schmitt triggers.** Cadence enters at 1.20 Hz and exits only below 1.05 Hz.
+RMS enters at 1.5 and exits below 1.3, the same 12.5% drop. This supersedes the
+1.15 Hz guard band, which was solving the same problem less well.
+
+### Measured: ticks to clear
+
+At 250 ms per tick, 32 ticks is the floor.
+
+| condition | ticks to clear | wall time |
+|---|---|---|
+| clean gait | 32 | 8.0 s |
+| 10% of ticks failing | 43 | 10.8 s |
+| 50% of ticks failing | 182 | 45.5 s |
+| 75% of ticks failing | never | never |
+
+Failure rates are applied at the tick level, in `SustainAccumulatorTest`.
+Splicing stillness into a synthetic gait signal does not produce "10% of ticks
+failing": 250 ms of stillness sits inside a 3500 ms analysis window, so a 10%
+duty cycle pollutes closer to 90% of windows, and that signal never clears at
+all.
+
+A 1 s stumble in real gait costs 125 ms of credit, one failing tick. The
+analysis window is why it costs so little, since most of the window is still
+walking.
+
+Through the full pipeline, clean gait clears in:
+
+| rate | ticks to clear | ticks over a fixed 12 s | tick duration |
+|---|---|---|---|
+| 25 Hz | 35 | 48 | 250 ms |
+| 50 Hz | 38 | 48 | 250 ms |
+| 100 Hz | 39 | 48 | 250 ms |
+| 200 Hz | 39 | 48 | 250 ms |
+
+Tick count and tick duration are identical across delivery rates. The residual
+4-tick spread in time to clear is analyzer warm-up: `minSamples` is a fixed
+count of 40, which is 1.6 s at 25 Hz and 0.2 s at 200 Hz.
+
+### Band floor, through the full gate with hysteresis
+
+| Hz | p=0.00 | p=0.13 | p=0.25 | p=0.38 | p=0.50 | p=0.63 | p=0.75 | p=0.88 |
+|---|---|---|---|---|---|---|---|---|
+| 1.20 | clears | clears | clears | clears | clears | clears | clears | clears |
+| 1.25 | clears | clears | clears | clears | clears | clears | clears | clears |
+| 1.30 | clears | clears | clears | clears | clears | clears | clears | clears |
+| 1.35 | clears | clears | clears | clears | clears | clears | clears | clears |
+
+## GATE_EVAL: setting thresholds from real gait
+
+Every evaluation tick is logged, one line, every measured value and every
+per-test verdict.
+
+```
+adb logcat -s GATE_EVAL
+```
+
+```
+t=7 ms=1750 dt=250 path=IMU_IIR thr=IIR rms=3.29 peaks=6 hz=1.74 cv=0.029
+rcv=0.053 rn=9 vert=0.97 pk=10.55 tilt=40.0 tiltms=1400 sup=0 [RPhCVMT]
+latch=HR pass=0 credit=1750/8000 reason=CADENCE_TOO_SLOW
+```
+
+The bracketed flags are the seven tests in fixed order: Rms, Peaks, Hz, Cv,
+Vertical, Magnitude ceiling, Tilt. Uppercase passed. `latch` shows which Schmitt
+triggers are held. `rcv=nan` means the regularity baseline does not yet have
+enough intervals, which is distinct from a measured 0.000.
+
+Field order never changes, so a capture can be split on columns.
+`TickEvaluationTest` pins the format.
+
+## Debug controls, debug variant only
+
+`app/src/debug` and `app/src/release` each supply a `DebugSurface`. The release
+one is a no-op. Splitting by source set rather than guarding with
+`if (BuildConfig.DEBUG)` means the bypass is not compiled into a release
+variant, rather than being a dead branch R8 is trusted to remove.
+
+- **Bypass**: hold the progress ring for 2 s. Writes `GATE_BYPASSED_DEBUG` to
+  the ledger, never `GATE_PASSED`, so a bypassed session cannot be read back as
+  a cleared one.
+- **State editor**: sets accumulated time and tier index per package on the
+  debug screen, so a stall tier can be reached without clearing a gate first.
+  It bumps a nonce in the proto that the service watches, and the service
+  rebuilds the engine from the edited snapshot. Without that the engine would
+  overwrite the edit from memory at its next 15 s checkpoint and the control
+  would appear to do nothing. Rebuilding drops any open session.
+
+`DebugSurfaceTest` checks the split is intact, that the two variants declare
+the same surface, that release contains no pointer handling, and that nothing
+in `main` hand-rolls a bypass. It is a source-level check. Asserting against an
+assembled release APK needs `assembleRelease`, which cannot run here.
 
 ## Threshold recalibration (§4)
 
@@ -632,7 +777,10 @@ product.
   API 30+. It is a Play review question; the picker is the "user selects an app"
   case the policy allows.
 
-**Thresholds that differ from the brief, and why** (full reasoning above)
+**Thresholds that differ from the brief, and why**
+- `minHz` entry is **1.20** with a **1.05** exit, replacing the 1.15 guard band.
+- `minRms` keeps its **1.5** entry and gains a **1.3** exit.
+- Sustain is a leaky bucket at **8 s net credit**, not 8 s continuous. (full reasoning above)
 - `minRms` is **1.5**, not the suggested 2.2. The sweep does not support 2.2.
 - `minHz` is **1.15**, guarding a stated 1.2 Hz band floor.
 - `MIN_PEAKS` stays at **4**; the CV floor moved to a 12 s baseline instead.

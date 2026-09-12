@@ -134,6 +134,15 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repo.setAlternativeChallenge(enabled) }
     }
 
+    /**
+     * Debug builds only. See [CycleStateStore.setAppStateForDebug]. The UI that
+     * calls this is behind `DebugSurface.ENABLED`, so it is unreachable in a
+     * release variant.
+     */
+    fun setAppStateForDebug(pkg: String, accumulatedMs: Long, tierIndex: Int) {
+        viewModelScope.launch { store.setAppStateForDebug(pkg, accumulatedMs, tierIndex) }
+    }
+
     fun clearLedger() {
         viewModelScope.launch { withContext(Dispatchers.IO) { dao.clear() } }
     }

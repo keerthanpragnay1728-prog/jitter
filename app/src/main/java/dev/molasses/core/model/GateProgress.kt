@@ -1,9 +1,15 @@
 package dev.molasses.core.model
 
 /**
- * Live movement-gate feedback. The gate shows the failing [reason] rather than
- * a black box, because an unlock condition a user cannot see is
- * indistinguishable from a broken app.
+ * Live movement-gate feedback, for display only. The gate shows the failing
+ * [reason] rather than a black box, because an unlock condition a user cannot
+ * see is indistinguishable from a broken app.
+ *
+ * There is deliberately no `passed` flag here. This type travels on a
+ * conflating `StateFlow`, so anything terminal expressed through it can be
+ * dropped before a collector runs, which is what made the first device build
+ * unclearable. Passing is signalled by [GateOutcome] on its own channel, and
+ * no collector should be able to infer a pass from progress.
  */
 data class GateProgress(
     val fraction: Float = 0f,
@@ -11,7 +17,6 @@ data class GateProgress(
     val path: Path = Path.NONE,
     /** Steps (path A) or detected peaks (path B) observed so far. */
     val events: Int = 0,
-    val passed: Boolean = false,
 ) {
     /**
      * Which pipeline produced this verdict. The two IMU paths are separate

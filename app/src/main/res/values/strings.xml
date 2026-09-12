@@ -32,6 +32,7 @@
     <string name="gate_why_next">The next gate is at %1$s minutes.</string>
     <string name="gate_why_leaving">Pressing HOME or RECENTS will leave this screen. That pauses the gate rather than clearing it. The gate returns when you scroll again.</string>
 
+    <string name="gate_debug_bypass_hint">Debug build. Hold the ring for 2 seconds to bypass.</string>
     <string name="gate_alt_type_this">Type this phrase</string>
     <string name="gate_alt_continue">Continue</string>
 
@@ -114,6 +115,13 @@
     <string name="debug_uncalibrated_note">Seeded from IIR. The fused sensor has an internal high-pass we cannot query, so these numbers have never been measured for this pipeline.</string>
     <string name="debug_gate_outcomes">Gate outcomes by pipeline</string>
     <string name="debug_none_recorded">(none recorded)</string>
+
+    <string name="debug_section_state_editor">Set state (debug build only)</string>
+    <string name="debug_state_editor_note">Writes accumulated time and tier index straight into the store and rebuilds the engine, so a stall tier can be reached without clearing a gate first. Any open session is dropped.</string>
+    <string name="debug_state_editor_pkg">Package</string>
+    <string name="debug_state_editor_minutes">Accumulated minutes</string>
+    <string name="debug_state_editor_tier">Tier index (blank to derive)</string>
+    <string name="debug_state_editor_apply">Apply</string>
 
     <string name="debug_section_appstate">AppState per package</string>
     <string name="debug_empty">(empty)</string>

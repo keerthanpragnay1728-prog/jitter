@@ -33,6 +33,10 @@ class PurityTest {
         "sensing/FallbackImuGate.kt",
         "sensing/GravitySplitter.kt",
         "sensing/Thresholds.kt",
+        "sensing/HysteresisGate.kt",
+        "sensing/SustainAccumulator.kt",
+        "sensing/GateEvaluation.kt",
+        "sensing/TickEvaluation.kt",
     )
 
     private fun repoRoot(): File? = listOf(
