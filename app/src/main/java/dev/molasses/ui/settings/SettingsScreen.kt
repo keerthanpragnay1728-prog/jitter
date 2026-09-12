@@ -1,5 +1,6 @@
 package dev.molasses.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,18 +26,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.molasses.R
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.engine.TierPolicy
 
 /**
  * Onboarding as an ordered checklist with live state, because the two
- * permissions that matter cannot be requested from code -- they are
- * Settings-screen toggles -- and a user who bounces off a system screen
- * without completing it must come back to a display that says so rather than
- * to a silently broken app.
+ * permissions that matter cannot be requested from code. They are
+ * Settings-screen toggles, and a user who bounces off a system screen without
+ * completing it must come back to a display that says so rather than to a
+ * silently broken app.
+ *
+ * All copy comes from `res/values/strings.xml`.
  */
 @Composable
 fun SettingsScreen(
@@ -63,22 +68,21 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Molasses", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Your chosen apps are never blocked. The longer you use them in a " +
-                    "six-hour cycle, the more the phone feels like it is failing.",
+                stringResource(R.string.settings_tagline),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.secondary,
             )
         }
 
-        item { SectionHeader("Setup") }
+        item { SectionHeader(R.string.settings_section_setup) }
         item {
             ChecklistRow(
                 index = 1,
-                title = "Accessibility service",
-                subtitle = "Required. Lets Molasses see which app is in front and when you scroll.",
+                title = R.string.settings_perm_a11y_title,
+                subtitle = R.string.settings_perm_a11y_body,
                 satisfied = permissions.accessibility,
                 onClick = onOpenAccessibility,
             )
@@ -86,8 +90,8 @@ fun SettingsScreen(
         item {
             ChecklistRow(
                 index = 2,
-                title = "Usage access",
-                subtitle = "Required. Rebuilds your time if Molasses is killed mid-session.",
+                title = R.string.settings_perm_usage_title,
+                subtitle = R.string.settings_perm_usage_body,
                 satisfied = permissions.usageAccess,
                 onClick = onOpenUsageAccess,
             )
@@ -95,9 +99,8 @@ fun SettingsScreen(
         item {
             ChecklistRow(
                 index = 3,
-                title = "Physical activity",
-                subtitle = "Preferred. Uses the step sensor for the movement gate; " +
-                    "without it the gate falls back to motion analysis.",
+                title = R.string.settings_perm_activity_title,
+                subtitle = R.string.settings_perm_activity_body,
                 satisfied = permissions.activityRecognition,
                 onClick = onRequestActivityRecognition,
             )
@@ -105,8 +108,8 @@ fun SettingsScreen(
         item {
             ChecklistRow(
                 index = 4,
-                title = "Notifications",
-                subtitle = "Optional. Tells you when a cycle resets or a gate is still owed.",
+                title = R.string.settings_perm_notifications_title,
+                subtitle = R.string.settings_perm_notifications_body,
                 satisfied = permissions.notifications,
                 onClick = onRequestNotifications,
             )
@@ -114,20 +117,20 @@ fun SettingsScreen(
         item {
             ChecklistRow(
                 index = 5,
-                title = "Draw over other apps",
-                subtitle = "Optional. Only needed for the stall preview below.",
+                title = R.string.settings_perm_overlay_title,
+                subtitle = R.string.settings_perm_overlay_body,
                 satisfied = permissions.overlay,
                 onClick = onOpenOverlay,
             )
         }
 
-        item { SectionHeader("The ladder") }
+        item { SectionHeader(R.string.settings_section_ladder) }
         item { LadderCard() }
 
-        item { SectionHeader("Target apps") }
+        item { SectionHeader(R.string.settings_section_targets) }
         item {
             Text(
-                "Scrolling in these apps accumulates time.",
+                stringResource(R.string.settings_targets_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
             )
@@ -156,44 +159,44 @@ fun SettingsScreen(
         if (installed.isEmpty()) {
             item {
                 Text(
-                    "No launchable apps listed yet.",
+                    stringResource(R.string.settings_targets_empty),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
         }
 
-        item { SectionHeader("Cycle reset policy") }
+        item { SectionHeader(R.string.settings_section_policy) }
         item {
             Column {
                 PolicyRow(
                     selected = policy == CycleResetPolicy.ABSTINENCE_6H,
-                    title = "After 6 hours away (default)",
-                    subtitle = "The cycle resets only after six continuous hours with no " +
-                        "time in any target app.",
+                    title = R.string.settings_policy_abstinence_title,
+                    subtitle = R.string.settings_policy_abstinence_body,
                     onSelect = { vm.setResetPolicy(CycleResetPolicy.ABSTINENCE_6H) },
                 )
                 PolicyRow(
                     selected = policy == CycleResetPolicy.FIXED_WINDOW_6H,
-                    title = "Every 6 hours",
-                    subtitle = "The cycle resets six hours after it started, whether or not " +
-                        "you kept using the apps.",
+                    title = R.string.settings_policy_fixed_title,
+                    subtitle = R.string.settings_policy_fixed_body,
                     onSelect = { vm.setResetPolicy(CycleResetPolicy.FIXED_WINDOW_6H) },
                 )
             }
         }
 
-        item { SectionHeader("Movement gate") }
+        item { SectionHeader(R.string.settings_section_gate) }
         item {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Alternative challenge", style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        "Replaces the physical gate with a 25-second untimed typing task. " +
-                            "For anyone who cannot or should not be made to walk.",
+                        stringResource(R.string.settings_alt_challenge_title),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        stringResource(R.string.settings_alt_challenge_body),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary,
                     )
@@ -205,15 +208,15 @@ fun SettingsScreen(
             }
         }
 
-        item { SectionHeader("Try it") }
+        item { SectionHeader(R.string.settings_section_try) }
         item {
             Button(onClick = onTestStall, modifier = Modifier.fillMaxWidth()) {
-                Text("Test Phantom Stall (1 second)")
+                Text(stringResource(R.string.settings_test_stall))
             }
         }
         item {
             OutlinedButton(onClick = onOpenDebug, modifier = Modifier.fillMaxWidth()) {
-                Text("Debug / ledger")
+                Text(stringResource(R.string.settings_debug))
             }
         }
     }
@@ -226,18 +229,18 @@ private fun LadderCard() {
             TierPolicy.ladder.forEach { tier ->
                 val minutes = tier.entryAtMs / 60_000
                 val label = when {
-                    tier.index == 0 -> "0-5 min, normal"
-                    TierPolicy.isTerminal(tier.index) ->
-                        "$minutes min+ (terminal), gate every 5 min, ${tier.stallMs} ms stall"
-                    else -> "$minutes min, gate then ${tier.stallMs} ms stall"
+                    tier.index == 0 -> stringResource(R.string.settings_ladder_normal)
+                    TierPolicy.isTerminal(tier.index) -> stringResource(
+                        R.string.settings_ladder_terminal, minutes, tier.stallMs,
+                    )
+                    else -> stringResource(R.string.settings_ladder_tier, minutes, tier.stallMs)
                 }
                 Text(label, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(4.dp))
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text(
-                "Clearing a gate unlocks the next five minutes. It never resets your " +
-                    "accumulated time and never shortens the stall.",
+                stringResource(R.string.settings_ladder_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
             )
@@ -246,10 +249,10 @@ private fun LadderCard() {
 }
 
 @Composable
-private fun SectionHeader(text: String) {
+private fun SectionHeader(@StringRes text: Int) {
     Spacer(Modifier.height(16.dp))
     Text(
-        text.uppercase(),
+        stringResource(text).uppercase(),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.primary,
     )
@@ -258,8 +261,8 @@ private fun SectionHeader(text: String) {
 @Composable
 private fun ChecklistRow(
     index: Int,
-    title: String,
-    subtitle: String,
+    @StringRes title: Int,
+    @StringRes subtitle: Int,
     satisfied: Boolean,
     onClick: () -> Unit,
 ) {
@@ -273,7 +276,11 @@ private fun ChecklistRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (satisfied) "OK" else "$index.",
+                if (satisfied) {
+                    stringResource(R.string.settings_checklist_done)
+                } else {
+                    stringResource(R.string.settings_checklist_step, index)
+                },
                 style = MaterialTheme.typography.titleMedium,
                 color = if (satisfied) {
                     MaterialTheme.colorScheme.primary
@@ -283,9 +290,9 @@ private fun ChecklistRow(
                 modifier = Modifier.padding(end = 16.dp),
             )
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(title), style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    subtitle,
+                    stringResource(subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
@@ -297,8 +304,8 @@ private fun ChecklistRow(
 @Composable
 private fun PolicyRow(
     selected: Boolean,
-    title: String,
-    subtitle: String,
+    @StringRes title: Int,
+    @StringRes subtitle: Int,
     onSelect: () -> Unit,
 ) {
     Row(
@@ -310,9 +317,9 @@ private fun PolicyRow(
     ) {
         RadioButton(selected = selected, onClick = onSelect)
         Column(Modifier.padding(start = 4.dp, top = 12.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(title), style = MaterialTheme.typography.bodyLarge)
             Text(
-                subtitle,
+                stringResource(subtitle),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
             )

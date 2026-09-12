@@ -27,14 +27,46 @@ below.
 Hyphens in compound words and numeric ranges are fine. ASCII `--` is fine as a
 table placeholder.
 
+## Display copy lives in strings.xml
+
+No user-facing string is hardcoded in Kotlin. All copy goes in
+`app/src/main/res/values/strings.xml` and is read with `stringResource()`.
+Where the string depends on state, map the state to a `@StringRes Int` in a
+plain function and resolve it at the call site, so the mapping stays pure.
+
+This is the Android convention and the only thing that makes the app
+translatable. It also keeps the prose rules checkable. With copy inline, a grep
+over `*.kt` cannot tell a user-facing sentence from a code comment, and the two
+do not have the same rules. With copy in resources, a `*.kt` hit is always a
+comment.
+
+Commands, field labels and format templates that are shown on screen but must
+not be reworded carry `translatable="false"`.
+
+Format arguments are all `%n$s`. A `%d` given a Double throws
+`IllegalFormatConversionException` at runtime, and several of these strings
+take Double thresholds. Surplus arguments are ignored by `String.format`, so
+passing one unconditionally to a family of strings where only some use it is
+safe.
+
+Fixed-width alignment belongs in Kotlin, not in the resource. aapt collapses
+runs of whitespace inside a string value unless the whole value is quoted.
+
 Check before committing:
 
 ```
-grep -rnP '(*UTF)[\x{2013}\x{2014}]' --include='*.md' --include='*.kt' .
+tools/check-dashes.sh
 ```
 
-The `(*UTF)` prefix is required. Without it GNU grep rejects code points above
-U+00FF with "character code point value in \x{} or \o{} is too large".
+The script runs `grep -rn` for the two characters literally, with no `-P`, no
+code points and no `(*UTF)`, so it works on GNU and BSD grep. It covers `*.md`,
+`*.kt` and `*.xml`, and exits non-zero on a hit.
+
+The command lives in a script rather than inline here because writing the
+characters into this file would make it trip its own check.
+
+`*.xml` is in scope because display copy lives in `res/values/strings.xml`. It
+was out of scope once, and an em dash sat in shipped copy unnoticed.
 
 ## Branch naming
 

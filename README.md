@@ -120,11 +120,11 @@ WindowManagerService. The armed flag is not live in the input dispatcher until
 WMS relayouts and InputDispatcher refreshes its window handles, one or more
 frames later. C exists to measure exactly that gap.
 
-Ring buffer of 100 per package per segment, p50/p95 rather than a mean
-(latency distributions are right-skewed and a mean hides the tail that breaks
-the illusion). Negative D samples are discarded and counted. The sink can
-absorb a touch that was already in flight when the stall armed, whose
-`eventTime` precedes the scroll.
+Ring buffer of 100 per package per segment, with p50 and p95 rather than a
+mean. Latency distributions are right-skewed and a mean hides the tail that
+breaks the illusion. Negative D samples are discarded and counted, because the
+sink can absorb a touch that was already in flight when the stall armed, with
+an `eventTime` earlier than the scroll.
 
 ```
 STALL_LATENCY: [TARGET: com.instagram.android] A=34 B=2 C=18 D=71 | p50(D)=68 p95(D)=112 n=50
@@ -199,8 +199,8 @@ all rather than shipping the lot unexecuted.
    whole session, and the test asserting "clearing a gate leaves accumulated
    time untouched" was passing vacuously by comparing 0 to 0. `snapshot()` now
    folds the live session and the writer stamps `last_seen_*` at the same
-   instant, so the reconciler replays from exactly the point the snapshot
-   accounts up to, credited once and never twice.
+   instant. The reconciler replays from exactly the point the snapshot accounts
+   up to, so the interval is credited once.
 
 Two more from this patch, both caught by the calibration sweep rather than by
 a test written to look for them:
@@ -314,14 +314,14 @@ absorbs. 99% is the figure for a pure sinusoid at 1.8 Hz.
 
 Two facts decide it.
 
-**In physical terms, 2.2 is a large tightening nobody asked for.** Old pipeline:
-RMS = 0.21 × peak, floor 1.2, so a walker needed a 5.7 m/s² heel strike. New
-pipeline: RMS = 0.274 × peak. A floor of 1.5 needs 5.5 m/s², the same walker.
-A floor of 2.2 needs 8.0 m/s², **41% more physical motion**, silently making
-the gate harder to clear.
+**In physical terms, 2.2 is a large tightening nobody asked for.** On the old
+pipeline RMS = 0.21 × peak, so a floor of 1.2 needed a 5.7 m/s² heel strike.
+On the new pipeline RMS = 0.274 × peak, so a floor of 1.5 needs 5.5 m/s². That
+is the same walker. A floor of 2.2 needs 8.0 m/s², **41% more physical
+motion**, and makes the gate harder to clear without saying so.
 
-**And 2.2 buys nothing.** The RMS floor exists to reject one thing: thumb
-tremor. That measures 0.13, and the brief's own stated tremor ceiling is
+**And 2.2 buys nothing.** The RMS floor exists to reject thumb tremor and
+nothing else. Tremor measures 0.13, and the brief's own stated ceiling for it is
 0.4 m/s². Every other cheat class sits *above* 2.2 (desk tap 4.03, lateral wave
 4.01, fast shake 3.38) and is rejected by a different test entirely. Raising
 the floor from 1.5 to 2.2 rejects no additional cheat and costs real walkers.
@@ -390,7 +390,8 @@ walker with a true CV of 0.06:
 | 8 | 9 | 0.0580 | 0.0335 | 0.0853 | **0.2%** |
 
 **Second**, `MIN_PEAKS = 5` breaks §2. Five peaks need four intervals, and at
-1.2 Hz that is 4 × 833 = 3333 ms inside a 3500 ms window, 167 ms of slack.
+1.2 Hz that is 4 × 833 = 3333 ms inside a 3500 ms window, leaving 167 ms of
+slack.
 Measured: 17 of 32 band-floor combinations fail. The §2 and §3 remedies are in
 direct conflict at this window width. (`MIN_PEAKS = 5` with a 4.5 s window does
 pass 0/32 failures, if you would rather go that way.)
@@ -404,13 +405,14 @@ only difference being that coarser timestamp quantisation added enough noise to
 keep the estimate off the floor. A gate that works at 50 Hz and not at 100 Hz
 is not a threshold problem, it is a structural one.
 
-The fix keeps the floor at 0.02 and changes only *what it is measured over*:
-the CV **floor** uses a 12 s baseline (≥8 intervals required, else it
-abstains), while the CV **ceiling** keeps the 3.5 s analysis window. That
-asymmetry is principled. The ceiling asks "is this erratic right now" and must
-be responsive; the floor asks "has this been machine-regular throughout" and
-wants a long, stable baseline. At 1.8 Hz the floor engages ~4.7 s into a gate,
-well before an 8 s sustain could complete, so a metronome is still caught.
+The fix keeps the floor at 0.02 and changes what it is measured over. The CV
+**floor** uses a 12 s baseline and abstains below 8 intervals. The CV
+**ceiling** keeps the 3.5 s analysis window. The two bounds ask different
+questions, which is why they can take different windows. The ceiling asks
+whether the motion is erratic right now and has to be responsive. The floor
+asks whether it has been machine-regular throughout and wants a long, stable
+baseline. At 1.8 Hz the floor engages ~4.7 s into a gate, well before an 8 s
+sustain could complete, so a metronome is still caught.
 
 After: all four delivery rates pass at ~10 s.
 
@@ -422,12 +424,12 @@ After: all four delivery rates pass at ~10 s.
 | 200 Hz | … SUSTAINING(1990) → **PASSED(9990)** |
 
 **A correction to the patch's premise, while here.** Bessel's correction makes
-the *variance* unbiased, not the standard deviation: `E[s] = σ·c4(n)`, and
-`c4(3) = 0.886`. So a CV from 3 intervals still reads ~11% low *with* the
-correction, measured 0.0531 against a true 0.06, matching σ·c4 to three
-decimal places. Bessel removes the 18% population bias and leaves an 11% one.
-`CvEstimatorTest` asserts against `c4(n)` exactly rather than a loose
-tolerance.
+the *variance* unbiased. The standard deviation stays biased, since
+`E[s] = σ·c4(n)` and `c4(3) = 0.886`. A CV from 3 intervals therefore reads
+about 11% low even with the correction applied. The measurement is 0.0531
+against a true 0.06, which matches σ·c4 to three decimal places. Bessel removes
+the 18% population bias and leaves an 11% one. `CvEstimatorTest` asserts
+against `c4(n)` exactly.
 
 ### A real bypass on the fused path, found by the sweep
 
@@ -440,9 +442,10 @@ middle of the pass band. Measured on the fused pipeline:
 | 4.5 | 0.15 | 2.17 | 0.035 | **PASSED** |
 | 5.0 | 0.15 | 2.50 | 0.053 | **PASSED** |
 
-That is a working bypass: shake at 4.5 Hz and the gate opens. The IIR path
+That is a working bypass. Shake at 4.5 Hz and the gate opens. The IIR path
 resisted it only because its filter perturbs peak timing enough to break the
-alias. Luck, not design, and §1.1 asks us to *prefer* the fused path.
+alias, which is luck rather than design, and §1.1 asks us to *prefer* the fused
+path.
 
 The guard counts refractory-discarded peaks that are **full amplitude**
 relative to the accepted peak before them. The amplitude condition is what
@@ -558,8 +561,8 @@ boot count changed                    ->  elapsedRealtime reset; trust wall
                                           only, floored at zero
 ```
 
-A rollover is suppressed entirely while tampering is detected, not permanently,
-since the next connect with agreeing clocks re-evaluates against the real
+A rollover is suppressed while tampering is detected. The suppression lifts on
+the next connect with agreeing clocks, which re-evaluates against the real
 `last_target_use_wall_ms`.
 
 ### Why there is no foreground service
@@ -577,19 +580,19 @@ would pass touches through regardless of our flags.
 `TYPE_ACCESSIBILITY_OVERLAY` borrows the service's own window token, is
 trusted, and needs no `SYSTEM_ALERT_WINDOW` grant.
 
-`SYSTEM_ALERT_WINDOW` stays in the manifest for exactly one thing: the "Test
-Phantom Stall" button in settings, which has no service token to borrow. That
-preview is therefore *not* a guarantee that touches were eaten. Only the real
-path is.
+`SYSTEM_ALERT_WINDOW` stays in the manifest for one thing. The "Test Phantom
+Stall" button in settings has no service token to borrow, so its preview shows
+the timing and the visible tell faithfully without guaranteeing that touches
+were eaten. Only the real path guarantees that.
 
 ### The one hard performance rule
 
 `onAccessibilityEvent` runs on the service's main thread and events are
-delivered serially, so every millisecond there delays the next event, and with
+delivered serially, so every millisecond there delays the next event. With
 `notificationTimeout="0"` the event rate during a scroll burst is high. That
 callback does arithmetic on in-memory state and nothing else. Persistence goes
-through a conflating channel to a coroutine; the Room ledger batches on its own
-buffered channel and drops the oldest row rather than ever blocking the caller.
+through a conflating channel to a coroutine, and the Room ledger batches on its
+own buffered channel, dropping the oldest row rather than blocking the caller.
 Losing a ledger row degrades the debug view; blocking that thread degrades the
 product.
 
@@ -617,8 +620,8 @@ product.
   ms), because the engine must not see a live event before reconciliation
   finishes.
 - `ACTIVITY_RESUMED`/`ACTIVITY_PAUSED` replay depends on `PACKAGE_USAGE_STATS`.
-  Without it, a mid-session process death loses that session's tail, bounded
-  to 15 s by the checkpoint cadence.
+  Without it, a mid-session process death loses that session's tail. The
+  checkpoint cadence bounds that loss to 15 s.
 
 **Permissions beyond the brief's list**
 - `READ_PHONE_STATE`, required by `TelephonyCallback.CallStateListener` on API
@@ -689,9 +692,9 @@ call arrives. And it is never armed for more than eight continuous seconds, at
 any tier, no matter how much you scroll.
 
 **It will ask you to get up and walk.** At each five-minute mark a full-screen
-gate appears and will not go away until you have walked for a bit, about
-twelve steps, or eight seconds of walking-shaped motion if your phone has no
-step sensor. You can always leave with HOME or RECENTS; that pauses the gate
+gate appears and will not go away until you have walked for a bit. That is
+about twelve steps, or eight seconds of walking-shaped motion if your phone has
+no step sensor. You can always leave with HOME or RECENTS; that pauses the gate
 instead of clearing it, and it comes back when you next scroll. **If walking is
 not something you can or should do, turn on Settings → Movement gate →
 Alternative challenge**, which replaces it with a 25-second untimed typing

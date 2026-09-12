@@ -1,20 +1,151 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  All display copy lives here, never inline in Kotlin. Two reasons:
+
+  1. It is the Android convention and the only thing that makes the app
+     translatable.
+  2. It keeps the repo-wide prose rules checkable in one place. With copy
+     inline, a grep over *.kt could not tell a user-facing sentence from a
+     code comment, and the two have different rules.
+
+  Strings marked translatable="false" are commands, field labels and format
+  templates for the debug screen. They are shown on screen but must not be
+  reworded or localised.
+
+  Format arguments are all %n$s. Passing an Int to a %d is fine, but passing a
+  Double to one throws IllegalFormatConversionException at runtime, and several
+  of these take Double thresholds.
+-->
 <resources>
     <string name="app_name">Molasses</string>
     <string name="a11y_service_label">Molasses progressive friction</string>
     <string name="a11y_service_description">Molasses watches only which of your chosen apps is in the foreground and when you scroll in it, so it can add deliberate friction as your usage adds up. It never reads the contents of your screen.</string>
 
-    <string name="gate_title">Movement gate</string>
-    <string name="gate_subtitle">%1$s minutes used. Move to continue.</string>
+    <!-- Movement gate -->
+    <string name="gate_tier">Tier %1$s</string>
+    <string name="gate_tier_terminal">Tier %1$s (terminal)</string>
+    <string name="gate_minutes_used">%1$s minutes used</string>
+    <string name="gate_progress_percent">%1$s%%</string>
     <string name="gate_why">Why am I seeing this?</string>
-    <string name="gate_why_body">You have used this app for %1$d minutes in the current cycle. Clearing this gate unlocks the next five minutes. It does not reset your accumulated time and it does not reduce the delay on scrolling — the delay only ever grows within a cycle.</string>
-    <string name="gate_alt_title">Alternative challenge</string>
-    <string name="gate_alt_prompt">Type the phrase below exactly.</string>
+    <string name="gate_why_intro">You have used this app for %1$s minutes in the current cycle. Clearing this gate unlocks the next five minutes. It does not reset your accumulated time, and it does not reduce the delay on scrolling. Within a cycle the delay only ever grows.</string>
+    <string name="gate_why_terminal">You are past twenty minutes, so this gate will return every five minutes until the cycle resets.</string>
+    <string name="gate_why_next">The next gate is at %1$s minutes.</string>
+    <string name="gate_why_leaving">Pressing HOME or RECENTS will leave this screen. That pauses the gate rather than clearing it. The gate returns when you scroll again.</string>
 
-    <string name="settings_title">Molasses</string>
-    <string name="settings_permissions">Setup</string>
-    <string name="settings_targets">Target apps</string>
-    <string name="settings_policy">Cycle reset policy</string>
-    <string name="settings_test_stall">Test Phantom Stall</string>
-    <string name="settings_debug">Debug / ledger</string>
+    <string name="gate_alt_type_this">Type this phrase</string>
+    <string name="gate_alt_continue">Continue</string>
+
+    <string name="gate_reason_waiting">Stand up and start walking.</string>
+    <string name="gate_reason_need_more_steps">Keep walking. %1$s steps counted.</string>
+    <string name="gate_reason_too_slow">A little faster.</string>
+    <string name="gate_reason_too_fast">Slower. That is faster than walking.</string>
+    <string name="gate_reason_irregular">Keep an even pace.</string>
+    <string name="gate_reason_too_regular">That is too even to be walking.</string>
+    <string name="gate_reason_not_enough_motion">Not enough movement yet.</string>
+    <string name="gate_reason_too_violent">Too much. Walk, do not shake.</string>
+    <string name="gate_reason_not_vertical">That is side-to-side, not walking.</string>
+    <string name="gate_reason_stationary">The phone is not moving with you.</string>
+    <string name="gate_reason_sustaining">Good, keep going.</string>
+    <string name="gate_reason_passed">Done.</string>
+
+    <string name="gate_path_step">step sensor</string>
+    <string name="gate_path_fused">motion analysis (fused sensor)</string>
+    <string name="gate_path_imu">motion analysis</string>
+    <string name="gate_path_alt">alternative challenge</string>
+
+    <!-- Settings -->
+    <string name="settings_tagline">Your chosen apps are never blocked. The longer you use them in a six-hour cycle, the more the phone feels like it is failing.</string>
+    <string name="settings_section_setup">Setup</string>
+    <string name="settings_section_ladder">The ladder</string>
+    <string name="settings_section_targets">Target apps</string>
+    <string name="settings_section_policy">Cycle reset policy</string>
+    <string name="settings_section_gate">Movement gate</string>
+    <string name="settings_section_try">Try it</string>
+
+    <string name="settings_checklist_done">OK</string>
+    <string name="settings_checklist_step">%1$s.</string>
+
+    <string name="settings_perm_a11y_title">Accessibility service</string>
+    <string name="settings_perm_a11y_body">Required. Lets Molasses see which app is in front and when you scroll.</string>
+    <string name="settings_perm_usage_title">Usage access</string>
+    <string name="settings_perm_usage_body">Required. Rebuilds your time if Molasses is killed mid-session.</string>
+    <string name="settings_perm_activity_title">Physical activity</string>
+    <string name="settings_perm_activity_body">Preferred. Uses the step sensor for the movement gate. Without it the gate falls back to motion analysis.</string>
+    <string name="settings_perm_notifications_title">Notifications</string>
+    <string name="settings_perm_notifications_body">Optional. Tells you when a cycle resets or a gate is still owed.</string>
+    <string name="settings_perm_overlay_title">Draw over other apps</string>
+    <string name="settings_perm_overlay_body">Optional. Only needed for the stall preview below.</string>
+
+    <string name="settings_targets_hint">Scrolling in these apps accumulates time.</string>
+    <string name="settings_targets_empty">No launchable apps listed yet.</string>
+
+    <string name="settings_policy_abstinence_title">After 6 hours away (default)</string>
+    <string name="settings_policy_abstinence_body">The cycle resets only after six continuous hours with no time in any target app.</string>
+    <string name="settings_policy_fixed_title">Every 6 hours</string>
+    <string name="settings_policy_fixed_body">The cycle resets six hours after it started, whether or not you kept using the apps.</string>
+
+    <string name="settings_alt_challenge_title">Alternative challenge</string>
+    <string name="settings_alt_challenge_body">Replaces the physical gate with a 25-second untimed typing task. For anyone who cannot or should not be made to walk.</string>
+
+    <string name="settings_ladder_normal">0-5 min, normal</string>
+    <string name="settings_ladder_terminal">%1$s min+ (terminal), gate every 5 min, %2$s ms stall</string>
+    <string name="settings_ladder_tier">%1$s min, gate then %2$s ms stall</string>
+    <string name="settings_ladder_note">Clearing a gate unlocks the next five minutes. It never resets your accumulated time and never shortens the stall.</string>
+
+    <string name="settings_test_stall">Test Phantom Stall (1 second)</string>
+    <string name="settings_debug">Debug and ledger</string>
+
+    <!-- Debug screen -->
+    <string name="debug_title">Debug</string>
+    <string name="debug_back">&lt; Back</string>
+
+    <string name="debug_section_latency">Stall latency, four segments</string>
+    <string name="debug_latency_legend">A pipeline (not optimisable), B our code, C relayout, D ground truth</string>
+    <string name="debug_latency_dump_intro">Per-package percentile tables come from the live service:</string>
+    <string name="debug_latency_note">The rings live in the accessibility service process and are not persisted, so this screen cannot read them directly. D is the number that decides the product. A is the number that decides whether it is fixable.</string>
+
+    <string name="debug_section_stall_duration">Stall duration (requested vs actual, from the ledger)</string>
+    <string name="debug_stall_empty">No STALL_ARMED rows yet. Scroll past five minutes in a target app, clear the gate, then come back.</string>
+    <string name="debug_overshoot_note">Overshoot is actual armed duration minus requested. It bundles the coroutine wake-up, the updateViewLayout round trip, and any panic release. Negative values are early releases.</string>
+
+    <string name="debug_section_calibration">Sensing calibration</string>
+    <string name="debug_calibration_uncalibrated">%1$s (UNCALIBRATED)</string>
+    <string name="debug_calibration_status">%1$s (%2$s)</string>
+    <string name="debug_uncalibrated_note">Seeded from IIR. The fused sensor has an internal high-pass we cannot query, so these numbers have never been measured for this pipeline.</string>
+    <string name="debug_gate_outcomes">Gate outcomes by pipeline</string>
+    <string name="debug_none_recorded">(none recorded)</string>
+
+    <string name="debug_section_appstate">AppState per package</string>
+    <string name="debug_empty">(empty)</string>
+    <string name="debug_section_ledger">Ledger (newest first)</string>
+
+    <string name="debug_clear_ledger">Clear ledger</string>
+    <string name="debug_reset_all">Reset all state (ladder and ledger)</string>
+
+    <!--
+      Shown on screen but never reworded or localised: commands, field labels
+      and format templates.
+    -->
+    <string name="debug_dumpsys_cmd" translatable="false">adb shell dumpsys activity service dev.molasses/.monitor.MolassesAccessibilityService</string>
+    <string name="debug_date_format" translatable="false">MM-dd HH:mm:ss.SSS</string>
+
+    <string name="debug_stall_overshoot" translatable="false">overshoot ms min=%1$s p50=%2$s p90=%3$s p99=%4$s max=%5$s</string>
+    <string name="debug_stall_row" translatable="false">req=%1$sms act=%2$sms d=%3$sms (%4$s)</string>
+    <string name="debug_gate_outcome_row" translatable="false">%1$s  %2$s  %3$s</string>
+    <string name="debug_ledger_row" translatable="false">%1$s b%2$s %3$s %4$s %5$s</string>
+
+    <string name="debug_thresholds_band" translatable="false">rms&gt;%1$s  peaks&gt;=%2$s  %3$s-%4$s Hz</string>
+    <string name="debug_thresholds_cv" translatable="false">cv %1$s-%2$s (floor over %3$s s, &gt;=%4$s intervals)</string>
+    <string name="debug_thresholds_shape" translatable="false">vert&gt;=%1$s  peak&lt;%2$s  tilt&gt;%3$s deg</string>
+    <string name="debug_thresholds_window" translatable="false">window %1$s ms  refractory %2$s ms</string>
+
+    <string name="debug_field_samples" translatable="false">samples</string>
+    <string name="debug_field_accumulated" translatable="false">accumulated</string>
+    <string name="debug_field_tier_index" translatable="false">tierIndex</string>
+    <string name="debug_field_stall" translatable="false">stall</string>
+    <string name="debug_field_gates_cleared" translatable="false">gatesCleared</string>
+    <string name="debug_field_unlocked_until" translatable="false">unlockedUntil</string>
+    <string name="debug_value_seconds" translatable="false">%1$s s</string>
+    <string name="debug_value_ms" translatable="false">%1$s ms</string>
+    <string name="debug_tier_terminal" translatable="false">%1$s (terminal)</string>
 </resources>

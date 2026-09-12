@@ -1,5 +1,6 @@
 package dev.molasses.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,10 +22,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.molasses.R
 import dev.molasses.engine.TierPolicy
 import dev.molasses.sensing.Thresholds
 import java.text.SimpleDateFormat
@@ -51,7 +54,8 @@ fun DebugScreen(
     val ledger by vm.ledger.collectAsStateWithLifecycle()
     val latency by vm.latency.collectAsStateWithLifecycle()
 
-    val fmt = remember { SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US) }
+    val dateFormat = stringResource(R.string.debug_date_format)
+    val fmt = remember(dateFormat) { SimpleDateFormat(dateFormat, Locale.US) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -60,30 +64,26 @@ fun DebugScreen(
     ) {
         item {
             Row(Modifier.fillMaxWidth()) {
-                TextButton(onClick = onBack) { Text("< Back") }
+                TextButton(onClick = onBack) { Text(stringResource(R.string.debug_back)) }
             }
-            Text("Debug", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.debug_title), style = MaterialTheme.typography.headlineSmall)
         }
 
-        item { Header("Stall latency: four segments") }
+        item { Header(R.string.debug_section_latency) }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(
-                        "A pipeline (not optimisable) · B our code · C relayout · D ground truth",
+                        stringResource(R.string.debug_latency_legend),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Mono("Per-package percentile tables come from the live service:")
-                    Mono("adb shell dumpsys activity service \\")
-                    Mono("  dev.molasses/.monitor.MolassesAccessibilityService")
+                    Mono(stringResource(R.string.debug_latency_dump_intro))
+                    Mono(stringResource(R.string.debug_dumpsys_cmd))
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "The rings live in the accessibility service process and are not " +
-                            "persisted, so this screen cannot read them directly. D is the " +
-                            "number that decides the product; A is the number that decides " +
-                            "whether it is fixable.",
+                        stringResource(R.string.debug_latency_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary,
                     )
@@ -91,36 +91,39 @@ fun DebugScreen(
             }
         }
 
-        item { Header("Stall duration (requested vs actual, from the ledger)") }
+        item { Header(R.string.debug_section_stall_duration) }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     if (latency.isEmpty()) {
                         Text(
-                            "No STALL_ARMED rows yet. Scroll past five minutes in a target " +
-                                "app, clear the gate, then come back.",
+                            stringResource(R.string.debug_stall_empty),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     } else {
                         val overshoots = latency.map { it.overshootMs }.sorted()
                         fun pct(p: Double): Long =
                             overshoots[((overshoots.size - 1) * p).toInt().coerceIn(overshoots.indices)]
-                        Mono("samples      ${latency.size}")
-                        Mono("overshoot ms min=${overshoots.first()} p50=${pct(0.5)} " +
-                            "p90=${pct(0.9)} p99=${pct(0.99)} max=${overshoots.last()}")
+                        MonoRow(R.string.debug_field_samples, latency.size.toString())
+                        Mono(
+                            stringResource(
+                                R.string.debug_stall_overshoot,
+                                overshoots.first(), pct(0.5), pct(0.9), pct(0.99), overshoots.last(),
+                            ),
+                        )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "Overshoot is actual armed duration minus requested. It bundles " +
-                                "the coroutine wake-up, the updateViewLayout round trip, and " +
-                                "any panic release. Negative values are early releases.",
+                            stringResource(R.string.debug_overshoot_note),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.secondary,
                         )
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         latency.take(20).forEach {
                             Mono(
-                                "req=${it.requestedMs}ms act=${it.actualMs}ms " +
-                                    "d=${it.overshootMs}ms (${it.release})",
+                                stringResource(
+                                    R.string.debug_stall_row,
+                                    it.requestedMs, it.actualMs, it.overshootMs, it.release,
+                                ),
                             )
                         }
                     }
@@ -128,14 +131,20 @@ fun DebugScreen(
             }
         }
 
-        item { Header("Sensing calibration") }
+        item { Header(R.string.debug_section_calibration) }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     vm.thresholdSets.forEach { t ->
                         val warn = t.calibration == Thresholds.Calibration.UNCALIBRATED
                         Text(
-                            if (warn) "${t.id} (UNCALIBRATED)" else "${t.id} (${t.calibration})",
+                            if (warn) {
+                                stringResource(R.string.debug_calibration_uncalibrated, t.id)
+                            } else {
+                                stringResource(
+                                    R.string.debug_calibration_status, t.id, t.calibration,
+                                )
+                            },
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (warn) {
                                 MaterialTheme.colorScheme.primary
@@ -145,77 +154,141 @@ fun DebugScreen(
                         )
                         if (warn) {
                             Text(
-                                "Seeded from IIR. The fused sensor has an internal high-pass " +
-                                    "we cannot query, so these numbers have never been measured " +
-                                    "for this pipeline.",
+                                stringResource(R.string.debug_uncalibrated_note),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.secondary,
                             )
                         }
-                        Mono("rms>${t.minRms}  peaks>=${t.minPeaks}  ${t.minHz}-${t.maxHz}Hz")
-                        Mono("cv ${t.minCv}-${t.maxCv} (floor over ${t.regularityWindowMs / 1000}s, >=${t.minCvIntervals} intervals)")
-                        Mono("vert>=${t.minVerticalShare}  peak<${t.maxPeakMagnitude}  tilt>${t.minTiltDegrees}deg")
-                        Mono("window ${t.windowMs}ms  refractory ${t.refractoryMs}ms")
+                        Mono(
+                            stringResource(
+                                R.string.debug_thresholds_band,
+                                t.minRms, t.minPeaks, t.minHz, t.maxHz,
+                            ),
+                        )
+                        Mono(
+                            stringResource(
+                                R.string.debug_thresholds_cv,
+                                t.minCv, t.maxCv,
+                                t.regularityWindowMs / 1000, t.minCvIntervals,
+                            ),
+                        )
+                        Mono(
+                            stringResource(
+                                R.string.debug_thresholds_shape,
+                                t.minVerticalShare, t.maxPeakMagnitude, t.minTiltDegrees,
+                            ),
+                        )
+                        Mono(
+                            stringResource(
+                                R.string.debug_thresholds_window, t.windowMs, t.refractoryMs,
+                            ),
+                        )
                         Spacer(Modifier.height(8.dp))
                     }
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    Text("Gate outcomes by pipeline", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        stringResource(R.string.debug_gate_outcomes),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     if (gateOutcomes.isEmpty()) {
-                        Mono("(none recorded)")
+                        Mono(stringResource(R.string.debug_none_recorded))
                     } else {
-                        gateOutcomes.forEach { Mono("${it.path}  ${it.type}  ${it.count}") }
+                        gateOutcomes.forEach {
+                            Mono(
+                                stringResource(
+                                    R.string.debug_gate_outcome_row, it.path, it.type, it.count,
+                                ),
+                            )
+                        }
                     }
                 }
             }
         }
 
-        item { Header("AppState per package") }
+        item { Header(R.string.debug_section_appstate) }
         if (ladder.isEmpty()) {
-            item { Mono("(empty)") }
+            item { Mono(stringResource(R.string.debug_empty)) }
         }
         items(ladder, key = { it.pkg }) { row ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(row.pkg, style = MaterialTheme.typography.bodyLarge)
-                    Mono("accumulated   ${row.accumulatedMs / 1000}s")
-                    Mono("tierIndex     ${row.tierIndex}${if (TierPolicy.isTerminal(row.tierIndex)) " (terminal)" else ""}")
-                    Mono("stall         ${TierPolicy.stallMsFor(row.tierIndex)}ms")
-                    Mono("gatesCleared  ${row.gatesCleared}")
-                    Mono("unlockedUntil ${row.tierUnlockedUntilMs / 1000}s")
+                    MonoRow(
+                        R.string.debug_field_accumulated,
+                        stringResource(R.string.debug_value_seconds, row.accumulatedMs / 1000),
+                    )
+                    MonoRow(
+                        R.string.debug_field_tier_index,
+                        if (TierPolicy.isTerminal(row.tierIndex)) {
+                            stringResource(R.string.debug_tier_terminal, row.tierIndex)
+                        } else {
+                            row.tierIndex.toString()
+                        },
+                    )
+                    MonoRow(
+                        R.string.debug_field_stall,
+                        stringResource(
+                            R.string.debug_value_ms, TierPolicy.stallMsFor(row.tierIndex),
+                        ),
+                    )
+                    MonoRow(R.string.debug_field_gates_cleared, row.gatesCleared.toString())
+                    MonoRow(
+                        R.string.debug_field_unlocked_until,
+                        stringResource(
+                            R.string.debug_value_seconds, row.tierUnlockedUntilMs / 1000,
+                        ),
+                    )
                 }
             }
         }
 
-        item { Header("Ledger (newest first)") }
+        item { Header(R.string.debug_section_ledger) }
         items(ledger, key = { it.id }) { row ->
             Mono(
-                "${fmt.format(Date(row.wallMs))} b${row.bootId} ${row.type} " +
-                    "${row.pkg.substringAfterLast('.')} ${row.meta ?: ""}",
+                stringResource(
+                    R.string.debug_ledger_row,
+                    fmt.format(Date(row.wallMs)), row.bootId, row.type,
+                    row.pkg.substringAfterLast('.'), row.meta ?: "",
+                ),
             )
         }
 
         item {
             Spacer(Modifier.height(16.dp))
             OutlinedButton(onClick = { vm.clearLedger() }, modifier = Modifier.fillMaxWidth()) {
-                Text("Clear ledger")
+                Text(stringResource(R.string.debug_clear_ledger))
             }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = { vm.resetAllState() }, modifier = Modifier.fillMaxWidth()) {
-                Text("Reset all state (ladder + ledger)")
+                Text(stringResource(R.string.debug_reset_all))
             }
         }
     }
 }
 
 @Composable
-private fun Header(text: String) {
+private fun Header(@StringRes text: Int) {
     Spacer(Modifier.height(16.dp))
     Text(
-        text.uppercase(),
+        stringResource(text).uppercase(),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.primary,
     )
 }
+
+/**
+ * A label and a value in a fixed-width dump.
+ *
+ * The padding is applied here rather than baked into the string resource
+ * because aapt collapses runs of whitespace inside a resource unless the whole
+ * value is wrapped in quotes. Alignment is presentation anyway.
+ */
+@Composable
+private fun MonoRow(@StringRes label: Int, value: String) {
+    Mono(stringResource(label).padEnd(LABEL_WIDTH) + value)
+}
+
+private const val LABEL_WIDTH = 14
 
 @Composable
 private fun Mono(text: String) {

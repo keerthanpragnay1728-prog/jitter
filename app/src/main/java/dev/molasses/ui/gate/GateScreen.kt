@@ -1,5 +1,6 @@
 package dev.molasses.ui.gate
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -26,10 +27,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.molasses.R
 import dev.molasses.core.model.GateProgress
 import dev.molasses.engine.TierPolicy
 import kotlinx.coroutines.flow.StateFlow
@@ -37,10 +40,12 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Full-bleed movement gate. No dismiss button, by design.
  *
- * The live [GateProgress] ring and the failing-check string are not polish:
- * an unlock condition the user cannot see is indistinguishable from a broken
+ * The live [GateProgress] ring and the failing-check string are not polish.
+ * An unlock condition the user cannot see is indistinguishable from a broken
  * app, and "walk until something happens" with no feedback is what makes
  * people uninstall rather than comply.
+ *
+ * All copy comes from `res/values/strings.xml`. See the header of that file.
  */
 @Composable
 fun GateScreen(
@@ -76,13 +81,17 @@ fun GateScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = if (TierPolicy.isTerminal(tier)) "Tier $tier (terminal)" else "Tier $tier",
+                text = stringResource(
+                    if (TierPolicy.isTerminal(tier)) R.string.gate_tier_terminal
+                    else R.string.gate_tier,
+                    tier,
+                ),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.secondary,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "$minutes minutes used",
+                text = stringResource(R.string.gate_minutes_used, minutes),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center,
@@ -104,14 +113,20 @@ fun GateScreen(
                         trackColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f),
                     )
                     Text(
-                        text = "${(animated * 100).toInt()}%",
+                        text = stringResource(
+                            R.string.gate_progress_percent,
+                            (animated * 100).toInt(),
+                        ),
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                 }
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    text = reasonText(progress),
+                    // The events count is only consumed by the NEED_MORE_STEPS
+                    // string. String.format ignores surplus arguments, so
+                    // passing it unconditionally is safe.
+                    text = stringResource(reasonRes(progress.reason), progress.events),
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (progress.reason.isDisqualifying) {
                         MaterialTheme.colorScheme.primary
@@ -120,17 +135,19 @@ fun GateScreen(
                     },
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = pathText(progress),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
+                pathRes(progress.path)?.let { res ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(res),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
             }
 
             Spacer(Modifier.height(40.dp))
             TextButton(onClick = { whyExpanded = !whyExpanded }) {
-                Text("Why am I seeing this?")
+                Text(stringResource(R.string.gate_why))
             }
             AnimatedVisibility(visible = whyExpanded) {
                 Text(
@@ -150,7 +167,7 @@ private fun AlternativeChallenge(phrase: String, onSubmit: (String) -> Unit) {
     var typed by remember { mutableStateOf("") }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            text = "Type this phrase",
+            text = stringResource(R.string.gate_alt_type_this),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
@@ -172,45 +189,55 @@ private fun AlternativeChallenge(phrase: String, onSubmit: (String) -> Unit) {
         )
         Spacer(Modifier.height(16.dp))
         Button(onClick = { onSubmit(typed) }, enabled = typed.isNotBlank()) {
-            Text("Continue")
+            Text(stringResource(R.string.gate_alt_continue))
         }
     }
 }
 
-private fun reasonText(p: GateProgress): String = when (p.reason) {
-    GateProgress.Reason.WAITING_TO_START -> "Stand up and start walking."
-    GateProgress.Reason.NEED_MORE_STEPS -> "Keep walking. ${p.events} steps counted."
-    GateProgress.Reason.CADENCE_TOO_SLOW -> "A little faster."
-    GateProgress.Reason.CADENCE_TOO_FAST -> "Slower. That is faster than walking."
-    GateProgress.Reason.CADENCE_IRREGULAR -> "Keep an even pace."
-    GateProgress.Reason.TOO_REGULAR -> "That is too even to be walking."
-    GateProgress.Reason.NOT_ENOUGH_MOTION -> "Not enough movement yet."
-    GateProgress.Reason.TOO_VIOLENT -> "Too much. Walk, do not shake."
-    GateProgress.Reason.MOTION_NOT_VERTICAL -> "That is side-to-side, not walking."
-    GateProgress.Reason.PHONE_STATIONARY -> "The phone is not moving with you."
-    GateProgress.Reason.SUSTAINING -> "Good, keep going."
-    GateProgress.Reason.PASSED -> "Done."
+/**
+ * Which check is currently blocking, as a resource id rather than a string, so
+ * the mapping stays a pure function and the lookup happens at the call site.
+ */
+@StringRes
+private fun reasonRes(reason: GateProgress.Reason): Int = when (reason) {
+    GateProgress.Reason.WAITING_TO_START -> R.string.gate_reason_waiting
+    GateProgress.Reason.NEED_MORE_STEPS -> R.string.gate_reason_need_more_steps
+    GateProgress.Reason.CADENCE_TOO_SLOW -> R.string.gate_reason_too_slow
+    GateProgress.Reason.CADENCE_TOO_FAST -> R.string.gate_reason_too_fast
+    GateProgress.Reason.CADENCE_IRREGULAR -> R.string.gate_reason_irregular
+    GateProgress.Reason.TOO_REGULAR -> R.string.gate_reason_too_regular
+    GateProgress.Reason.NOT_ENOUGH_MOTION -> R.string.gate_reason_not_enough_motion
+    GateProgress.Reason.TOO_VIOLENT -> R.string.gate_reason_too_violent
+    GateProgress.Reason.MOTION_NOT_VERTICAL -> R.string.gate_reason_not_vertical
+    GateProgress.Reason.PHONE_STATIONARY -> R.string.gate_reason_stationary
+    GateProgress.Reason.SUSTAINING -> R.string.gate_reason_sustaining
+    GateProgress.Reason.PASSED -> R.string.gate_reason_passed
 }
 
-private fun pathText(p: GateProgress): String = when (p.path) {
-    GateProgress.Path.STEP_DETECTOR -> "step sensor"
-    GateProgress.Path.IMU_FUSED -> "motion analysis (fused sensor)"
-    GateProgress.Path.IMU_IIR -> "motion analysis"
-    GateProgress.Path.ALTERNATIVE_CHALLENGE -> "alternative challenge"
-    GateProgress.Path.NONE -> ""
+/** Null for [GateProgress.Path.NONE], which renders nothing at all. */
+@StringRes
+private fun pathRes(path: GateProgress.Path): Int? = when (path) {
+    GateProgress.Path.STEP_DETECTOR -> R.string.gate_path_step
+    GateProgress.Path.IMU_FUSED -> R.string.gate_path_fused
+    GateProgress.Path.IMU_IIR -> R.string.gate_path_imu
+    GateProgress.Path.ALTERNATIVE_CHALLENGE -> R.string.gate_path_alt
+    GateProgress.Path.NONE -> null
 }
 
+@Composable
 private fun whyBody(minutes: Int, tier: Int): String = buildString {
-    append("You have used this app for $minutes minutes in the current cycle. ")
-    append("Clearing this gate unlocks the next five minutes. ")
-    append("It does not reset your accumulated time, and it does not reduce the ")
-    append("delay on scrolling. Within a cycle the delay only ever grows. ")
+    append(stringResource(R.string.gate_why_intro, minutes))
+    append(" ")
     if (TierPolicy.isTerminal(tier)) {
-        append("You are past twenty minutes, so this gate will return every five minutes ")
-        append("until the cycle resets.")
+        append(stringResource(R.string.gate_why_terminal))
     } else {
-        append("The next gate is at ${(TierPolicy.entryAtMs(tier + 1) / 60_000)} minutes.")
+        append(
+            stringResource(
+                R.string.gate_why_next,
+                TierPolicy.entryAtMs(tier + 1) / 60_000,
+            ),
+        )
     }
-    append("\n\nPressing HOME or RECENTS will leave this screen. That pauses the gate ")
-    append("rather than clearing it. The gate returns when you scroll again.")
+    append("\n\n")
+    append(stringResource(R.string.gate_why_leaving))
 }
