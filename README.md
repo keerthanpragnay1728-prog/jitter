@@ -7,14 +7,14 @@ inside a six-hour cycle, the more the phone *feels* like it is failing.
 
 | Cumulative foreground time | Behaviour |
 |---|---|
-| 0–5 min | Normal |
+| 0-5 min | Normal |
 | **at 5 min** | Full-screen movement gate (physical movement required) |
-| 5–10 min | Phantom Stall: 1000 ms touch blackout on every scroll |
+| 5-10 min | Phantom Stall: 1000 ms touch blackout on every scroll |
 | **at 10 min** | Movement gate |
-| 10–15 min | Phantom Stall: 3000 ms |
+| 10-15 min | Phantom Stall: 3000 ms |
 | **at 15 min** | Movement gate |
-| 15–20 min | Phantom Stall: 5000 ms |
-| **at 20 min** | Terminal tier — 5000 ms stall, gate re-arms every 5 min indefinitely |
+| 15-20 min | Phantom Stall: 5000 ms |
+| **at 20 min** | Terminal tier. 5000 ms stall, gate re-arms every 5 min indefinitely |
 
 **The invariant:** clearing a movement gate unlocks the *next* tier of usage.
 It never resets accumulated time, never lowers the stall duration, and never
@@ -22,7 +22,7 @@ rewinds `tierIndex`. Gates are a toll, not a refund.
 
 ---
 
-## Build status — read this first
+## Build status (read this first)
 
 **`./gradlew assembleDebug` has never been run. It cannot be run in the
 environment this was written in.** The brief asked me to stop and name a
@@ -57,7 +57,7 @@ without the Android toolchain and marked the rest honestly.
 | | |
 |---|---|
 | **137 JVM tests, 0 failures** | `core/**`, `engine`, and the pure sensing maths, compiled and executed for real |
-| **Purity is enforced, not asserted** | `PurityTest` walks the source tree and fails if the pure set grows an `android.*`/`androidx.*` import — and cross-checks its own list against the harness's, so the two cannot drift |
+| **Purity is enforced, not asserted** | `PurityTest` walks the source tree and fails if the pure set grows an `android.*`/`androidx.*` import, and cross-checks its own list against the harness's, so the two cannot drift |
 | **Six real bugs found and fixed** | see "Bugs the harness caught" |
 
 Reproduce:
@@ -66,8 +66,8 @@ Reproduce:
 cd tools/pure-verify && ./gradlew test --rerun-tasks
 ```
 
-`tools/pure-verify` is a **standalone Gradle build**, not an included module —
-the root `settings.gradle.kts` includes only `:app`, as the brief requires. So
+`tools/pure-verify` is a **standalone Gradle build**, not an included module.
+The root `settings.gradle.kts` includes only `:app`, as the brief requires. So
 `./gradlew :tools:pure-verify` will not resolve; it has its own wrapper.
 
 ```
@@ -100,7 +100,7 @@ hand and by cross-reference sweeps, but **it has not been through a compiler.**
 Expect a first-compile pass to surface import and signature fixes. Treat every
 version number in `gradle/libs.versions.toml` as unresolved.
 
-### The measured latency distribution — still not available
+### The measured latency distribution (still not available)
 
 I cannot report latency numbers and will not invent them. What changed in this
 patch is that the probe now measures the right thing (§6), decomposed into four
@@ -117,12 +117,12 @@ and `MotionEvent.getEventTime()` are directly subtractable:
 The previous probe stopped at B and would have reported an optimistic number:
 `updateViewLayout` returning means only that the change is *queued* to
 WindowManagerService. The armed flag is not live in the input dispatcher until
-WMS relayouts and InputDispatcher refreshes its window handles — one or more
+WMS relayouts and InputDispatcher refreshes its window handles, one or more
 frames later. C exists to measure exactly that gap.
 
 Ring buffer of 100 per package per segment, p50/p95 rather than a mean
 (latency distributions are right-skewed and a mean hides the tail that breaks
-the illusion). Negative D samples are discarded and counted — the sink can
+the illusion). Negative D samples are discarded and counted. The sink can
 absorb a touch that was already in flight when the stall armed, whose
 `eventTime` precedes the scroll.
 
@@ -136,7 +136,7 @@ adb shell dumpsys activity service \
 **The central feasibility question remains open until someone runs that on
 hardware.**
 
-## §0.1 — the two ambiguities, resolved
+## The two ambiguities, resolved (§0.1)
 
 ### 1. What happens after 20 minutes?
 
@@ -167,7 +167,7 @@ not the default for a concrete reason: under a fixed window a user can wait out
 the clock while still scrolling, which makes the entire friction ladder
 decorative.
 
-### 3. A third ambiguity I hit — `tierIndex` monotonicity vs. cycle reset
+### 3. A third ambiguity I hit (`tierIndex` monotonicity vs. cycle reset)
 
 Not in the brief, but unavoidable: "`tierIndex` … monotonic, never decremented"
 and "the cycle resets" are in direct tension, because a reset must return the
@@ -175,7 +175,7 @@ user to normal behaviour.
 
 **Resolution:** the invariant is scoped to a cycle. A rollover *replaces* each
 `AppState` with a fresh one rather than assigning a lower value to the existing
-counter — which would throw, by design. This keeps "never decremented" true for
+counter, which would throw, by design. This keeps "never decremented" true for
 the lifetime of a counter, so the guard stays meaningful where it matters.
 `FrictionEngineTest.a rollover does not throw despite the monotonic tier
 counter` is the regression guard.
@@ -200,7 +200,7 @@ all rather than shipping the lot unexecuted.
    time untouched" was passing vacuously by comparing 0 to 0. `snapshot()` now
    folds the live session and the writer stamps `last_seen_*` at the same
    instant, so the reconciler replays from exactly the point the snapshot
-   accounts up to — credited once, never twice.
+   accounts up to, credited once and never twice.
 
 Two more from this patch, both caught by the calibration sweep rather than by
 a test written to look for them:
@@ -221,7 +221,7 @@ because both were code that pretended to work:
 
 5. **The exit watchdog could not work as specified.** It was written to read
    the foreground package from `AccessibilityWindowInfo`, which carries no
-   package name — the only route is `window.root.packageName`, and that is a
+   package name. The only route is `window.root.packageName`, and that is a
    content read, which `canRetrieveWindowContent="false"` gives up. It now uses
    `UsageStatsManager` (`monitor/ForegroundProbe.kt`), needing only the
    `PACKAGE_USAGE_STATS` grant the app already requires. It returns `null` for
@@ -250,12 +250,12 @@ pipeline. Reproduce with `CalibrationSweep`.
 
 | test | old threshold | old measured (walk A=12) | new measured | proposed | rationale |
 |---|---|---|---|---|---|
-| dynamic RMS floor | 1.2 m/s² | 2.52 | 3.29 | **1.5** | Preserves physical sensitivity exactly. See below — **not** the suggested 2.2. |
+| dynamic RMS floor | 1.2 m/s² | 2.52 | 3.29 | **1.5** | Preserves physical sensitivity exactly. See below. **Not** the suggested 2.2. |
 | peak count | ≥ 4 in 3.0 s | 5 | 6 | **≥ 4 in 3.5 s** | Window widened per §2; count unchanged. |
-| cadence band | 1.2–2.6 Hz | 1.72 | 1.74 | **1.15–2.6 Hz** | Low edge needs a guard band; see §2 finding below. |
-| CV | < 0.35 | 0.024 | 0.029 | **0.02–0.35** | Two-sided per §3, floor measured over a 12 s baseline. |
+| cadence band | 1.2-2.6 Hz | 1.72 | 1.74 | **1.15-2.6 Hz** | Low edge needs a guard band; see §2 finding below. |
+| CV | < 0.35 | 0.024 | 0.029 | **0.02-0.35** | Two-sided per §3, floor measured over a 12 s baseline. |
 | vertical energy share | ≥ 0.50 | 0.98 | 0.97 | **≥ 0.50 (unchanged)** | Ratio barely moved: the filter attenuated the projection and the magnitude near-identically. |
-| peak \|a\| ceiling | 25 m/s² | 7.82 | 10.55 | **25 (unchanged)** | Violent shake still reads 28.2 vs 26.0 — clears the ceiling on both. |
+| peak \|a\| ceiling | 25 m/s² | 7.82 | 10.55 | **25 (unchanged)** | Violent shake still reads 28.2 vs 26.0, clears the ceiling on both. |
 | gravity-angle | > 25° for 1 s | 40.0 | 40.0 | **> 25° (unchanged)** | Steady-state angle is unaffected; only the *time to reach it* moved. See below. |
 
 ### Per-signal, old vs new
@@ -280,10 +280,10 @@ pipeline. Reproduce with `CalibrationSweep`.
 | | **new** | **3.38** | **11** | **3.03** | **0.236** | **0.94** | **8.21** | **45.1** | **CADENCE_TOO_FAST** |
 | violent shake | old | 12.56 | 10 | 3.38 | 0.135 | 0.97 | 26.04 | 60.2 | TOO_VIOLENT |
 | | **new** | **14.37** | **11** | **3.33** | **0.141** | **0.97** | **28.23** | **60.5** | **TOO_VIOLENT** |
-| thumb tremor | old | 0.11 | 0 | — | — | 0.80 | 0.25 | 2.0 | NOT_ENOUGH_MOTION |
-| | **new** | **0.13** | **0** | **—** | **—** | **0.80** | **0.31** | **2.0** | **NOT_ENOUGH_MOTION** |
-| static | old | 0.00 | 0 | — | — | 0.00 | 0.00 | 0.0 | NOT_ENOUGH_MOTION |
-| | **new** | **0.00** | **0** | **—** | **—** | **0.00** | **0.00** | **0.0** | **NOT_ENOUGH_MOTION** |
+| thumb tremor | old | 0.11 | 0 | -- | -- | 0.80 | 0.25 | 2.0 | NOT_ENOUGH_MOTION |
+| | **new** | **0.13** | **0** | **--** | **--** | **0.80** | **0.31** | **2.0** | **NOT_ENOUGH_MOTION** |
+| static | old | 0.00 | 0 | -- | -- | 0.00 | 0.00 | 0.0 | NOT_ENOUGH_MOTION |
+| | **new** | **0.00** | **0** | **--** | **--** | **0.00** | **0.00** | **0.0** | **NOT_ENOUGH_MOTION** |
 
 Note the walk signals now carry realistic jitter. Before the CV floor existed, a
 zero-jitter synthetic was a fine model of a walker; it is now a cheat class in
@@ -301,7 +301,7 @@ its own right, and the old model would have "proved" the floor was broken.
 88%, not ~99%, because a burst train has a DC component the low-pass legitimately
 absorbs. 99% is the figure for a pure sinusoid at 1.8 Hz.
 
-### The RMS floor is 1.5, not 2.2 — the sweep does not support 2.2
+### The RMS floor is 1.5, not 2.2 (the sweep does not support 2.2)
 
 | input peakA | new rms | old floor 1.2 | **chosen 1.5** | suggested 2.2 | 2.6 |
 |---|---|---|---|---|---|
@@ -316,7 +316,7 @@ Two facts decide it.
 
 **In physical terms, 2.2 is a large tightening nobody asked for.** Old pipeline:
 RMS = 0.21 × peak, floor 1.2, so a walker needed a 5.7 m/s² heel strike. New
-pipeline: RMS = 0.274 × peak. A floor of 1.5 needs 5.5 m/s² — the same walker.
+pipeline: RMS = 0.274 × peak. A floor of 1.5 needs 5.5 m/s², the same walker.
 A floor of 2.2 needs 8.0 m/s², **41% more physical motion**, silently making
 the gate harder to clear.
 
@@ -346,22 +346,22 @@ still passes. Worth knowing if the gate ever feels sluggish to start.
 
 ## Findings that changed the design
 
-### §2 — the band floor fails on the cadence *estimate*, not the peak count
+### §2. The band floor fails on the cadence *estimate*, not the peak count
 
 The patch predicted the peak count would bind at 1.2 Hz. With the window at
 3.5 s it does not: the count lands on 4 or 5 across phase, and 4 satisfies the
 gate. The actual binding constraint is the cadence estimate's sampling
 variance.
 
-Measured cadence over a 3.5 s window is a 3–5 interval sample statistic. A
+Measured cadence over a 3.5 s window is a 3-5 interval sample statistic. A
 walker whose true cadence is exactly 1.20 Hz measures **1.190 Hz** as often as
-1.21. A `>` threshold placed at 1.2 therefore rejects about half their windows —
+1.21. A `>` threshold placed at 1.2 therefore rejects about half their windows,
 and since the gate needs 8 *continuous* seconds, a 1.2 Hz walker would never
 clear it at all.
 
 So `minHz` carries a guard band at **1.15**. The *stated* band is still
-1.2–2.6 Hz; the threshold sits one measurement-spread below it. `maxHz` gets no
-guard band, deliberately: the two edges have opposite failure costs — the low
+1.2-2.6 Hz; the threshold sits one measurement-spread below it. `maxHz` gets no
+guard band, deliberately: the two edges have opposite failure costs. The low
 edge exists to admit real users and should err toward admitting, the high edge
 exists to exclude shaking and should err toward excluding.
 
@@ -374,7 +374,7 @@ With that, the §2 sweep passes 8/8 at every phase from 1.20 Hz up:
 | 1.30 | ok(4) | ok(5) | ok(5) | ok(5) | ok(5) | ok(5) | ok(4) | ok(4) |
 | 1.35 | ok(5) | ok(5) | ok(5) | ok(4) | ok(4) | ok(4) | ok(5) | ok(5) |
 
-### §3 — a per-window CV floor is incompatible with a continuous sustain
+### §3. A per-window CV floor is incompatible with a continuous sustain
 
 `MIN_PEAKS` was **not** raised to 5, and this is the one instruction I did not
 follow literally. Three measurements drove that.
@@ -390,7 +390,7 @@ walker with a true CV of 0.06:
 | 8 | 9 | 0.0580 | 0.0335 | 0.0853 | **0.2%** |
 
 **Second**, `MIN_PEAKS = 5` breaks §2. Five peaks need four intervals, and at
-1.2 Hz that is 4 × 833 = 3333 ms inside a 3500 ms window — 167 ms of slack.
+1.2 Hz that is 4 × 833 = 3333 ms inside a 3500 ms window, 167 ms of slack.
 Measured: 17 of 32 band-floor combinations fail. The §2 and §3 remedies are in
 direct conflict at this window width. (`MIN_PEAKS = 5` with a 4.5 s window does
 pass 0/32 failures, if you would rather go that way.)
@@ -399,7 +399,7 @@ pass 0/32 failures, if you would rather go that way.)
 requires *every* window to pass for 8 continuous seconds. At 100 Hz that is
 ~800 overlapping windows. Measured end-to-end, before this was fixed: a
 jittered 1.8 Hz walk at 100 Hz had its streak broken at t=3.15 s and again at
-t=11.6 s and never passed — while **the identical signal at 50 Hz passed**, the
+t=11.6 s and never passed, while **the identical signal at 50 Hz passed**, the
 only difference being that coarser timestamp quantisation added enough noise to
 keep the estimate off the floor. A gate that works at 50 Hz and not at 100 Hz
 is not a threshold problem, it is a structural one.
@@ -407,7 +407,7 @@ is not a threshold problem, it is a structural one.
 The fix keeps the floor at 0.02 and changes only *what it is measured over*:
 the CV **floor** uses a 12 s baseline (≥8 intervals required, else it
 abstains), while the CV **ceiling** keeps the 3.5 s analysis window. That
-asymmetry is principled — the ceiling asks "is this erratic right now" and must
+asymmetry is principled. The ceiling asks "is this erratic right now" and must
 be responsive; the floor asks "has this been machine-regular throughout" and
 wants a long, stable baseline. At 1.8 Hz the floor engages ~4.7 s into a gate,
 well before an 8 s sustain could complete, so a metronome is still caught.
@@ -424,7 +424,7 @@ After: all four delivery rates pass at ~10 s.
 **A correction to the patch's premise, while here.** Bessel's correction makes
 the *variance* unbiased, not the standard deviation: `E[s] = σ·c4(n)`, and
 `c4(3) = 0.886`. So a CV from 3 intervals still reads ~11% low *with* the
-correction — measured 0.0531 against a true 0.06, matching σ·c4 to three
+correction, measured 0.0531 against a true 0.06, matching σ·c4 to three
 decimal places. Bessel removes the 18% population bias and leaves an 11% one.
 `CvEstimatorTest` asserts against `c4(n)` exactly rather than a loose
 tolerance.
@@ -432,7 +432,7 @@ tolerance.
 ### A real bypass on the fused path, found by the sweep
 
 The 250 ms refractory is a hard decimator. Anything faster than 1/refractory
-(4 Hz) has peaks dropped, and what survives can land anywhere — including the
+(4 Hz) has peaks dropped, and what survives can land anywhere, including the
 middle of the pass band. Measured on the fused pipeline:
 
 | shake Hz | jitter | fused measured hz | fused cv | verdict *before* the guard |
@@ -442,7 +442,7 @@ middle of the pass band. Measured on the fused pipeline:
 
 That is a working bypass: shake at 4.5 Hz and the gate opens. The IIR path
 resisted it only because its filter perturbs peak timing enough to break the
-alias — luck, not design, and §1.1 asks us to *prefer* the fused path.
+alias. Luck, not design, and §1.1 asks us to *prefer* the fused path.
 
 The guard counts refractory-discarded peaks that are **full amplitude**
 relative to the accepted peak before them. The amplitude condition is what
@@ -460,7 +460,7 @@ cleanly:
 | fast shake | 13/11 | 1.18 | 7/7 | 1.00 |
 | violent shake | 18/11 | 1.64 | 8/9 | 0.89 |
 
-Threshold 0.30 sits in a wide gap. All shake rates 3–6 Hz, jittered or not, now
+Threshold 0.30 sits in a wide gap. All shake rates 3-6 Hz, jittered or not, now
 read `CADENCE_TOO_FAST` on both pipelines.
 
 ## Sensor pipeline hierarchy (§1)
@@ -472,7 +472,7 @@ read `CADENCE_TOO_FAST` on both pipelines.
 ```
 
 Level 2 requires **both** fused sensors. `TYPE_LINEAR_ACCELERATION` alone is not
-enough — the vertical-energy-share and gravity-angle tests both need a gravity
+enough. The vertical-energy-share and gravity-angle tests both need a gravity
 vector, and re-deriving one would reintroduce the very filter this level exists
 to avoid. A device with linear acceleration but no gravity sensor drops to
 level 3 rather than running a half-fused pipeline.
@@ -482,7 +482,7 @@ sets behind one interface. `Thresholds.FUSED` is seeded from `Thresholds.IIR`
 and marked `UNCALIBRATED`, surfaced as such in the debug screen, because the
 fused sensor's internal high-pass has a corner we neither control nor can
 query. The active path is published on `GateProgress` and stamped on **every**
-ledger row — when a gate pass looks wrong in hindsight, the first question is
+ledger row. When a gate pass looks wrong in hindsight, the first question is
 which domain produced it, and that has to be answerable from the ledger alone.
 
 ### α is derived from measured dt, never hardcoded
@@ -495,7 +495,7 @@ that drifts with the device:
 | 25 Hz | 1.293 s | 0.12 Hz |
 | 50 Hz | 0.647 s | 0.25 Hz |
 | 100 Hz | 0.323 s | 0.49 Hz |
-| 200 Hz | 0.162 s | **0.98 Hz** — back inside the gait band |
+| 200 Hz | 0.162 s | **0.98 Hz** (back inside the gait band) |
 
 So τ is fixed at 650 ms and α is computed per sample from the sensor's own
 clock, `α = τ / (τ + dt)`, with dt clamped to [2 ms, 100 ms] to reject batched
@@ -510,8 +510,8 @@ replay and doze gaps. Measured:
 
 The step-response column is measured end-to-end (time to reach 63.2% of a step),
 so an error in the update rule would be caught, not just an error in the α
-formula. The first sample seeds `gravity = raw` rather than starting from zero —
-otherwise the filter spends ~2 s converging and the gate's first two seconds
+formula. The first sample seeds `gravity = raw` rather than starting from zero.
+Otherwise the filter spends ~2 s converging and the gate's first two seconds
 are measured against a gravity vector that is mostly wrong.
 
 
@@ -540,8 +540,8 @@ one) and `monitor/ForegroundProbe.kt` (see bug 3).
 (`SystemClock.elapsedRealtime()`). The brief does not say which clock; this is
 the only safe reading, because durations measured on the wall clock are
 user-settable and the whole point of the ladder is that accumulated time cannot
-be argued with. Wall-clock concerns — the cycle anchor and the abstinence
-window — go through `WallClock` and are clamped by `ClockTamperClamp` before
+be argued with. Wall-clock concerns (the cycle anchor and the abstinence
+window) go through `WallClock` and are clamped by `ClockTamperClamp` before
 they reach the engine.
 
 ### The clock-tamper clamp
@@ -558,7 +558,7 @@ boot count changed                    ->  elapsedRealtime reset; trust wall
                                           only, floored at zero
 ```
 
-A rollover is suppressed entirely while tampering is detected — not permanently,
+A rollover is suppressed entirely while tampering is detected, not permanently,
 since the next connect with agreeing clocks re-evaluates against the real
 `last_target_use_wall_ms`.
 
@@ -571,7 +571,7 @@ capability. All long-lived work lives in the service's `SupervisorJob` scope.
 ### Why `TYPE_ACCESSIBILITY_OVERLAY`
 
 A `TYPE_APPLICATION_OVERLAY` window is untrusted, so Android 12's
-untrusted-touch-blocking rules apply — and a window that is near-invisible and
+untrusted-touch-blocking rules apply, and a window that is near-invisible and
 touch-consuming is precisely what that feature exists to stop. The platform
 would pass touches through regardless of our flags.
 `TYPE_ACCESSIBILITY_OVERLAY` borrows the service's own window token, is
@@ -579,13 +579,13 @@ trusted, and needs no `SYSTEM_ALERT_WINDOW` grant.
 
 `SYSTEM_ALERT_WINDOW` stays in the manifest for exactly one thing: the "Test
 Phantom Stall" button in settings, which has no service token to borrow. That
-preview is therefore *not* a guarantee that touches were eaten — only the real
+preview is therefore *not* a guarantee that touches were eaten. Only the real
 path is.
 
 ### The one hard performance rule
 
 `onAccessibilityEvent` runs on the service's main thread and events are
-delivered serially, so every millisecond there delays the next event — and with
+delivered serially, so every millisecond there delays the next event, and with
 `notificationTimeout="0"` the event rate during a scroll burst is high. That
 callback does arithmetic on in-memory state and nothing else. Persistence goes
 through a conflating channel to a coroutine; the Room ledger batches on its own
@@ -617,7 +617,7 @@ product.
   ms), because the engine must not see a live event before reconciliation
   finishes.
 - `ACTIVITY_RESUMED`/`ACTIVITY_PAUSED` replay depends on `PACKAGE_USAGE_STATS`.
-  Without it, a mid-session process death loses that session's tail — bounded
+  Without it, a mid-session process death loses that session's tail, bounded
   to 15 s by the checkpoint cadence.
 
 **Permissions beyond the brief's list**
@@ -629,7 +629,7 @@ product.
   API 30+. It is a Play review question; the picker is the "user selects an app"
   case the policy allows.
 
-**Thresholds that differ from the brief, and why** — full reasoning above
+**Thresholds that differ from the brief, and why** (full reasoning above)
 - `minRms` is **1.5**, not the suggested 2.2. The sweep does not support 2.2.
 - `minHz` is **1.15**, guarding a stated 1.2 Hz band floor.
 - `MIN_PEAKS` stays at **4**; the CV floor moved to a 12 s baseline instead.
@@ -668,12 +668,12 @@ owes you this.
 
 **It watches two things, only in the apps you pick:** which app is in the
 foreground, and when you scroll. That is all. It does not and cannot read your
-screen — `canRetrieveWindowContent` is `false` in the service config, so the
+screen. `canRetrieveWindowContent` is `false` in the service config, so the
 text, images, messages and accounts in those apps are not visible to it. It has
 no network permission and sends nothing anywhere.
 
 **It will make your phone ignore your finger.** After five minutes in a target
-app, every scroll causes a blackout — one second at first, up to five later —
+app, every scroll causes a blackout (one second at first, up to five later)
 during which touches in that app do nothing. It looks and feels like the phone
 has frozen. That is the intended effect.
 
@@ -689,7 +689,7 @@ call arrives. And it is never armed for more than eight continuous seconds, at
 any tier, no matter how much you scroll.
 
 **It will ask you to get up and walk.** At each five-minute mark a full-screen
-gate appears and will not go away until you have walked for a bit — about
+gate appears and will not go away until you have walked for a bit, about
 twelve steps, or eight seconds of walking-shaped motion if your phone has no
 step sensor. You can always leave with HOME or RECENTS; that pauses the gate
 instead of clearing it, and it comes back when you next scroll. **If walking is

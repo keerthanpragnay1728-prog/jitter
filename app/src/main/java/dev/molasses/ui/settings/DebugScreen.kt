@@ -135,7 +135,7 @@ fun DebugScreen(
                     vm.thresholdSets.forEach { t ->
                         val warn = t.calibration == Thresholds.Calibration.UNCALIBRATED
                         Text(
-                            if (warn) "${t.id} — UNCALIBRATED" else "${t.id} — ${t.calibration}",
+                            if (warn) "${t.id} (UNCALIBRATED)" else "${t.id} (${t.calibration})",
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (warn) {
                                 MaterialTheme.colorScheme.primary

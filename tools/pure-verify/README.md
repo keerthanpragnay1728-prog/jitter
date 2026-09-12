@@ -18,7 +18,7 @@ It is a **standalone build with its own wrapper**, so:
 cd tools/pure-verify && ./gradlew test --rerun-tasks
 ```
 
-`./gradlew :tools:pure-verify` from the repo root will not resolve — the root
+`./gradlew :tools:pure-verify` from the repo root will not resolve. The root
 `settings.gradle.kts` includes only `:app`.
 
 Covers all of `dev.molasses.core` and `dev.molasses.engine`, plus the pure
@@ -29,6 +29,6 @@ sensing maths (`CadenceAnalyzer`, `StepGate`, `FallbackImuGate`,
 `androidx.*` import, and cross-checks its own list against the `pureMain` list
 in this directory's `build.gradle.kts` so the two cannot drift apart.
 
-`CalibrationSweep` asserts nothing — it prints the measurement tables the
+`CalibrationSweep` asserts nothing. It prints the measurement tables the
 thresholds are derived from. Its output is reproduced in the root README under
 "Threshold recalibration".
