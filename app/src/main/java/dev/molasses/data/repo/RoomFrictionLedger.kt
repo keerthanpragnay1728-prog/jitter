@@ -9,7 +9,7 @@ import dev.molasses.data.db.UsageEventEntity
 import dev.molasses.engine.FrictionLedger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
+import dev.molasses.core.async.ChannelSpecs
 import kotlinx.coroutines.launch
 
 /**
@@ -35,7 +35,15 @@ class RoomFrictionLedger(
         }.getOrDefault(0)
     }
 
-    private val queue = Channel<UsageEventEntity>(capacity = 256)
+    private val queue = ChannelSpecs.ledgerRows<UsageEventEntity>()
+
+    /**
+     * Active sensing pipeline, stamped onto every row. Written from the main
+     * thread by [dev.molasses.sensing.MovementDetector] and read by the ledger
+     * writer coroutine, hence @Volatile.
+     */
+    @Volatile
+    var sensorPath: String? = null
 
     init {
         scope.launch(Dispatchers.IO) {
@@ -62,6 +70,7 @@ class RoomFrictionLedger(
                 elapsedMs = SystemClock.elapsedRealtime(),
                 bootId = bootId,
                 meta = meta,
+                sensorPath = sensorPath,
             ),
         )
     }

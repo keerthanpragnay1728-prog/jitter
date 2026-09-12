@@ -183,6 +183,7 @@ private fun reasonText(p: GateProgress): String = when (p.reason) {
     GateProgress.Reason.CADENCE_TOO_SLOW -> "A little faster."
     GateProgress.Reason.CADENCE_TOO_FAST -> "Slower — that is faster than walking."
     GateProgress.Reason.CADENCE_IRREGULAR -> "Keep an even pace."
+    GateProgress.Reason.TOO_REGULAR -> "That is too even to be walking."
     GateProgress.Reason.NOT_ENOUGH_MOTION -> "Not enough movement yet."
     GateProgress.Reason.TOO_VIOLENT -> "Too much. Walk, do not shake."
     GateProgress.Reason.MOTION_NOT_VERTICAL -> "That is side-to-side, not walking."
@@ -193,7 +194,8 @@ private fun reasonText(p: GateProgress): String = when (p.reason) {
 
 private fun pathText(p: GateProgress): String = when (p.path) {
     GateProgress.Path.STEP_DETECTOR -> "step sensor"
-    GateProgress.Path.IMU_CADENCE -> "motion analysis"
+    GateProgress.Path.IMU_FUSED -> "motion analysis (fused sensor)"
+    GateProgress.Path.IMU_IIR -> "motion analysis"
     GateProgress.Path.ALTERNATIVE_CHALLENGE -> "alternative challenge"
     GateProgress.Path.NONE -> ""
 }

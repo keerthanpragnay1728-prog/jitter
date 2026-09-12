@@ -1,6 +1,7 @@
 package dev.molasses.core
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -18,17 +19,27 @@ import org.junit.Test
  */
 class PurityTest {
 
-    private val pureRoots = listOf(
-        "core/model",
-        "core/time",
-        "engine",
-    )
+    /**
+     * Whole packages that are pure by contract. `core` is listed as a single
+     * root rather than package-by-package so a new subpackage is covered the
+     * moment it is created, instead of when someone remembers to add it here.
+     */
+    private val pureRoots = listOf("core", "engine")
 
+    /** Individual pure files inside otherwise-Android packages. */
     private val pureFiles = listOf(
         "sensing/CadenceAnalyzer.kt",
         "sensing/StepGate.kt",
         "sensing/FallbackImuGate.kt",
+        "sensing/GravitySplitter.kt",
+        "sensing/Thresholds.kt",
     )
+
+    private fun repoRoot(): File? = listOf(
+        File("."),
+        File(".."),
+        File("/home/user/visceral"),
+    ).firstOrNull { File(it, "app/src/main/java/dev/molasses").isDirectory }
 
     private fun sourceRoot(): File? = listOf(
         File("app/src/main/java/dev/molasses"),
@@ -66,6 +77,31 @@ class PurityTest {
         assertTrue(
             "pure set must not import Android:\n" + offenders.joinToString("\n"),
             offenders.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `the verification harness compiles exactly the set this test checks`() {
+        // Two lists describing "the pure set" is one list too many. If the
+        // harness compiles something this test does not check, an Android
+        // import could land in it unnoticed; if this test checks something the
+        // harness does not compile, the guarantee is theoretical.
+        val root = repoRoot()
+        assumeTrue("repo root not locatable", root != null)
+        val build = File(root, "tools/pure-verify/build.gradle.kts")
+        assumeTrue("harness build file not found", build.isFile)
+
+        val block = build.readText()
+            .substringAfter("val pureMain = listOf(")
+            .substringBefore(")")
+        val harnessEntries = Regex("\"([^\"]+)\"").findAll(block)
+            .map { it.groupValues[1].removePrefix("dev/molasses/") }
+            .toSet()
+
+        val checked = (pureRoots + pureFiles).toSet()
+        assertEquals(
+            "harness pureMain and PurityTest disagree about what the pure set is",
+            checked, harnessEntries,
         )
     }
 }

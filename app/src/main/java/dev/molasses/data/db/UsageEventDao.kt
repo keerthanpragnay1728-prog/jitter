@@ -6,6 +6,9 @@ import androidx.room.Query
 import dev.molasses.core.model.EventType
 import kotlinx.coroutines.flow.Flow
 
+/** Aggregate row for [UsageEventDao.gateOutcomesByPath]. */
+data class GateOutcomeRow(val path: String, val type: EventType, val count: Int)
+
 @Dao
 interface UsageEventDao {
 
@@ -27,6 +30,14 @@ interface UsageEventDao {
     /** Requested vs. actual armed duration, for the SS11 latency report. */
     @Query("SELECT meta FROM usage_events WHERE type = 'STALL_ARMED' ORDER BY wallMs DESC LIMIT :limit")
     suspend fun stallMetas(limit: Int = 500): List<String?>
+
+    /** Gate outcomes split by sensing pipeline, for calibration review. */
+    @Query(
+        "SELECT sensorPath AS path, type AS type, COUNT(*) AS count FROM usage_events " +
+            "WHERE type IN ('GATE_PASSED', 'GATE_ABANDONED') AND sensorPath IS NOT NULL " +
+            "GROUP BY sensorPath, type",
+    )
+    suspend fun gateOutcomesByPath(): List<GateOutcomeRow>
 
     @Query("SELECT COUNT(*) FROM usage_events")
     suspend fun count(): Int

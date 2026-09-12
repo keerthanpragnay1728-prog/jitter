@@ -9,7 +9,7 @@ import dev.molasses.core.model.FrictionAction
 import dev.molasses.core.time.MonotonicClock
 import dev.molasses.core.time.WallClock
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.channels.Channel
+import dev.molasses.core.async.ChannelSpecs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -102,11 +102,12 @@ class FrictionEngine(
      * snapshot written, not every intermediate one, and we must never suspend
      * the caller -- [Channel.trySend] on a conflated channel always succeeds.
      *
-     * `Channel.CONFLATED` already implies `BufferOverflow.DROP_OLDEST`;
-     * passing both throws `IllegalArgumentException` from the `Channel()`
-     * factory, which would take the engine down at construction.
+     * Constructed through [ChannelSpecs] rather than inline: `CONFLATED`
+     * already implies `DROP_OLDEST` and passing both throws at construction,
+     * which shipped once and took the service down on connect. Centralising
+     * the spelling lets `ChannelSpecTest` exercise the real construction.
      */
-    private val writes = Channel<EngineSnapshot>(capacity = Channel.CONFLATED)
+    private val writes = ChannelSpecs.engineCheckpoints<EngineSnapshot>()
 
     init {
         scope.launch {

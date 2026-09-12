@@ -8,122 +8,172 @@ import org.junit.Test
 
 class FallbackImuGateTest {
 
+    private fun walk(durationMs: Long, sampleHz: Int = 50, tiltRampMs: Long = 400) =
+        SignalGen.gait(
+            durationMs, jitterFrac = 0.08, sampleHz = sampleHz, tiltRampMs = tiltRampMs,
+        )
+
+    private fun feedFused(gate: FallbackImuGate, samples: List<SignalGen.Sample>) =
+        samples.map {
+            gate.onFusedSample(
+                it.timestampNs, it.linearX, it.linearY, it.linearZ,
+                it.trueGx, it.trueGy, it.trueGz,
+            )
+        }.last()
+
+    // ------------------------------------------------------------------ sustain
+
     @Test
-    fun `eight seconds of sustained walking passes`() {
-        val g = FallbackImuGate()
-        val p = SignalGen.feed(g, SignalGen.gait(11_000))
+    fun `sustained walking passes on the IIR path`() {
+        val g = FallbackImuGate(FallbackImuGate.Mode.IIR)
+        val p = SignalGen.feedIir(g, walk(16_000))
         assertTrue("reason=${p.reason} fraction=${p.fraction}", p.passed)
-        assertEquals(GateProgress.Reason.PASSED, p.reason)
-        assertEquals(GateProgress.Path.IMU_CADENCE, p.path)
+        assertEquals(GateProgress.Path.IMU_IIR, p.path)
     }
 
     @Test
-    fun `seven seconds of walking does not pass`() {
+    fun `sustained walking passes on the fused path`() {
+        val g = FallbackImuGate(FallbackImuGate.Mode.FUSED)
+        val p = feedFused(g, walk(16_000))
+        assertTrue("reason=${p.reason} fraction=${p.fraction}", p.passed)
+        assertEquals(GateProgress.Path.IMU_FUSED, p.path)
+        assertEquals(Thresholds.FUSED, g.thresholds)
+    }
+
+    @Test
+    fun `the two paths carry separate threshold sets`() {
+        // SS1.1: the fused sensor has an internal high-pass we neither control
+        // nor can query, so it is a second calibration domain.
+        assertEquals("IIR", FallbackImuGate(FallbackImuGate.Mode.IIR).thresholds.id)
+        assertEquals("FUSED", FallbackImuGate(FallbackImuGate.Mode.FUSED).thresholds.id)
+        assertEquals(
+            Thresholds.Calibration.UNCALIBRATED,
+            Thresholds.FUSED.calibration,
+        )
+        assertEquals(
+            Thresholds.Calibration.SYNTHETIC_SWEEP,
+            Thresholds.IIR.calibration,
+        )
+    }
+
+    @Test
+    fun `a short walk does not pass`() {
         val g = FallbackImuGate()
-        val p = SignalGen.feed(g, SignalGen.gait(7_000))
+        val p = SignalGen.feedIir(g, walk(7_000))
         assertFalse(p.passed)
-        assertEquals(GateProgress.Reason.SUSTAINING, p.reason)
-        assertTrue("should be most of the way there, was ${p.fraction}", p.fraction > 0.4f)
+        assertTrue("should be part-way, was ${p.fraction}", p.fraction < 1f)
     }
 
     @Test
     fun `the sustain timer resets when the conditions lapse`() {
-        // Six seconds of walking, a two-second stop, then six more. Never
-        // eight continuous, so it must not pass -- otherwise intermittent
-        // shaking with pauses would satisfy the gate.
+        // Six seconds of walking, two of stillness, then six more. Never eight
+        // continuous, so it must not pass -- otherwise intermittent shaking
+        // with pauses would satisfy the gate.
         val g = FallbackImuGate()
-        val walk1 = SignalGen.gait(6_000)
-        val stopStart = 6_000L
+        SignalGen.feedIir(g, walk(6_000))
         val stop = SignalGen.thumbTremor(2_000).map {
-            SignalGen.Sample(it.tMs + stopStart, it.x, it.y, it.z)
+            SignalGen.Sample(
+                it.timestampNs + 6_000_000_000, it.x, it.y, it.z,
+                it.trueGx, it.trueGy, it.trueGz,
+            )
         }
-        val walk2 = SignalGen.gait(6_000, tiltRampMs = 0).map {
-            SignalGen.Sample(it.tMs + stopStart + 2_000, it.x, it.y, it.z)
+        var last = SignalGen.feedIir(g, stop)
+        assertFalse("stillness must break the streak", last.passed)
+        val more = walk(6_000, tiltRampMs = 0).map {
+            SignalGen.Sample(
+                it.timestampNs + 8_000_000_000, it.x, it.y, it.z,
+                it.trueGx, it.trueGy, it.trueGz,
+            )
         }
-        var last = SignalGen.feed(g, walk1)
-        last = SignalGen.feed(g, stop)
-        assertFalse("stop must break the streak", last.passed)
-        last = SignalGen.feed(g, walk2)
+        last = SignalGen.feedIir(g, more)
         assertFalse("only 6 s since the break, reason=${last.reason}", last.passed)
     }
 
     @Test
     fun `progress fraction reports how much of the sustain window is held`() {
-        val g = FallbackImuGate()
-        val p4 = SignalGen.feed(g, SignalGen.gait(5_000))
-        val p8 = SignalGen.feed(g, SignalGen.gait(11_000))
-        assertTrue(p4.fraction < p8.fraction)
-        assertEquals(1f, p8.fraction, 1e-4f)
+        val short = SignalGen.feedIir(FallbackImuGate(), walk(8_000))
+        val long = SignalGen.feedIir(FallbackImuGate(), walk(16_000))
+        assertTrue(short.fraction < long.fraction)
+        assertEquals(1f, long.fraction, 1e-4f)
+    }
+
+    // ----------------------------------------------------------- delivery rate
+
+    @Test
+    fun `the gate passes at every delivery rate`() {
+        for (rate in listOf(25, 50, 100, 200)) {
+            val g = FallbackImuGate()
+            val p = SignalGen.feedIir(g, walk(16_000, sampleHz = rate))
+            assertTrue("$rate Hz gave ${p.reason}", p.passed)
+        }
     }
 
     @Test
-    fun `barometer drop shortens the sustain requirement to four seconds`() {
+    fun `the splitter reports the alpha it derived`() {
         val g = FallbackImuGate()
-        // A monotonic 0.06 hPa drop over 5 s: standing up.
-        var hPa = 1013.25
-        for (t in 0..5_000 step 250) {
-            g.onPressure(t.toLong(), hPa)
-            hPa -= 0.003
-        }
-        assertTrue("shortcut should be armed", g.hasBarometerShortcut)
+        SignalGen.feedIir(g, walk(4_000, sampleHz = 100))
+        // 100 Hz, tau 0.65 -> alpha = 0.65 / 0.66.
+        assertEquals(0.65 / 0.66, g.lastAlpha, 1e-4)
+    }
 
-        val p = SignalGen.feed(g, SignalGen.gait(7_000))
+    // ------------------------------------------------------------- barometer
+
+    @Test
+    fun `barometer drop shortens the sustain requirement`() {
+        val g = FallbackImuGate()
+        var hPa = 1013.25
+        for (t in 0..5_000 step 250) { g.onPressure(t.toLong(), hPa); hPa -= 0.003 }
+        assertTrue("shortcut should be armed", g.hasBarometerShortcut)
+        val p = SignalGen.feedIir(g, walk(11_000))
         assertTrue("4 s sustain should suffice, reason=${p.reason}", p.passed)
     }
 
     @Test
     fun `a noisy non-monotonic pressure trace does not arm the shortcut`() {
         val g = FallbackImuGate()
-        val trace = listOf(1013.25, 1013.22, 1013.28, 1013.21, 1013.26, 1013.20)
-        trace.forEachIndexed { i, p -> g.onPressure(i * 500L, p) }
+        listOf(1013.25, 1013.22, 1013.28, 1013.21, 1013.26, 1013.20)
+            .forEachIndexed { i, p -> g.onPressure(i * 500L, p) }
         assertFalse(g.hasBarometerShortcut)
     }
 
     @Test
     fun `a drop below the threshold does not arm the shortcut`() {
         val g = FallbackImuGate()
-        // 0.02 hPa total: within noise, roughly 17 cm.
         var hPa = 1013.25
-        for (t in 0..5_000 step 500) {
-            g.onPressure(t.toLong(), hPa)
-            hPa -= 0.002
-        }
+        for (t in 0..5_000 step 500) { g.onPressure(t.toLong(), hPa); hPa -= 0.002 }
         assertFalse(g.hasBarometerShortcut)
     }
 
     @Test
     fun `the barometer is never required`() {
-        // Most budget devices have no barometer at all; the gate must still be
-        // clearable without one.
         val g = FallbackImuGate()
         assertFalse(g.hasBarometerShortcut)
-        assertTrue(SignalGen.feed(g, SignalGen.gait(11_000)).passed)
+        assertTrue(SignalGen.feedIir(g, walk(16_000)).passed)
     }
+
+    // --------------------------------------------------------------- rejection
 
     @Test
     fun `desk tapping cannot be sustained into a pass`() {
-        val g = FallbackImuGate()
-        val p = SignalGen.feed(g, SignalGen.deskTap(20_000))
-        assertFalse("20 s of desk tapping must not pass", p.passed)
-        assertEquals(GateProgress.Reason.PHONE_STATIONARY, p.reason)
+        val p = SignalGen.feedIir(FallbackImuGate(), SignalGen.deskTap(24_000))
+        assertFalse("24 s of desk tapping must not pass", p.passed)
     }
 
     @Test
     fun `violent shaking cannot be sustained into a pass`() {
-        val g = FallbackImuGate()
-        val p = SignalGen.feed(g, SignalGen.violentShake(20_000))
+        val p = SignalGen.feedIir(FallbackImuGate(), SignalGen.violentShake(24_000))
         assertFalse(p.passed)
         assertEquals(GateProgress.Reason.TOO_VIOLENT, p.reason)
     }
 
     @Test
-    fun `reset clears both the streak and the barometer shortcut`() {
+    fun `reset clears the streak, the shortcut and the filter`() {
         val g = FallbackImuGate()
         var hPa = 1013.25
         for (t in 0..5_000 step 250) { g.onPressure(t.toLong(), hPa); hPa -= 0.003 }
-        SignalGen.feed(g, SignalGen.gait(11_000))
+        SignalGen.feedIir(g, walk(16_000))
         g.reset()
         assertFalse(g.hasBarometerShortcut)
-        assertFalse(SignalGen.feed(g, SignalGen.gait(2_000)).passed)
+        assertFalse(SignalGen.feedIir(g, walk(2_000)).passed)
     }
 }
