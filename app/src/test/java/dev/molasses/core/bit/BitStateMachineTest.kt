@@ -101,6 +101,41 @@ class BitStateMachineTest {
         assertTrue(BitStateMachine.FAILED_TOTAL_MS > BitStateMachine.CONFIRM_TOTAL_MS)
     }
 
+    // --------------------------------------------------------- UNAVAILABLE
+
+    @Test
+    fun `unavailable is flat and distinct from failed`() {
+        // "block is not wired yet" and "block what?" are different
+        // information. Showing the same face for both teaches the user to
+        // ignore it.
+        val unavailable = frame(reaction = Reaction.Unavailable("locks are not enforced yet"), ageMs = 0)
+        val failed = frame(reaction = Reaction.Failed("block <app> <duration>"), ageMs = 0)
+        assertEquals(BitStateMachine.FLAT, unavailable.face)
+        assertEquals(BitStateMachine.DRY, failed.face)
+        assertTrue(unavailable.face != failed.face)
+    }
+
+    @Test
+    fun `unavailable holds its reason as long as a failure holds its hint`() {
+        val r = Reaction.Unavailable("service not bound")
+        assertEquals("service not bound", frame(reaction = r, ageMs = 1_000).line)
+        assertFalse(frame(reaction = r, ageMs = 2_000).reactionActive)
+        assertEquals(
+            BitStateMachine.FAILED_TOTAL_MS,
+            BitStateMachine.UNAVAILABLE_TOTAL_MS,
+        )
+    }
+
+    @Test
+    fun `all three command reactions are visually distinct`() {
+        val faces = listOf(
+            frame(reaction = Reaction.Confirm("ok"), ageMs = 300).face,
+            frame(reaction = Reaction.Failed("bad"), ageMs = 300).face,
+            frame(reaction = Reaction.Unavailable("nope"), ageMs = 300).face,
+        )
+        assertEquals("two reactions share a face", 3, faces.distinct().size)
+    }
+
     // ------------------------------------------------------- other reactions
 
     @Test
@@ -213,6 +248,7 @@ class BitStateMachineTest {
             BitStateMachine.NEUTRAL, BitStateMachine.BLINK_HALF, BitStateMachine.BLINK_NARROW,
             BitStateMachine.HAPPY, BitStateMachine.DRY, BitStateMachine.IRRITATED,
             BitStateMachine.TURNED_AWAY, BitStateMachine.BATTERY_CRITICAL, BitStateMachine.WARDEN,
+            BitStateMachine.FLAT,
         )
         for (f in faces) {
             assertTrue("$f has a non-ascii char", f.all { it.code in 32..126 })
