@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -171,7 +170,7 @@ fun DebugScreen(
 
         item { Header(R.string.debug_section_latency) }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(
                         stringResource(R.string.debug_latency_legend),
@@ -193,7 +192,7 @@ fun DebugScreen(
 
         item { Header(R.string.debug_section_stall_duration) }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     if (latency.isEmpty()) {
                         Text(
@@ -233,7 +232,7 @@ fun DebugScreen(
 
         item { Header(R.string.debug_section_calibration) }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     vm.thresholdSets.forEach { t ->
                         val warn = t.calibration == Thresholds.Calibration.UNCALIBRATED
@@ -315,7 +314,7 @@ fun DebugScreen(
             item { Mono(stringResource(R.string.debug_empty)) }
         }
         items(ladder, key = { it.pkg }) { row ->
-            Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(row.pkg, style = MaterialTheme.typography.bodyLarge)
                     MonoRow(
@@ -383,7 +382,7 @@ private fun StateEditor(targets: List<String>, onApply: (String, Long, Int) -> U
     var minutes by remember { mutableStateOf("") }
     var tier by remember { mutableStateOf("") }
 
-    Card(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(
                 stringResource(R.string.debug_state_editor_note),

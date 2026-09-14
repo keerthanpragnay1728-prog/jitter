@@ -96,6 +96,9 @@
     <string name="settings_perm_notifications_body">Optional. Tells you when a cycle resets or a gate is still owed.</string>
 
     <string name="settings_targets_hint">Scrolling in these apps accumulates time.</string>
+    <string name="settings_targets_search">Filter apps</string>
+    <string name="settings_targets_no_match">No app matches that.</string>
+    <string name="settings_targets_count_fmt">%1$s of %2$s apps</string>
     <string name="settings_targets_empty">No launchable apps listed yet.</string>
 
     <string name="settings_policy_abstinence_title">After 6 hours away</string>
