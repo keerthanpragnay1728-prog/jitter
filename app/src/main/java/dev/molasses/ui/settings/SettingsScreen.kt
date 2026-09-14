@@ -36,6 +36,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.ui.FontScale
 import dev.molasses.engine.TierPolicy
@@ -68,6 +69,7 @@ fun SettingsScreen(
     val sensitivePrefixes by vm.sensitivePrefixes.collectAsStateWithLifecycle()
     val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
     val fontScale by vm.fontScale.collectAsStateWithLifecycle()
+    val diag by vm.engineDiagnostics.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -94,9 +96,24 @@ fun SettingsScreen(
                 onClick = onOpenAccessibility,
             )
         }
+        // Distinct from the checklist row above, and deliberately so. That
+        // row reads Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, which is a
+        // user preference string: it says the box is ticked, not that the
+        // process is alive. A service that was revoked, crashed, or is stuck
+        // before it accepts events reads as fully granted there while
+        // producing no friction at all.
         item {
             ChecklistRow(
                 index = 2,
+                title = R.string.settings_service_state_title,
+                subtitle = serviceStateBody(diag.health),
+                satisfied = diag.health.acceptingEvents,
+                onClick = onOpenAccessibility,
+            )
+        }
+        item {
+            ChecklistRow(
+                index = 3,
                 title = R.string.settings_perm_usage_title,
                 subtitle = R.string.settings_perm_usage_body,
                 satisfied = permissions.usageAccess,
@@ -105,7 +122,7 @@ fun SettingsScreen(
         }
         item {
             ChecklistRow(
-                index = 3,
+                index = 4,
                 title = R.string.settings_perm_activity_title,
                 subtitle = R.string.settings_perm_activity_body,
                 satisfied = permissions.activityRecognition,
@@ -114,7 +131,7 @@ fun SettingsScreen(
         }
         item {
             ChecklistRow(
-                index = 4,
+                index = 5,
                 title = R.string.settings_perm_notifications_title,
                 subtitle = R.string.settings_perm_notifications_body,
                 satisfied = permissions.notifications,
@@ -489,4 +506,13 @@ private fun fontScaleLabel(scale: FontScale): Int = when (scale) {
     FontScale.MEDIUM -> R.string.settings_font_medium
     FontScale.LARGE -> R.string.settings_font_large
     FontScale.VERY_LARGE -> R.string.settings_font_very_large
+}
+
+/** Service health to its one-line explanation. Pure mapping, resolved at the call site. */
+@StringRes
+private fun serviceStateBody(health: ServiceHealth): Int = when (health) {
+    ServiceHealth.HEALTHY -> R.string.settings_service_healthy
+    ServiceHealth.CONNECTING -> R.string.settings_service_connecting
+    ServiceHealth.STALE -> R.string.settings_service_stale
+    ServiceHealth.NEVER_CONNECTED -> R.string.settings_service_never
 }

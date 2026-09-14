@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
+import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.debug.DebugSurface
 import dev.molasses.engine.TierPolicy
 import dev.molasses.sensing.Thresholds
@@ -53,6 +54,7 @@ fun DebugScreen(
 ) {
     LifecycleRefresh { vm.refresh() }
 
+    val diag by vm.engineDiagnostics.collectAsStateWithLifecycle()
     val ladder by vm.ladder.collectAsStateWithLifecycle()
     val gateOutcomes by vm.gateOutcomes.collectAsStateWithLifecycle()
     val ledger by vm.ledger.collectAsStateWithLifecycle()
@@ -71,6 +73,100 @@ fun DebugScreen(
                 TextButton(onClick = onBack) { Text(stringResource(R.string.debug_back)) }
             }
             Text(stringResource(R.string.debug_title), style = MaterialTheme.typography.headlineSmall)
+        }
+
+        // ------------------------------------------------------- service
+        // First on the screen on purpose. Everything below is meaningless if
+        // the service is not actually accepting events, and "Granted" in the
+        // permission checklist does not answer that: it reads a user
+        // preference string, not a live process.
+        item { Text(stringResource(R.string.debug_section_service), style = MaterialTheme.typography.titleSmall) }
+
+        if (diag.stuckStarting) {
+            item { Warning(stringResource(R.string.debug_warn_stuck)) }
+        }
+        diag.startupNote?.let { note -> item { Warning(note) } }
+        if (diag.health == ServiceHealth.NEVER_CONNECTED) {
+            item { Warning(stringResource(R.string.debug_never_connected)) }
+        }
+        if (diag.usedTargetFallback) {
+            item { Warning(stringResource(R.string.debug_warn_target_fallback)) }
+        }
+
+        item {
+            Column {
+                // Bound and enabled are two different questions and are shown
+                // as two rows for exactly that reason.
+                MonoRow(R.string.debug_field_bound, diag.health.name)
+                MonoRow(R.string.debug_field_enabled, diag.accessibilityEnabled.toString())
+                MonoRow(
+                    R.string.debug_field_heartbeat,
+                    diag.heartbeatAgeMs
+                        ?.let { stringResource(R.string.debug_ms_ago, it.toString()) }
+                        ?: stringResource(R.string.debug_none),
+                )
+                MonoRow(
+                    R.string.debug_field_scope,
+                    diag.appliedPackageNames.joinToString(" ")
+                        .ifEmpty { stringResource(R.string.debug_none) },
+                )
+                MonoRow(
+                    R.string.debug_field_open_session,
+                    diag.openSessionPkg ?: stringResource(R.string.debug_none),
+                )
+                MonoRow(
+                    R.string.debug_field_cycle_anchor,
+                    if (diag.cycleAnchorWallMs == 0L) {
+                        stringResource(R.string.debug_none)
+                    } else {
+                        fmt.format(Date(diag.cycleAnchorWallMs))
+                    },
+                )
+                MonoRow(R.string.debug_field_resets_in, formatDuration(diag.cycleRemainingMs))
+                MonoRow(R.string.debug_field_policy, diag.resetPolicy.name)
+            }
+        }
+
+        // ------------------------------------------------------- events
+        item { Text(stringResource(R.string.debug_section_events), style = MaterialTheme.typography.titleSmall) }
+        item {
+            Column {
+                Mono(stringResource(R.string.debug_events_header))
+                if (diag.routes.isEmpty()) {
+                    Text(
+                        stringResource(R.string.debug_events_none),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+                // Everything arriving and nothing routed is the empty-target
+                // signature, and it is worth naming rather than leaving the
+                // reader to spot a column of zeroes.
+                val anyRouted = diag.routes.any { it.second.routed > 0 }
+                if (diag.routes.isNotEmpty() && !anyRouted) {
+                    Warning(stringResource(R.string.debug_warn_all_ignored))
+                }
+                for ((pkg, t) in diag.routes) {
+                    MonoRow(
+                        pkg,
+                        stringResource(
+                            R.string.debug_events_row,
+                            t.scrolled.toString(),
+                            (t.windowState + t.windowsChanged).toString(),
+                            t.routed.toString(),
+                            t.ignored.toString(),
+                        ),
+                    )
+                }
+                if (diag.overflowedPackages > 0) {
+                    Mono(
+                        stringResource(
+                            R.string.debug_events_overflow,
+                            diag.overflowedPackages.toString(),
+                        ),
+                    )
+                }
+            }
         }
 
         item { Header(R.string.debug_section_latency) }
@@ -365,4 +461,34 @@ private fun Mono(text: String) {
         style = MaterialTheme.typography.bodySmall,
         fontFamily = FontFamily.Monospace,
     )
+}
+
+/**
+ * A field row whose label is dynamic, such as a package name.
+ *
+ * The @StringRes overload stays the default for fixed labels; this one exists
+ * only because the event table's labels are the packages themselves.
+ */
+@Composable
+private fun MonoRow(label: String, value: String) {
+    Mono(label.padEnd(LABEL_WIDTH) + value)
+}
+
+/** Something is wrong and the reader should not have to infer it. */
+@Composable
+private fun Warning(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
+}
+
+/** Coarse on purpose: this is read at a glance, not measured. */
+private fun formatDuration(ms: Long): String {
+    if (ms <= 0L) return "0m"
+    val totalMinutes = ms / 60_000L
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
 }

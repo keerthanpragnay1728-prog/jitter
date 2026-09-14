@@ -83,6 +83,11 @@
 
     <string name="settings_perm_a11y_title">Accessibility service</string>
     <string name="settings_perm_a11y_body">Required. Lets Jitter see which app is in front and when you scroll.</string>
+    <string name="settings_service_state_title">Service state</string>
+    <string name="settings_service_healthy">Running and accepting events.</string>
+    <string name="settings_service_connecting">Bound, but not yet accepting events.</string>
+    <string name="settings_service_stale">Bound, but it has stopped reporting. It was probably killed.</string>
+    <string name="settings_service_never">Not running. Granting the permission is not the same as the service starting.</string>
     <string name="settings_perm_usage_title">Usage access</string>
     <string name="settings_perm_usage_body">Required. Rebuilds your time if Jitter is killed mid-session.</string>
     <string name="settings_perm_activity_title">Physical activity</string>
@@ -218,6 +223,28 @@
     <string name="filter_status_active">FILTER ACTIVE: %1$s CLEARED</string>
     <string name="filter_status_idle">FILTER DORMANT</string>
     <string name="filter_allowlist_header">ALLOWED APPS (BYPASS FILTER)</string>
+    <!-- Service and engine diagnostics. Field labels are shown on screen but
+         must not be reworded: they are read alongside adb output. -->
+    <string name="debug_section_service">SERVICE</string>
+    <string name="debug_field_bound" translatable="false">bound</string>
+    <string name="debug_field_enabled" translatable="false">enabled</string>
+    <string name="debug_field_heartbeat" translatable="false">heartbeat</string>
+    <string name="debug_field_scope" translatable="false">packageNames</string>
+    <string name="debug_field_open_session" translatable="false">open session</string>
+    <string name="debug_field_cycle_anchor" translatable="false">cycle anchor</string>
+    <string name="debug_field_resets_in" translatable="false">resets in</string>
+    <string name="debug_field_policy" translatable="false">policy</string>
+    <string name="debug_section_events">EVENTS BY PACKAGE</string>
+    <string name="debug_events_header" translatable="false">scroll / win / routed / ignored</string>
+    <string name="debug_events_row" translatable="false">%1$s / %2$s / %3$s / %4$s</string>
+    <string name="debug_events_none">No accessibility events received. The service is not seeing anything.</string>
+    <string name="debug_events_overflow" translatable="false">+%1$s more packages (capped)</string>
+    <string name="debug_warn_stuck">SERVICE STUCK STARTING. It is bound but never became ready, so every accessibility event is being dropped. Reconciliation is most likely blocked awaiting DataStore.</string>
+    <string name="debug_warn_all_ignored">Events are arriving and every one is being ignored. The target scope and the router disagree.</string>
+    <string name="debug_warn_target_fallback">Stored target list was empty. Using the shipped defaults instead of listening to every package.</string>
+    <string name="debug_never_connected">NOT BOUND. The service has never connected in this process.</string>
+    <string name="debug_ms_ago" translatable="false">%1$s ms ago</string>
+    <string name="debug_none" translatable="false">--</string>
     <!-- Command REPL feedback. Every message names the offending token or
          the usage shape, because "block <app> <duration>" alone does not tell
          someone that 30mins is the wrong spelling. -->
