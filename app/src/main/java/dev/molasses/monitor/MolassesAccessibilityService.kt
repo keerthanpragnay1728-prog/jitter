@@ -8,6 +8,7 @@ import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import dagger.hilt.android.AndroidEntryPoint
+import dev.molasses.core.diag.ServiceHealthPolicy
 import dev.molasses.core.latency.LatencyRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
@@ -17,11 +18,13 @@ import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.session.EventRoute
 import dev.molasses.core.session.ForegroundEventRouter
 import dev.molasses.core.session.ForegroundSessionTracker
+import dev.molasses.core.session.TargetScope
 import dev.molasses.core.session.WindowEvent
 import dev.molasses.core.time.MonotonicClock
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.time.WallClock
 import dev.molasses.data.datastore.CycleStateStore
+import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.datastore.pauseInstant
 import dev.molasses.data.datastore.toEngineSnapshot
 import dev.molasses.data.db.UsageEventDao
@@ -157,6 +160,7 @@ class MolassesAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        ServiceDiagnostics.onConnected()
 
         val wm = getSystemService(WindowManager::class.java)
         if (wm == null) {
@@ -220,6 +224,24 @@ class MolassesAccessibilityService : AccessibilityService() {
             observeSettings()
             startCheckpointing()
             ready = true
+            ServiceDiagnostics.onReady()
+            Log.i(TAG, "ready: accepting events")
+        }
+
+        // The silent-drop watchdog. Reconciliation awaits DataStore, and if
+        // DataStore never emits, this service sits bound and discards every
+        // event in onAccessibilityEvent's !ready guard with nothing in the
+        // log to say so. Five seconds is far longer than reconciliation
+        // should take.
+        scope.launch {
+            delay(ServiceHealthPolicy.STARTUP_GRACE_MS)
+            if (!ready) {
+                val note = "still not ready ${ServiceHealthPolicy.STARTUP_GRACE_MS}ms after " +
+                    "connect; every accessibility event is being dropped. " +
+                    "Reconciliation is most likely blocked awaiting DataStore."
+                ServiceDiagnostics.startupNote = note
+                Log.e(TAG, note)
+            }
         }
     }
 
@@ -246,7 +268,19 @@ class MolassesAccessibilityService : AccessibilityService() {
     private fun observeSettings() {
         scope.launch {
             cycleStore.data.collect { state ->
-                val next = state.targetPackagesList.toSet()
+                val stored = state.targetPackagesList.toList()
+                if (TargetScope.usedFallback(stored)) {
+                    ServiceDiagnostics.usedTargetFallback = true
+                    Log.w(
+                        TAG,
+                        "stored target list is empty; falling back to DEFAULT_TARGETS. " +
+                            "Without this the service would listen to every package and " +
+                            "route none of them.",
+                    )
+                } else {
+                    ServiceDiagnostics.usedTargetFallback = false
+                }
+                val next = TargetScope.resolve(stored, DEFAULT_TARGETS)
                 alternativeChallenge = state.alternativeChallenge
                 if (next != targets) {
                     targets = next
@@ -307,13 +341,13 @@ class MolassesAccessibilityService : AccessibilityService() {
      */
     private fun applyTargets(packages: Set<String>) {
         val info = serviceInfo ?: AccessibilityServiceInfo()
-        // Our own package stays in scope alongside the targets. Dropping it
-        // would take the launcher exit event with it and leave sessions open.
-        info.packageNames = if (packages.isEmpty()) {
-            null
-        } else {
-            (packages + packageName).toTypedArray()
-        }
+        // Never null. Null means "every package on the device", which paired
+        // with an empty `targets` set gives the worst possible combination:
+        // the platform delivers everything and the router ignores all of it.
+        // Maximum battery cost, zero behaviour, nothing in the log.
+        val names = TargetScope.packageNames(packages, packageName, DEFAULT_TARGETS)
+        info.packageNames = names
+        ServiceDiagnostics.appliedPackageNames = names.toList()
         info.eventTypes = AccessibilityEvent.TYPE_VIEW_SCROLLED or
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
             AccessibilityEvent.TYPE_WINDOWS_CHANGED
@@ -332,6 +366,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         checkpointJob = scope.launch {
             while (true) {
                 delay(CHECKPOINT_INTERVAL_MS)
+                ServiceDiagnostics.onHeartbeat()
                 val pkg = foregroundPkg
                 if (pkg != null && pkg in targets) engine.checkpoint(now())
             }
@@ -362,16 +397,21 @@ class MolassesAccessibilityService : AccessibilityService() {
             ownWindowIds += event.windowId
         }
 
+        val windowEvent = WindowEvent(
+            packageName = pkg,
+            className = event.className?.toString(),
+            windowId = event.windowId,
+            kind = kind,
+        )
         val route = router.route(
-            WindowEvent(
-                packageName = pkg,
-                className = event.className?.toString(),
-                windowId = event.windowId,
-                kind = kind,
-            ),
+            windowEvent,
             targets = targets,
             ownWindowIds = ownWindowIds,
         )
+        // Counted before dispatch, and counted even when ignored. "No events"
+        // and "every event ignored" look identical from outside and have
+        // completely different fixes.
+        ServiceDiagnostics.recordEvent(windowEvent, route)
 
         when (route) {
             EventRoute.Ignore -> Unit
@@ -637,6 +677,7 @@ class MolassesAccessibilityService : AccessibilityService() {
 
     private fun teardown() {
         ready = false
+        ServiceDiagnostics.onDestroyed()
         sessions.closeCurrent()
         watchdogJob?.cancel()
         checkpointJob?.cancel()

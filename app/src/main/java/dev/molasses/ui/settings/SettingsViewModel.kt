@@ -1,29 +1,64 @@
 package dev.molasses.ui.settings
 
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.molasses.core.diag.RouteTally
+import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.core.time.CycleWindow
+import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.toEngineSnapshot
+import dev.molasses.data.datastore.toModel
+import dev.molasses.data.db.GateOutcomeRow
 import dev.molasses.data.db.UsageEventDao
 import dev.molasses.data.db.UsageEventEntity
 import dev.molasses.data.repo.InstalledApp
 import dev.molasses.data.repo.PermissionState
-import dev.molasses.data.db.GateOutcomeRow
 import dev.molasses.data.repo.SettingsRepository
+import dev.molasses.monitor.ServiceDiagnostics
 import dev.molasses.sensing.Thresholds
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * Live engine and service state, for the debug screen.
+ *
+ * Deliberately separate from the ledger's UsageStats figures. Those come from
+ * the platform and say nothing about whether this app's engine accumulated
+ * anything: a ledger showing two hours of Instagram alongside an
+ * accumulatedMs of zero is the exact signature of a broken event path, and
+ * the two numbers have to be visible side by side for that to be readable.
+ */
+data class EngineDiagnostics(
+    val health: ServiceHealth,
+    val stuckStarting: Boolean,
+    val startupNote: String?,
+    val heartbeatAgeMs: Long?,
+    val accessibilityEnabled: Boolean,
+    val openSessionPkg: String?,
+    val cycleAnchorWallMs: Long,
+    val cycleRemainingMs: Long,
+    val resetPolicy: CycleResetPolicy,
+    val appliedPackageNames: List<String>,
+    val usedTargetFallback: Boolean,
+    val routes: List<Pair<String, RouteTally.PackageTally>>,
+    val overflowedPackages: Long,
+)
 
 data class LadderRow(
     val pkg: String,
@@ -73,6 +108,68 @@ class SettingsViewModel @Inject constructor(
 
     val pauseRemainingMs: StateFlow<Long> = repo.pauseRemainingMs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
+
+    /**
+     * Polled rather than pushed. ServiceDiagnostics is a plain object written
+     * from the accessibility callback thread; a Flow over it would need a
+     * change signal the service does not have, and a one second poll on a
+     * debug screen nobody leaves open is cheaper than inventing one.
+     */
+    val engineDiagnostics: StateFlow<EngineDiagnostics> = combine(
+        store.data,
+        flow {
+            while (true) {
+                emit(Unit)
+                delay(1_000L)
+            }
+        },
+    ) { state, _ ->
+        val anchor = StampedInstant(
+            wallMs = state.cycleAnchorWallMs,
+            elapsedMs = state.cycleAnchorElapsedMs,
+            bootId = state.cycleAnchorBootId,
+        )
+        EngineDiagnostics(
+            health = ServiceDiagnostics.health(),
+            stuckStarting = ServiceDiagnostics.isStuckStarting(),
+            startupNote = ServiceDiagnostics.startupNote,
+            heartbeatAgeMs = ServiceDiagnostics.heartbeatAgeMs(),
+            accessibilityEnabled = repo.permissionState().accessibility,
+            openSessionPkg = state.openSessionPkg.ifEmpty { null },
+            cycleAnchorWallMs = state.cycleAnchorWallMs,
+            cycleRemainingMs = CycleWindow.remainingMs(
+                anchor = anchor,
+                now = StampedInstant(
+                    wallMs = System.currentTimeMillis(),
+                    elapsedMs = SystemClock.elapsedRealtime(),
+                    bootId = state.bootId,
+                ),
+            ),
+            resetPolicy = state.resetPolicy.toModel(),
+            appliedPackageNames = ServiceDiagnostics.appliedPackageNames,
+            usedTargetFallback = ServiceDiagnostics.usedTargetFallback,
+            routes = ServiceDiagnostics.tallySnapshot(),
+            overflowedPackages = ServiceDiagnostics.overflowedPackages,
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        EngineDiagnostics(
+            health = ServiceHealth.NEVER_CONNECTED,
+            stuckStarting = false,
+            startupNote = null,
+            heartbeatAgeMs = null,
+            accessibilityEnabled = false,
+            openSessionPkg = null,
+            cycleAnchorWallMs = 0,
+            cycleRemainingMs = 0,
+            resetPolicy = CycleResetPolicy.DEFAULT,
+            appliedPackageNames = emptyList(),
+            usedTargetFallback = false,
+            routes = emptyList(),
+            overflowedPackages = 0,
+        ),
+    )
 
     val ladder: StateFlow<List<LadderRow>> = store.data
         .map { state ->
