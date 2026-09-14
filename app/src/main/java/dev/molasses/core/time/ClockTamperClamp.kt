@@ -10,9 +10,39 @@ package dev.molasses.core.time
  * hours of genuine abstinence. `elapsedRealtime` can -- it is not settable --
  * but it resets on reboot, so it cannot span a boot.
  *
+ * ## Two directions, because the safe answer is not the same for both
+ * Every deadline in this app is one of two kinds, and they want opposite
+ * clamps. The single principle is: **always err toward more friction.**
+ *
+ * A **restriction** (cycle accumulation, a lock) ends when enough time has
+ * been credited, and ending it early is the bypass. The attack is a *forward*
+ * clock jump, so credit `min(wall delta, elapsed delta)`: the jump inflates
+ * the wall delta, the monotonic delta does not move, and a thirty day lock
+ * holds instead of evaporating.
+ *
+ * A **relief** (a pause, `$ allow`) also ends when enough time has been
+ * credited, but here ending it *late* is the bypass. The attack is a
+ * *backward* wind, so credit `max(wall delta, elapsed delta)`: winding the
+ * wall clock back makes its delta small or negative, and the monotonic delta
+ * still expires the relief on schedule.
+ *
+ * Getting this backwards is not theoretical. A pause built on the restriction
+ * clamp was held open indefinitely by winding the clock back an hour, which a
+ * test in `PauseWindowTest` caught before it shipped.
+ *
  * Pure; no Android imports. Unit-tested in `ClockTamperClampTest`.
  */
 object ClockTamperClamp {
+
+    /**
+     * Which way this deadline must fail. See the class doc.
+     *
+     * [RESTRICTION] is the default because it is the safe one to get wrong by
+     * omission: a deadline clamped as a restriction when it should have been
+     * relief lasts too long, which costs the user convenience. The reverse
+     * costs them the whole mechanism.
+     */
+    enum class Direction { RESTRICTION, RELIEF }
 
     /** Disagreement above this between the two clocks means the wall clock moved. */
     const val TOLERANCE_MS = 60_000L
@@ -37,9 +67,25 @@ object ClockTamperClamp {
         val maxAnchorAdvanceMs: Long,
         val tampered: Boolean,
         val reason: String,
+        /**
+         * True when the gap spans a reboot, so [creditedMs] rests on the wall
+         * clock alone with nothing to check it against.
+         *
+         * A restriction accepts that: a lock has to span a reboot to be worth
+         * anything, and the residual hole (wind the clock forward, then
+         * reboot) costs a reboot rather than a tap in settings.
+         *
+         * A relief must not. There is no reading that survives the boot to
+         * bound the wall delta, so a relief mechanism treats this as expiry
+         * outright. `PauseWindow` does exactly that and is the reference.
+         */
+        val bootChanged: Boolean,
     )
 
-    fun evaluate(gap: Gap): Verdict {
+    fun evaluate(
+        gap: Gap,
+        direction: Direction = Direction.RESTRICTION,
+    ): Verdict {
         val wallDelta = gap.nowWallMs - gap.lastSeenWallMs
         val elapsedDelta = gap.nowElapsedMs - gap.lastSeenElapsedMs
 
@@ -57,6 +103,7 @@ object ClockTamperClamp {
                 maxAnchorAdvanceMs = credited,
                 tampered = false,
                 reason = "boot boundary: wall clock only",
+                bootChanged = true,
             )
         }
 
@@ -66,8 +113,13 @@ object ClockTamperClamp {
         val disagreement = wallDelta - elapsedDelta
         if (kotlin.math.abs(disagreement) > TOLERANCE_MS) {
             return Verdict(
-                // Step 4: accumulate min(wallDelta, elapsedDelta) ...
-                creditedMs = minOf(wallDelta, elapsedDelta).coerceAtLeast(0),
+                // A restriction takes the smaller delta so a forward jump
+                // credits nothing; a relief takes the larger so a backward
+                // wind credits the monotonic delta anyway. See the class doc.
+                creditedMs = when (direction) {
+                    Direction.RESTRICTION -> minOf(wallDelta, elapsedDelta)
+                    Direction.RELIEF -> maxOf(wallDelta, elapsedDelta)
+                }.coerceAtLeast(0),
                 // ... and never advance the cycle anchor by more than elapsedDelta.
                 maxAnchorAdvanceMs = elapsedDelta.coerceAtLeast(0),
                 tampered = true,
@@ -76,6 +128,7 @@ object ClockTamperClamp {
                 } else {
                     "wall clock moved backward ${-disagreement}ms vs monotonic"
                 },
+                bootChanged = false,
             )
         }
 
@@ -84,6 +137,7 @@ object ClockTamperClamp {
             maxAnchorAdvanceMs = elapsedDelta.coerceAtLeast(0),
             tampered = false,
             reason = "clocks agree",
+            bootChanged = false,
         )
     }
 }

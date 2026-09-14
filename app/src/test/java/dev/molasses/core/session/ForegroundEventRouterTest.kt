@@ -115,4 +115,90 @@ class ForegroundEventRouterTest {
         val e = WindowEvent(ig, "x", 3, Kind.WINDOW_STATE_CHANGED)
         assertEquals(EventRoute.Ignore, router.route(e, setOf(yt), emptySet()))
     }
+
+    // ------------------------------------------- the degraded guard (no flag)
+
+    /**
+     * `flagRetrieveInteractiveWindows` is gone for banking-app compatibility,
+     * so `getWindows()` returns an empty list and the service can no longer
+     * enumerate its own windows up front. The id set is learned from events
+     * instead, which means it is **empty for the very first event from a new
+     * overlay window**.
+     *
+     * These tests pin the behaviour in exactly that worst case: an empty id
+     * set, which is what the guard degrades to. If rule 2 (the package-name
+     * check) did not carry it alone, showing a gate would read as the user
+     * going home and close the session underneath.
+     *
+     * This is weaker than the token set it replaced and needs device
+     * verification. See the README.
+     */
+    @Test
+    fun `an overlay event is ignored even when no window ids are known`() {
+        for (kind in Kind.entries) {
+            val route = router.route(
+                WindowEvent(
+                    packageName = own,
+                    // A gate or the touch sink: a plain view class, not an
+                    // activity, so a class-name check alone would not catch it.
+                    className = "android.widget.FrameLayout",
+                    windowId = 4242,
+                    kind = kind,
+                ),
+                targets = targets,
+                ownWindowIds = emptySet(),
+            )
+            assertEquals("kind=$kind", EventRoute.Ignore, route)
+        }
+    }
+
+    @Test
+    fun `a compose overlay event is ignored even when no window ids are known`() {
+        val route = router.route(
+            WindowEvent(
+                packageName = own,
+                className = "androidx.compose.ui.platform.ComposeView",
+                windowId = 77,
+                kind = Kind.WINDOW_STATE_CHANGED,
+            ),
+            targets = targets,
+            ownWindowIds = emptySet(),
+        )
+        assertEquals(EventRoute.Ignore, route)
+    }
+
+    @Test
+    fun `an overlay event with no class name at all is ignored`() {
+        // Some overlay windows report a null class. The package check is the
+        // only thing left standing in that case.
+        val route = router.route(
+            WindowEvent(
+                packageName = own,
+                className = null,
+                windowId = 9,
+                kind = Kind.WINDOW_STATE_CHANGED,
+            ),
+            targets = targets,
+            ownWindowIds = emptySet(),
+        )
+        assertEquals(EventRoute.Ignore, route)
+    }
+
+    @Test
+    fun `the launcher still reads as an exit under the degraded guard`() {
+        // The guard must not have degraded into "ignore everything from our
+        // own package", or leaving a target app for the launcher would stop
+        // closing the session.
+        val route = router.route(
+            WindowEvent(
+                packageName = own,
+                className = ForegroundEventRouter.LAUNCHER_CLASS_NAME,
+                windowId = 3,
+                kind = Kind.WINDOW_STATE_CHANGED,
+            ),
+            targets = targets,
+            ownWindowIds = emptySet(),
+        )
+        assertEquals(EventRoute.ExitToHome, route)
+    }
 }

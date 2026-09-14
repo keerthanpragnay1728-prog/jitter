@@ -79,11 +79,26 @@ we do not control, and any enabled accessibility service can trip some of
 them. If that happens, the pause is the answer, and disabling the service from
 the system accessibility page always works.
 
-**What the removal cost.** `getWindows()` now returns an empty list. The Phase
-0.1 overlay collision guard used it to enumerate our own windows and now
-learns those window ids from events instead, degrading to the package-name
-check rather than to nothing. Bit's fullscreen auto-retract loses
-`getBoundsInScreen()` entirely and will need a proxy signal.
+**What the removal cost.** `getWindows()` now returns an empty list. Bit's
+planned fullscreen auto-retract loses `getBoundsInScreen()` entirely and will
+need a proxy signal.
+
+The Phase 0.1 overlay collision guard also used it, to enumerate our own
+windows up front. It now learns those window ids from events instead, which
+means the set is **empty for the first event from any new overlay window**. In
+that window the guard is carried entirely by the package-name check in
+`ForegroundEventRouter`: an event wearing `dev.molasses` that is not the
+launcher activity is dropped.
+
+**This is weaker than the token set it replaced and needs device
+verification.** The reasoning is that an accessibility overlay added by this
+service reports our package on its events, so the package check is sufficient;
+`ForegroundEventRouterTest` pins that with an empty id set for every event
+kind, including a null class name. But the pure tests assert what the router
+does with an event, not what the platform actually puts on one. If a real
+overlay turns out to report a different package, or none, a gate could read as
+a foreground exit and close the session it is gating. Watch for a `PAUSED`
+ledger row timed with a gate appearing.
 
 ---
 
