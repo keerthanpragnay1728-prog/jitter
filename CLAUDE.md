@@ -55,8 +55,11 @@ runs of whitespace inside a string value unless the whole value is quoted.
 Check before committing:
 
 ```
-tools/check-dashes.sh
+tools/check-all.sh
 ```
+
+That runs the dash check, the encoding check, the format-string check and the
+pure suite. The individual scripts still work on their own.
 
 The script runs `grep -rn` for the two characters literally, with no `-P`, no
 code points and no `(*UTF)`, so it works on GNU and BSD grep. It covers `*.md`,
@@ -67,6 +70,34 @@ characters into this file would make it trip its own check.
 
 `*.xml` is in scope because display copy lives in `res/values/strings.xml`. It
 was out of scope once, and an em dash sat in shipped copy unnoticed.
+
+## Source encoding and format strings
+
+`tools/check-encoding.sh` and `tools/check-format-strings.py` exist because
+each of the faults they catch has already reached this repository:
+
+- A UTF-8 BOM was added to `accessibility_service_config.xml` by a commit whose
+  message described fixing an XML parse error. A BOM before an XML declaration
+  is itself an aapt2 failure mode on some versions.
+- `LauncherActivity.kt` carried two raw `0x95` bytes, a CP1252 bullet, so the
+  file was not valid UTF-8 at all. `kotlinc` reads sources as UTF-8, and a
+  stray high byte is a build failure or a silently mangled string literal.
+- Four strings in `strings.xml` used `%1` and `%2`, which are not format
+  specifiers. `String.format` throws `UnknownFormatConversionException` on
+  them. They were latent only because the renderer hardcoded its literals
+  instead of reading the resources.
+
+Sources are UTF-8 with no BOM. Every conversion is `%n$s`. A literal percent is
+`%%`. `formatted="false"` and positional arguments are mutually exclusive.
+
+## The profile is asserted, not just documented
+
+`AccessibilityConfigTest` reads `accessibility_service_config.xml` and
+`AndroidManifest.xml` as text and asserts the load-bearing attributes, because
+two of them were silently reverted once inside a commit about something else.
+Neither revert broke a visible feature, which is why neither was noticed:
+dropping `dev.molasses` from `packageNames` stops the session ever closing, and
+the ladder just goes quietly wrong.
 
 ## Service model
 

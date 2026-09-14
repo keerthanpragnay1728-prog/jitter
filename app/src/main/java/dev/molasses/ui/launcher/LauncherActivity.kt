@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.R
+import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.ui.settings.SettingsActivity
 import dev.molasses.ui.theme.MolassesTheme
 import kotlinx.coroutines.delay
@@ -204,9 +205,15 @@ fun MainLauncherWorkspace(
     val pagerState = rememberPagerState(pageCount = { 2 })
     val context = LocalContext.current
 
-    val targetPackages = remember {
-        setOf("com.instagram.android", "com.twitter.android", "com.google.android.youtube")
-    }
+    // The shipped default list, not a second copy of it. A literal here
+    // drifts the moment the defaults change, and the [TRACKED] badge would
+    // then disagree with what the service actually monitors.
+    //
+    // Still the *defaults* rather than the user's live target list, which
+    // lives in CycleStateStore. Reading it needs a ViewModel this screen does
+    // not have yet, so a user who has edited their targets sees a stale badge.
+    // Cosmetic, and noted in the README rather than fixed here.
+    val targetPackages = remember { DEFAULT_TARGETS.toSet() }
 
     val apps = remember {
         val pm = context.packageManager
@@ -310,7 +317,7 @@ fun TerminalHomeView(
             delay(3400L)
             creatureFace = "( -_- )"
             delay(120L)
-            creatureFace = "( •_• )"
+            creatureFace = "( o_o )"
             delay(120L)
             creatureFace = "(o_o)"
         }
@@ -363,7 +370,7 @@ fun TerminalHomeView(
 
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
-            text = "    BAT: %",
+            text = "$timeText  $dateText  BAT: $batteryPercent%",
             fontFamily = FontFamily.Monospace,
             fontSize = 11.sp,
             color = DimSlate,
@@ -853,7 +860,7 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
                         val pct = ((mins * 100) / allMins.coerceAtLeast(1)).toInt()
                         val filled = (pct / 5).coerceIn(0, 20)
                         val empty = (20 - filled).coerceAtLeast(0)
-                        val bar = "[" + "=".repeat(filled) + " ".repeat(empty) + "] %"
+                        val bar = "[" + "=".repeat(filled) + " ".repeat(empty) + "] $pct%"
                         AppUsageRecord(label, mins, bar)
                     }
                 }
@@ -891,7 +898,7 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
                     color = DimSlate,
                 )
                 Text(
-                    text = " hr,  min",
+                    text = "$totalHours hr, $totalMins min",
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
@@ -935,7 +942,7 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
                         color = TextWhite,
                     )
                     Text(
-                        text = " min",
+                        text = "${record.minutes} min",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         color = RadiantAmber,

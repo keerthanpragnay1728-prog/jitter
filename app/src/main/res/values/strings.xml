@@ -179,7 +179,7 @@
     <string name="launcher_status_ready">DAEMON: ACTIVE | CYCLE: 6H</string>
     <string name="launcher_target_badge">[TRACKED]</string>
     <!-- Launcher Telemetry & Quick Access -->
-    <string name="launcher_telemetry_fmt" formatted="false">%1$s | %2$s | BAT: %3$s%</string>
+    <string name="launcher_telemetry_fmt">%1$s | %2$s | BAT: %3$s%%</string>
     <string name="launcher_quick_phone">PHONE</string>
     <string name="launcher_quick_sms">SMS</string>
     <string name="launcher_quick_emergency">SOS</string>
@@ -190,15 +190,15 @@
     <string name="launcher_page_terminal">01 // CONSOLE</string>
     <string name="launcher_page_screentime">02 // LEDGER</string>
     <string name="launcher_screentime_title">SESSION USAGE &amp; CYCLE</string>
-    <string name="launcher_screentime_target_fmt">%1 : %2 min</string>
+    <string name="launcher_screentime_target_fmt">%1$s : %2$s min</string>
     <string name="launcher_cycle_label">CYCLE WINDOW: 6H FIXED</string>
     <!-- Ledger & Notification Filter UI -->
     <string name="ledger_title">DIGITAL WELLBEING // CYCLE</string>
-    <string name="ledger_total_screentime">TODAY: %1 hr, %2 min</string>
+    <string name="ledger_total_screentime">TODAY: %1$s hr, %2$s min</string>
     <string name="ledger_metrics_fmt">%1$s UNLOCKS | %2$s NOTIFICATIONS</string>
     <string name="ledger_view_details">[OPEN SYSTEM WELLBEING]</string>
     <string name="filter_title">NOTIFICATION FILTER</string>
-    <string name="filter_status_active">FILTER ACTIVE: %1 CLEARED</string>
+    <string name="filter_status_active">FILTER ACTIVE: %1$s CLEARED</string>
     <string name="filter_status_idle">FILTER DORMANT</string>
     <string name="filter_allowlist_header">ALLOWED APPS (BYPASS FILTER)</string>
     <!-- Notification Shade & Inbox -->
