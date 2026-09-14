@@ -7,6 +7,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Several of these exercise `OFFHOOK`, which the chosen notification source
+ * never produces. They are kept on purpose: they are what makes the telephony
+ * source swappable without re-deriving the logic. See the class doc on
+ * `MissedCallDetector`.
+ */
 class MissedCallDetectorTest {
 
     private fun detector() = MissedCallDetector()

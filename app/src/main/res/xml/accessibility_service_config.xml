@@ -1,12 +1,31 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Four attributes here are load bearing. See CLAUDE.md, "The accessibility
+  profile is user-visible", and the README section on banking apps.
+
+  notificationTimeout stays 0, or the platform coalesces a scroll burst into
+  one callback and the stall stops feeling immediate.
+
+  canRetrieveWindowContent stays false. isAccessibilityTool stays false.
+
+  accessibilityFlags does NOT include flagRetrieveInteractiveWindows, and
+  packageNames stays scoped to the targets plus dev.molasses. Banking and UPI
+  apps read this profile and warn on it. Widening either is a user-visible
+  regression on a daily-driver phone, not a refactor.
+
+  dev.molasses is in packageNames on purpose: without it no event arrives when
+  the user leaves a target app, so the session never closes and time keeps
+  accruing against an app that is no longer on screen. ForegroundEventRouter
+  drops anything wearing our own package name before it looks at anything else.
+-->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeViewScrolled|typeWindowStateChanged|typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows"
+    android:accessibilityFlags="flagDefault"
     android:canRetrieveWindowContent="false"
     android:canPerformGestures="false"
     android:notificationTimeout="0"
-    android:packageNames="com.instagram.android,com.twitter.android,com.google.android.youtube"
+    android:packageNames="dev.molasses,com.instagram.android,com.twitter.android,com.google.android.youtube"
     android:isAccessibilityTool="false"
     android:settingsActivity="dev.molasses.ui.settings.SettingsActivity"
     android:description="@string/a11y_service_description"/>
