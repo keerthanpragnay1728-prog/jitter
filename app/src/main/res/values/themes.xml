@@ -1,4 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The window background, which is what shows through before and around
+  anything Compose paints.
+
+  This was android:Theme.Material.Light.NoActionBar, which is why the settings
+  screen was white: MolassesTheme sets Compose colours but not the window, and
+  the launcher only looked correct because it wraps itself in a Surface that
+  covers the window entirely. SettingsActivity does not, so the platform theme
+  showed through.
+
+  Black rather than a token from Color.kt because this is resolved by the
+  platform before any Compose code runs. The two must be kept in step by hand;
+  JitterBackground is 0xFF000000 for exactly this reason.
+-->
 <resources>
-    <style name="Theme.Molasses" parent="android:Theme.Material.Light.NoActionBar"/>
+    <style name="Theme.Molasses" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+    </style>
 </resources>

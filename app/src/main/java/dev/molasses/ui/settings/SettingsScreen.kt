@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.diag.ServiceHealth
+import dev.molasses.ui.theme.PhosphorDivider
 import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.ui.FontScale
 import dev.molasses.engine.TierPolicy
@@ -70,6 +70,23 @@ fun SettingsScreen(
     val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
     val fontScale by vm.fontScale.collectAsStateWithLifecycle()
     val diag by vm.engineDiagnostics.collectAsStateWithLifecycle()
+
+    var appFilter by rememberSaveable { mutableStateOf("") }
+    // Selected targets always stay visible, even when they do not match the
+    // filter. Otherwise typing a name silently hides what is already ticked
+    // and the list reads as though the selection was lost.
+    val shownApps = remember(appFilter, installed, targets) {
+        val q = appFilter.trim()
+        if (q.isEmpty()) {
+            installed
+        } else {
+            installed.filter {
+                it.pkg in targets ||
+                    it.label.contains(q, ignoreCase = true) ||
+                    it.pkg.contains(q, ignoreCase = true)
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -139,7 +156,7 @@ fun SettingsScreen(
             )
         }
         item { SectionHeader(R.string.settings_section_ladder) }
-        item { LadderCard() }
+        item { LadderRows() }
 
         item { SectionHeader(R.string.settings_section_targets) }
         item {
@@ -149,7 +166,31 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.secondary,
             )
         }
-        items(installed, key = { it.pkg }) { app ->
+        item {
+            // Eighty plus packages is not a list, it is a haystack. Filters
+            // on label and package name both: the label is what a user knows
+            // and the package name is what a target actually is, and the two
+            // often share no words at all.
+            OutlinedTextField(
+                value = appFilter,
+                onValueChange = { appFilter = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.settings_targets_search)) },
+                singleLine = true,
+            )
+        }
+        item {
+            Text(
+                stringResource(
+                    R.string.settings_targets_count_fmt,
+                    shownApps.size.toString(),
+                    installed.size.toString(),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+        items(shownApps, key = { it.pkg }) { app ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -168,6 +209,15 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.secondary,
                     )
                 }
+            }
+        }
+        if (installed.isNotEmpty() && shownApps.isEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.settings_targets_no_match),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
             }
         }
         if (installed.isEmpty()) {
@@ -286,9 +336,9 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun LadderCard() {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
+private fun LadderRows() {
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Column {
             TierPolicy.ladder.forEach { tier ->
                 val minutes = tier.entryAtMs / 60_000
                 val label = when {
@@ -311,13 +361,23 @@ private fun LadderCard() {
     }
 }
 
+/**
+ * A section break: a label over a hairline rule, like a guide in a code
+ * editor. The rule carries the structure that the removed card borders used
+ * to, at a fraction of the visual weight.
+ */
 @Composable
 private fun SectionHeader(@StringRes text: Int) {
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(20.dp))
     Text(
         stringResource(text).uppercase(),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.primary,
+    )
+    HorizontalDivider(
+        Modifier.padding(top = 4.dp, bottom = 8.dp),
+        thickness = 1.dp,
+        color = PhosphorDivider,
     )
 }
 
@@ -329,13 +389,13 @@ private fun ChecklistRow(
     satisfied: Boolean,
     onClick: () -> Unit,
 ) {
-    Card(
+    Column(
         Modifier
             .fillMaxWidth()
             .clickable(enabled = !satisfied, onClick = onClick),
     ) {
         Row(
-            Modifier.padding(16.dp),
+            Modifier.padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(

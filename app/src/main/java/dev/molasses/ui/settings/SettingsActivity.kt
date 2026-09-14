@@ -7,12 +7,16 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import dagger.hilt.android.AndroidEntryPoint
+import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.MolassesTheme
 
 /**
@@ -40,6 +44,13 @@ class SettingsActivity : ComponentActivity() {
         setContent {
             MolassesTheme {
                 var showDebug by rememberSaveable { mutableStateOf(false) }
+                // The Surface the launcher has and this screen did not. Without
+                // it the platform window background shows through everywhere
+                // Compose does not paint.
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = JitterBackground,
+                ) {
                 if (showDebug) {
                     DebugScreen(onBack = { showDebug = false })
                 } else {
@@ -50,6 +61,7 @@ class SettingsActivity : ComponentActivity() {
                         onRequestNotifications = { requestNotifications() },
                         onOpenDebug = { showDebug = true },
                     )
+                }
                 }
             }
         }
