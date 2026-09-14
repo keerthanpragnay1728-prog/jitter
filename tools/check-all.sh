@@ -18,6 +18,10 @@ echo "== format strings =="
 python3 tools/check-format-strings.py
 
 echo
+echo "== colours =="
+tools/check-colors.sh
+
+echo
 echo "== pure suite =="
 (cd tools/pure-verify && ./gradlew test --rerun-tasks -q)
 echo "Pure suite green."

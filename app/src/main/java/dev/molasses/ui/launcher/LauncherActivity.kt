@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.Uri
 import android.os.BatteryManager
 import android.os.Bundle
 import android.provider.Settings
@@ -18,7 +17,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -37,7 +35,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -65,7 +62,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -82,7 +78,11 @@ import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.R
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.ui.settings.SettingsActivity
+import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.MolassesTheme
+import dev.molasses.ui.theme.PhosphorDim
+import dev.molasses.ui.theme.PhosphorDivider
+import dev.molasses.ui.theme.PhosphorGreen
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -110,13 +110,6 @@ data class AppUsageRecord(
     val bar: String,
 )
 
-private val PitchBlack = Color(0xFF000000)
-private val DarkMolassesCard = Color(0xFF130F0A)
-private val RadiantAmber = Color(0xFFFF9E3B)
-private val TextWhite = Color(0xFFEDEDED)
-private val DimSlate = Color(0xFF7E7A75)
-private val SharpBorder = Color(0xFF2B2014)
-
 @AndroidEntryPoint
 class LauncherActivity : ComponentActivity() {
 
@@ -136,7 +129,7 @@ class LauncherActivity : ComponentActivity() {
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = PitchBlack,
+                    color = JitterBackground,
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         MainLauncherWorkspace(
@@ -150,9 +143,6 @@ class LauncherActivity : ComponentActivity() {
                             },
                             onDialer = {
                                 startActivity(Intent(Intent.ACTION_DIAL))
-                            },
-                            onEmergency = {
-                                startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:112")))
                             },
                             onOpenMessaging = {
                                 val waIntent = packageManager.getLaunchIntentForPackage("com.whatsapp")
@@ -198,7 +188,6 @@ fun MainLauncherWorkspace(
     onOpenSettings: () -> Unit,
     onLaunchPackage: (String) -> Unit,
     onDialer: () -> Unit,
-    onEmergency: () -> Unit,
     onOpenMessaging: () -> Unit,
     onOpenWellbeingSettings: () -> Unit,
 ) {
@@ -245,23 +234,26 @@ fun MainLauncherWorkspace(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                listOf("01 // CONSOLE", "02 // LEDGER").forEachIndexed { index, title ->
+                listOf(
+                    stringResource(R.string.launcher_page_terminal),
+                    stringResource(R.string.launcher_page_screentime),
+                ).forEachIndexed { index, title ->
                     Text(
                         text = title,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal,
-                        color = if (pagerState.currentPage == index) RadiantAmber else DimSlate,
+                        color = if (pagerState.currentPage == index) PhosphorGreen else PhosphorDim,
                     )
                 }
             }
 
             Text(
-                text = "[CFG]",
+                text = stringResource(R.string.launcher_cfg),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 11.sp,
-                color = RadiantAmber,
+                color = PhosphorGreen,
                 modifier = Modifier
                     .clickable { onOpenSettings() }
                     .padding(4.dp),
@@ -280,7 +272,6 @@ fun MainLauncherWorkspace(
                     onOpenNotifInbox = onOpenNotifInbox,
                     onLaunchPackage = onLaunchPackage,
                     onDialer = onDialer,
-                    onEmergency = onEmergency,
                     onOpenMessaging = onOpenMessaging,
                 )
                 1 -> TextualWellbeingView(
@@ -297,7 +288,6 @@ fun TerminalHomeView(
     onOpenNotifInbox: () -> Unit,
     onLaunchPackage: (String) -> Unit,
     onDialer: () -> Unit,
-    onEmergency: () -> Unit,
     onOpenMessaging: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -370,10 +360,10 @@ fun TerminalHomeView(
 
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
-            text = "$timeText  $dateText  BAT: $batteryPercent%",
+            text = stringResource(R.string.launcher_telemetry_fmt, timeText, dateText, batteryPercent.toString()),
             fontFamily = FontFamily.Monospace,
             fontSize = 11.sp,
-            color = DimSlate,
+            color = PhosphorDim,
         )
 
         Spacer(Modifier.height(14.dp))
@@ -390,8 +380,6 @@ fun TerminalHomeView(
                     }
                 }
                 .fillMaxWidth()
-                .background(DarkMolassesCard)
-                .border(1.dp, SharpBorder, RoundedCornerShape(4.dp))
                 .clickable {
                     creatureFace = "(^o^)"
                 }
@@ -403,24 +391,24 @@ fun TerminalHomeView(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp,
-                    color = RadiantAmber,
+                    color = PhosphorGreen,
                 )
 
                 Spacer(Modifier.width(14.dp))
 
                 Column {
                     Text(
-                        text = "BIT // DRAGGABLE COMPANION",
+                        text = stringResource(R.string.launcher_bit_label),
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
-                        color = TextWhite,
+                        color = PhosphorGreen,
                     )
                     Text(
-                        text = "HOLD & DRAG ANYWHERE  |  TAP TO POKE",
+                        text = stringResource(R.string.launcher_bit_hint),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 9.sp,
-                        color = DimSlate,
+                        color = PhosphorDim,
                     )
                 }
             }
@@ -432,8 +420,6 @@ fun TerminalHomeView(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(DarkMolassesCard)
-                .border(1.dp, SharpBorder)
                 .clickable { onOpenNotifInbox() }
                 .padding(horizontal = 12.dp, vertical = 9.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -441,36 +427,36 @@ fun TerminalHomeView(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "O",
+                    text = stringResource(R.string.launcher_filter_glyph),
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
-                    color = RadiantAmber,
+                    color = PhosphorGreen,
                 )
                 Spacer(Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = "Notification filter active",
+                        text = stringResource(R.string.launcher_filter_row_title),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextWhite,
+                        color = PhosphorGreen,
                     )
                     Text(
-                        text = "More than 99 notifications cleared [VIEW]",
+                        text = stringResource(R.string.filter_status_idle),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 9.sp,
-                        color = DimSlate,
+                        color = PhosphorDim,
                     )
                 }
             }
 
             Text(
-                text = "v",
+                text = stringResource(R.string.launcher_chevron_glyph),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
-                color = RadiantAmber,
+                color = PhosphorGreen,
             )
         }
 
@@ -482,34 +468,21 @@ fun TerminalHomeView(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "[PHONE]",
+                text = stringResource(R.string.launcher_quick_phone),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 10.sp,
-                color = RadiantAmber,
+                color = PhosphorGreen,
                 modifier = Modifier
-                    .border(1.dp, SharpBorder)
                     .clickable { onDialer() }
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             )
             Text(
-                text = "[MESSAGES]",
+                text = stringResource(R.string.launcher_quick_messages),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 10.sp,
-                color = RadiantAmber,
+                color = PhosphorGreen,
                 modifier = Modifier
-                    .border(1.dp, SharpBorder)
                     .clickable { onOpenMessaging() }
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
-            )
-            Text(
-                text = "[SOS]",
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 10.sp,
-                color = Color(0xFFE5534B),
-                modifier = Modifier
-                    .border(1.dp, Color(0xFF4A1A1A))
-                    .clickable { onEmergency() }
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             )
         }
@@ -520,26 +493,24 @@ fun TerminalHomeView(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(DarkMolassesCard)
-                .border(1.dp, SharpBorder)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "$ ",
+                text = stringResource(R.string.launcher_prompt_symbol),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                color = RadiantAmber,
+                color = PhosphorGreen,
                 fontSize = 13.sp,
             )
 
             Box(modifier = Modifier.weight(1f)) {
                 if (query.isEmpty()) {
                     Text(
-                        text = "type app...",
+                        text = stringResource(R.string.launcher_search_placeholder),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
-                        color = DimSlate,
+                        color = PhosphorDim,
                     )
                 }
 
@@ -549,10 +520,10 @@ fun TerminalHomeView(
                     textStyle = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
-                        color = TextWhite,
+                        color = PhosphorGreen,
                     ),
                     singleLine = true,
-                    cursorBrush = SolidColor(RadiantAmber),
+                    cursorBrush = SolidColor(PhosphorGreen),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(
                         onGo = {
@@ -585,16 +556,16 @@ fun TerminalHomeView(
                         text = app.label,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
-                        color = TextWhite,
+                        color = PhosphorGreen,
                     )
 
                     if (app.isTarget) {
                         Text(
-                            text = "[TRACKED]",
+                            text = stringResource(R.string.launcher_target_badge),
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
-                            color = RadiantAmber,
+                            color = PhosphorGreen,
                         )
                     }
                 }
@@ -620,7 +591,10 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(PitchBlack)
+            // The one surviving fill. This is a full-screen overlay drawn over
+            // the console, so it has to be opaque. Everything else floats on
+            // the window background.
+            .background(JitterBackground)
             .padding(horizontal = 16.dp, vertical = 40.dp),
     ) {
         // Top App Bar
@@ -631,16 +605,17 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
             IconButton(onClick = onClose) {
                 Icon(
                     imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = TextWhite,
+                    contentDescription = stringResource(R.string.action_back),
+                    tint = PhosphorGreen,
                 )
             }
             Text(
-                text = "Notifications",
+                text = stringResource(R.string.notif_shade_title),
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = TextWhite,
+                color = PhosphorGreen,
                 modifier = Modifier.padding(start = 8.dp),
+                fontFamily = FontFamily.Monospace,
             )
         }
 
@@ -649,12 +624,12 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
         // Tabs: FILTERED NOTIFICATIONS vs SETTINGS
         TabRow(
             selectedTabIndex = selectedTab,
-            containerColor = PitchBlack,
-            contentColor = TextWhite,
+            containerColor = JitterBackground,
+            contentColor = PhosphorGreen,
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
                     modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                    color = TextWhite,
+                    color = PhosphorGreen,
                 )
             },
         ) {
@@ -663,10 +638,11 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
                 onClick = { selectedTab = 0 },
                 text = {
                     Text(
-                        text = "FILTERED NOTIFICATIONS",
+                        text = stringResource(R.string.notif_tab_filtered),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (selectedTab == 0) TextWhite else DimSlate,
+                        color = if (selectedTab == 0) PhosphorGreen else PhosphorDim,
+                        fontFamily = FontFamily.Monospace,
                     )
                 },
             )
@@ -675,10 +651,11 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
                 onClick = { selectedTab = 1 },
                 text = {
                     Text(
-                        text = "SETTINGS",
+                        text = stringResource(R.string.notif_tab_settings),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (selectedTab == 1) TextWhite else DimSlate,
+                        color = if (selectedTab == 1) PhosphorGreen else PhosphorDim,
+                        fontFamily = FontFamily.Monospace,
                     )
                 },
             )
@@ -706,12 +683,14 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
                             Text(
                                 text = notif.sourceApp,
                                 fontSize = 12.sp,
-                                color = DimSlate,
+                                color = PhosphorDim,
+                                fontFamily = FontFamily.Monospace,
                             )
                             Text(
                                 text = notif.time,
                                 fontSize = 11.sp,
-                                color = DimSlate,
+                                color = PhosphorDim,
+                                fontFamily = FontFamily.Monospace,
                             )
                         }
                         Spacer(Modifier.height(2.dp))
@@ -719,16 +698,18 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
                             text = notif.title,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TextWhite,
+                            color = PhosphorGreen,
+                            fontFamily = FontFamily.Monospace,
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
                             text = notif.message,
                             fontSize = 12.sp,
-                            color = DimSlate,
+                            color = PhosphorDim,
+                            fontFamily = FontFamily.Monospace,
                         )
                         Spacer(Modifier.height(8.dp))
-                        androidx.compose.material3.HorizontalDivider(color = SharpBorder, thickness = 1.dp)
+                        androidx.compose.material3.HorizontalDivider(color = PhosphorDivider, thickness = 1.dp)
                     }
                 }
             }
@@ -743,15 +724,16 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Clear all",
+                    text = stringResource(R.string.notif_clear_all),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = TextWhite,
+                    color = PhosphorGreen,
+                    fontFamily = FontFamily.Monospace,
                 )
                 Icon(
                     imageVector = Icons.Default.Delete,
-                    contentDescription = "Clear all",
-                    tint = TextWhite,
+                    contentDescription = stringResource(R.string.notif_clear_all),
+                    tint = PhosphorGreen,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -762,18 +744,18 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
                     .fillMaxWidth(),
             ) {
                 Text(
-                    text = "NOTIFICATION FILTER ALLOWLIST",
+                    text = stringResource(R.string.filter_allowlist_header),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = RadiantAmber,
+                    color = PhosphorGreen,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Apps marked [ALLOWED] bypass the filter and deliver heads-up banners immediately. All other apps stay silently in this inbox.",
+                    text = stringResource(R.string.filter_allowlist_body),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp,
-                    color = DimSlate,
+                    color = PhosphorDim,
                 )
                 Spacer(Modifier.height(16.dp))
 
@@ -781,7 +763,6 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(DarkMolassesCard)
                             .padding(12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
@@ -790,14 +771,14 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
                             text = name,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
-                            color = TextWhite,
+                            color = PhosphorGreen,
                         )
                         Text(
-                            text = "[ALLOWED]",
+                            text = stringResource(R.string.filter_allowed_badge),
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
-                            color = RadiantAmber,
+                            color = PhosphorGreen,
                         )
                     }
                     Spacer(Modifier.height(6.dp))
@@ -874,11 +855,11 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
             .padding(top = 4.dp),
     ) {
         Text(
-            text = "DIGITAL WELLBEING // CYCLE",
+            text = stringResource(R.string.ledger_title),
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = 12.sp,
-            color = RadiantAmber,
+            color = PhosphorGreen,
         )
 
         Spacer(Modifier.height(14.dp))
@@ -886,30 +867,28 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(DarkMolassesCard)
-                .border(1.dp, SharpBorder)
                 .padding(16.dp),
         ) {
             Column {
                 Text(
-                    text = "TODAY'S SCREEN TIME",
+                    text = stringResource(R.string.ledger_screentime_label),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp,
-                    color = DimSlate,
+                    color = PhosphorDim,
                 )
                 Text(
-                    text = "$totalHours hr, $totalMins min",
+                    text = stringResource(R.string.ledger_screentime_fmt, totalHours.toString(), totalMins.toString()),
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
-                    color = TextWhite,
+                    color = PhosphorGreen,
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "42 UNLOCKS  |  74 NOTIFICATIONS",
+                    text = stringResource(R.string.ledger_metrics_fmt, "42", "74"),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
-                    color = RadiantAmber,
+                    color = PhosphorGreen,
                 )
             }
         }
@@ -917,10 +896,10 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
         Spacer(Modifier.height(16.dp))
 
         Text(
-            text = "DISTRIBUTION METRICS",
+            text = stringResource(R.string.ledger_distribution),
             fontFamily = FontFamily.Monospace,
             fontSize = 10.sp,
-            color = DimSlate,
+            color = PhosphorDim,
         )
 
         Spacer(Modifier.height(8.dp))
@@ -939,20 +918,20 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
                         text = record.label.uppercase(),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
-                        color = TextWhite,
+                        color = PhosphorGreen,
                     )
                     Text(
-                        text = "${record.minutes} min",
+                        text = stringResource(R.string.ledger_app_minutes_fmt, record.minutes.toString()),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
-                        color = RadiantAmber,
+                        color = PhosphorGreen,
                     )
                 }
                 Text(
                     text = record.bar,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp,
-                    color = DimSlate,
+                    color = PhosphorDim,
                 )
             }
         }
@@ -960,11 +939,11 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
         Spacer(Modifier.height(20.dp))
 
         Text(
-            text = "[VIEW SYSTEM WELLBEING DETAILS]",
+            text = stringResource(R.string.ledger_view_details),
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = 11.sp,
-            color = RadiantAmber,
+            color = PhosphorGreen,
             modifier = Modifier
                 .clickable { onOpenWellbeing() }
                 .padding(vertical = 4.dp),
