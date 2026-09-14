@@ -17,9 +17,9 @@
   of these take Double thresholds.
 -->
 <resources>
-    <string name="app_name">Molasses</string>
-    <string name="a11y_service_label">Molasses progressive friction</string>
-    <string name="a11y_service_description">Molasses watches only which of your chosen apps is in the foreground and when you scroll in it, so it can add deliberate friction as your usage adds up. It never reads the contents of your screen.</string>
+    <string name="app_name">Jitter</string>
+    <string name="a11y_service_label">Jitter progressive friction</string>
+    <string name="a11y_service_description">Jitter adds deliberate friction to apps you choose, so that the longer you spend in them the harder they are to keep using. To do that it needs to know two things and only two things: which of your chosen apps is in the foreground, and when you scroll inside one. It uses that to delay your touches and to show a full-screen prompt that asks you to move. It does not read the contents of your screen, it does not read text, and it does not see anything in apps you have not chosen. Nothing it observes leaves your device.</string>
 
     <!-- Movement gate -->
     <string name="gate_tier">Tier %1$s</string>
@@ -67,15 +67,13 @@
     <string name="settings_checklist_step">%1$s.</string>
 
     <string name="settings_perm_a11y_title">Accessibility service</string>
-    <string name="settings_perm_a11y_body">Required. Lets Molasses see which app is in front and when you scroll.</string>
+    <string name="settings_perm_a11y_body">Required. Lets Jitter see which app is in front and when you scroll.</string>
     <string name="settings_perm_usage_title">Usage access</string>
-    <string name="settings_perm_usage_body">Required. Rebuilds your time if Molasses is killed mid-session.</string>
+    <string name="settings_perm_usage_body">Required. Rebuilds your time if Jitter is killed mid-session.</string>
     <string name="settings_perm_activity_title">Physical activity</string>
     <string name="settings_perm_activity_body">Preferred. Uses the step sensor for the movement gate. Without it the gate falls back to motion analysis.</string>
     <string name="settings_perm_notifications_title">Notifications</string>
     <string name="settings_perm_notifications_body">Optional. Tells you when a cycle resets or a gate is still owed.</string>
-    <string name="settings_perm_overlay_title">Draw over other apps</string>
-    <string name="settings_perm_overlay_body">Optional. Only needed for the stall preview below.</string>
 
     <string name="settings_targets_hint">Scrolling in these apps accumulates time.</string>
     <string name="settings_targets_empty">No launchable apps listed yet.</string>
