@@ -1,5 +1,6 @@
 package dev.molasses.ui.launcher
 
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -577,16 +578,13 @@ fun TerminalHomeView(
 @Composable
 fun NotificationInboxOverlay(onClose: () -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val notifications = remember {
-        mutableStateListOf(
-            FilteredNotification("1", "Domino's", "Ganesh Chaturthi Treat", "Your fav Cheese Burst @ Rs.150 OFF", "19:17"),
-            FilteredNotification("2", "Gmail", "Cracku", "99.97%ILER'S VARC Secret!", "19:03"),
-            FilteredNotification("3", "Myntra", "Level up your denim game", "Jeans from M&S & Levis at Min 60% Off", "18:50"),
-            FilteredNotification("4", "Rapido", "Bappa brings the blessings!", "We bring the ride. Book your cab!", "18:46"),
-            FilteredNotification("5", "Nykaa Fashion", "Outzidr | Starts Rs.299", "Glam going-out fits you need", "18:18"),
-            FilteredNotification("6", "Zoomcar", "LAST CHANCE: 50% OFF!", "Take the long way with ZFLASH50", "18:00"),
-        )
-    }
+    // Empty, and empty on purpose. NotificationFilterService does not exist
+    // yet, so nothing is being filtered and there is nothing to show. Six
+    // plausible promo notifications were here; they made a screen that does
+    // nothing look like a screen that works.
+    // TODO: back this with the FilteredNotificationEntity Room table once the
+    // listener service lands.
+    val notifications = remember { mutableStateListOf<FilteredNotification>() }
 
     Column(
         modifier = Modifier
@@ -664,6 +662,15 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
         Spacer(Modifier.height(14.dp))
 
         if (selectedTab == 0) {
+            if (notifications.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.notif_empty_box),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = PhosphorDim,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+            }
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
@@ -759,30 +766,16 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
                 )
                 Spacer(Modifier.height(16.dp))
 
-                listOf("WhatsApp", "Phone", "Messages", "Google Calendar").forEach { name ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = name,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            color = PhosphorGreen,
-                        )
-                        Text(
-                            text = stringResource(R.string.filter_allowed_badge),
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = PhosphorGreen,
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                }
+                // No rows. The four app names here were literals, not an
+                // allowlist: nothing read them and nothing acted on them.
+                // TODO: populate from the filter service's allowlist once it
+                // exists, and make the rows togglable then.
+                Text(
+                    text = stringResource(R.string.filter_allowlist_empty),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = PhosphorDim,
+                )
             }
         }
     }
@@ -791,33 +784,27 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
 @Composable
 fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
     val context = LocalContext.current
-    var totalHours by remember { mutableIntStateOf(3) }
-    var totalMins by remember { mutableIntStateOf(49) }
-
-    var usageRecords by remember {
-        mutableStateOf(
-            listOf(
-                AppUsageRecord("Instagram", 108L, "[==========          ] 47%"),
-                AppUsageRecord("WhatsApp", 64L,  "[======              ] 28%"),
-                AppUsageRecord("Albums", 23L,    "[==                  ] 10%"),
-                AppUsageRecord("Other", 34L,     "[===                 ] 15%"),
-            )
-        )
-    }
+    // Null means "not known", never zero. A device without usage access, or
+    // one queried before the first event of the day, must render -- rather
+    // than a confident 0, which is indistinguishable from a real idle day.
+    var screenTimeMs by remember { mutableStateOf<Long?>(null) }
+    var unlockCount by remember { mutableStateOf<Int?>(null) }
+    var usageRecords by remember { mutableStateOf(emptyList<AppUsageRecord>()) }
 
     LaunchedEffect(Unit) {
-        try {
-            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-            val cal = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
-            val startOfDay = cal.timeInMillis
-            val endOfDay = System.currentTimeMillis()
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            ?: return@LaunchedEffect
+        val startOfDay = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val now = System.currentTimeMillis()
 
-            val statsMap = usm?.queryAndAggregateUsageStats(startOfDay, endOfDay)
+        // ------------------------------------------------------ screen time
+        try {
+            val statsMap = usm.queryAndAggregateUsageStats(startOfDay, now)
             if (!statsMap.isNullOrEmpty()) {
                 val valid = statsMap.values
                     .filter { it.totalTimeInForeground > 60_000L }
@@ -826,10 +813,8 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
 
                 val sumMillis = valid.sumOf { it.totalTimeInForeground }
                 if (sumMillis > 0) {
+                    screenTimeMs = sumMillis
                     val allMins = sumMillis / 60_000L
-                    totalHours = (allMins / 60).toInt()
-                    totalMins = (allMins % 60).toInt()
-
                     val pm = context.packageManager
                     usageRecords = valid.map { stat ->
                         val label = try {
@@ -846,7 +831,12 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
                     }
                 }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            // Leaves screenTimeMs null, which renders as unknown.
+        }
+
+        // ---------------------------------------------------------- unlocks
+        unlockCount = countUnlocks(usm, startOfDay, now)
     }
 
     Column(
@@ -877,7 +867,15 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
                     color = PhosphorDim,
                 )
                 Text(
-                    text = stringResource(R.string.ledger_screentime_fmt, totalHours.toString(), totalMins.toString()),
+                    text = run {
+                        val unknown = stringResource(R.string.ledger_value_unknown)
+                        val mins = screenTimeMs?.let { it / 60_000L }
+                        stringResource(
+                            R.string.ledger_screentime_fmt,
+                            mins?.let { (it / 60).toString() } ?: unknown,
+                            mins?.let { (it % 60).toString() } ?: unknown,
+                        )
+                    },
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
@@ -885,7 +883,19 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = stringResource(R.string.ledger_metrics_fmt, "42", "74"),
+                    // Unlocks are real. Notifications are not: there is no
+                    // NotificationFilterService yet, so there is no source
+                    // for that number and it renders as unknown.
+                    // TODO: wire the notification count once
+                    // NotificationFilterService exists and its Room table is
+                    // the source. Do not substitute a proxy count from
+                    // anywhere else; a plausible wrong number is worse here
+                    // than an honest --.
+                    text = stringResource(
+                        R.string.ledger_metrics_fmt,
+                        unlockCount?.toString() ?: stringResource(R.string.ledger_value_unknown),
+                        stringResource(R.string.ledger_value_unknown),
+                    ),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     color = PhosphorGreen,
@@ -903,6 +913,15 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
         )
 
         Spacer(Modifier.height(8.dp))
+
+        if (usageRecords.isEmpty()) {
+            Text(
+                text = stringResource(R.string.ledger_distribution_empty),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = PhosphorDim,
+            )
+        }
 
         usageRecords.forEach { record ->
             Column(
@@ -949,4 +968,45 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
                 .padding(vertical = 4.dp),
         )
     }
+}
+
+/**
+ * Unlocks today, from `UsageStatsManager.queryEvents`.
+ *
+ * ## Why not a count of ACTIVITY_RESUMED
+ * That counts app launches, which is a different and much larger number. A
+ * user who checks one app twenty times in a single unlocked session has
+ * unlocked once.
+ *
+ * ## Why two event types, and why not their sum
+ * Unlocking a phone with a secure lock screen emits `SCREEN_INTERACTIVE` and
+ * then `KEYGUARD_HIDDEN`. Adding them would double every unlock. A device
+ * with no lock screen set emits only `SCREEN_INTERACTIVE`, so keying on
+ * `KEYGUARD_HIDDEN` alone would report zero forever.
+ *
+ * So: count `KEYGUARD_HIDDEN` when the device produces any, and fall back to
+ * `SCREEN_INTERACTIVE` when it produces none. The fallback is the honest
+ * reading on an unsecured device, where "unlock" and "screen on" really are
+ * the same event.
+ *
+ * Returns null on a missing grant or a failed query. Null renders as unknown;
+ * it must never collapse to 0, which would read as a genuinely idle day.
+ */
+private fun countUnlocks(usm: UsageStatsManager, startMs: Long, endMs: Long): Int? = try {
+    val events = usm.queryEvents(startMs, endMs)
+    val event = UsageEvents.Event()
+    var keyguardHidden = 0
+    var screenInteractive = 0
+    while (events.hasNextEvent()) {
+        events.getNextEvent(event)
+        when (event.eventType) {
+            UsageEvents.Event.KEYGUARD_HIDDEN -> keyguardHidden += 1
+            UsageEvents.Event.SCREEN_INTERACTIVE -> screenInteractive += 1
+        }
+    }
+    if (keyguardHidden > 0) keyguardHidden else screenInteractive
+} catch (e: SecurityException) {
+    null
+} catch (e: Exception) {
+    null
 }
