@@ -180,12 +180,26 @@
     <string name="launcher_target_badge">[TRACKED]</string>
     <!-- Launcher Telemetry & Quick Access -->
     <string name="launcher_telemetry_fmt">%1$s | %2$s | BAT: %3$s%%</string>
-    <string name="launcher_quick_phone">PHONE</string>
-    <string name="launcher_quick_sms">SMS</string>
-    <string name="launcher_quick_emergency">SOS</string>
+    <string name="launcher_quick_phone">[PHONE]</string>
+    <string name="launcher_quick_messages">[MESSAGES]</string>
     <string name="launcher_filter_label">NOTIF FILTER</string>
     <string name="launcher_filter_active">MUTED</string>
     <string name="launcher_filter_dormant">OPEN</string>
+    <string name="launcher_cfg">[CFG]</string>
+    <string name="launcher_bit_label">BIT // COMPANION</string>
+    <string name="launcher_bit_hint">DRAG TO MOVE  |  TAP TO POKE</string>
+    <string name="launcher_filter_row_title">Notification filter</string>
+    <!-- Decorative glyphs. Shown on screen, never reworded or translated. -->
+    <string name="launcher_prompt_symbol" translatable="false">$ </string>
+    <string name="launcher_filter_glyph" translatable="false">O</string>
+    <string name="launcher_chevron_glyph" translatable="false">v</string>
+    <string name="ledger_screentime_label">TODAY\'S SCREEN TIME</string>
+    <string name="ledger_screentime_fmt">%1$s hr, %2$s min</string>
+    <string name="ledger_distribution">DISTRIBUTION METRICS</string>
+    <string name="ledger_app_minutes_fmt">%1$s min</string>
+    <string name="filter_allowlist_body">Apps marked [ALLOWED] bypass the filter and deliver heads-up banners immediately. All other apps stay silently in this inbox.</string>
+    <string name="filter_allowed_badge">[ALLOWED]</string>
+    <string name="action_back">Back</string>
     <!-- Extended Terminal & Telemetry Page -->
     <string name="launcher_page_terminal">01 // CONSOLE</string>
     <string name="launcher_page_screentime">02 // LEDGER</string>
