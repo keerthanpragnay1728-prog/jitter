@@ -93,6 +93,7 @@ import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.command.CommandParser
 import dev.molasses.core.command.ParseError
 import dev.molasses.core.command.ParseResult
+import dev.molasses.core.ui.BezelSnap
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.repo.SettingsRepository
@@ -1224,18 +1225,39 @@ private fun BitCompanion(
     val offsetX = remember { Animatable(0f) }
     val offsetY = remember { Animatable(0f) }
     var containerWidth by remember { mutableIntStateOf(0) }
+    var containerHeight by remember { mutableIntStateOf(0) }
     var bitWidth by remember { mutableIntStateOf(0) }
+    var bitHeight by remember { mutableIntStateOf(0) }
 
     var tapCount by remember { mutableIntStateOf(0) }
     var lastTapMs by remember { mutableLongStateOf(0L) }
 
     val velocityTracker = remember { VelocityTracker() }
 
+    // Bound both axes to the parent, so neither the drag nor the decay can
+    // put Bit where Compose will not deliver it touch events. Set as the
+    // Animatable's own bounds rather than clamped afterwards: animateDecay
+    // stops at a bound, whereas a post-hoc clamp would let it fly outside and
+    // come back, and Bit is untouchable for the whole excursion.
+    LaunchedEffect(containerWidth, bitWidth) {
+        if (BezelSnap.canSnap(containerWidth, bitWidth)) {
+            offsetX.updateBounds(0f, BezelSnap.maxOffset(containerWidth, bitWidth))
+        }
+    }
+    LaunchedEffect(containerHeight, bitHeight) {
+        if (BezelSnap.canSnap(containerHeight, bitHeight)) {
+            offsetY.updateBounds(0f, BezelSnap.maxOffset(containerHeight, bitHeight))
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(BIT_ROW_HEIGHT)
-            .onSizeChanged { containerWidth = it.width },
+            .onSizeChanged {
+                containerWidth = it.width
+                containerHeight = it.height
+            },
     ) {
         Text(
             text = frame.face,
@@ -1245,7 +1267,10 @@ private fun BitCompanion(
             color = PhosphorGreen,
             modifier = Modifier
                 .offset { IntOffset(offsetX.value.roundToInt(), offsetY.value.roundToInt()) }
-                .onSizeChanged { bitWidth = it.width }
+                .onSizeChanged {
+                    bitWidth = it.width
+                    bitHeight = it.height
+                }
                 .pointerInput(frame.ignoresInput) {
                     // While Bit has turned away it genuinely ignores input,
                     // rather than accepting taps and discarding them.
@@ -1260,18 +1285,21 @@ private fun BitCompanion(
                         },
                     )
                 }
-                .pointerInput(frame.ignoresInput) {
+                .pointerInput(frame.ignoresInput, containerWidth, bitWidth) {
                     if (frame.ignoresInput) return@pointerInput
                     detectDragGestures(
                         onDragStart = { velocityTracker.resetTracking() },
                         onDragEnd = {
+                            // Never snap from a measurement that has not
+                            // arrived. A zero width makes the right target
+                            // look arithmetically fine and puts Bit one full
+                            // width outside the parent, which is the reported
+                            // lockup.
+                            if (!BezelSnap.canSnap(containerWidth, bitWidth)) {
+                                return@detectDragGestures
+                            }
                             val velocity = velocityTracker.calculateVelocity()
-                            val maxX = (containerWidth - bitWidth).coerceAtLeast(0).toFloat()
                             scope.launch {
-                                // Carry the throw, then settle to the nearer
-                                // bezel. Two animations rather than one so the
-                                // momentum is visible before the snap takes
-                                // over.
                                 offsetY.animateDecay(
                                     velocity.y,
                                     exponentialDecay(frictionMultiplier = BIT_DECAY_FRICTION),
@@ -1282,7 +1310,14 @@ private fun BitCompanion(
                                     velocity.x,
                                     exponentialDecay(frictionMultiplier = BIT_DECAY_FRICTION),
                                 )
-                                val target = if (offsetX.value > maxX / 2f) maxX else 0f
+                                val target =
+                                    BezelSnap.snapTargetX(offsetX.value, containerWidth, bitWidth)
+                                check(
+                                    BezelSnap.isWithinBounds(target, containerWidth, bitWidth),
+                                ) {
+                                    "bezel target $target outside " +
+                                        "[0, ${BezelSnap.maxOffset(containerWidth, bitWidth)}]"
+                                }
                                 offsetX.animateTo(
                                     targetValue = target,
                                     animationSpec = spring(
@@ -1296,13 +1331,14 @@ private fun BitCompanion(
                         change.consume()
                         velocityTracker.addPosition(change.uptimeMillis, change.position)
                         scope.launch {
+                            // snapTo respects the bounds set above, so a drag
+                            // cannot carry Bit out of the parent either.
                             offsetX.snapTo(offsetX.value + dragAmount.x)
                             offsetY.snapTo(offsetY.value + dragAmount.y)
                         }
                     }
                 },
         )
-
         val line = frame.line
         if (line != null) {
             Text(
