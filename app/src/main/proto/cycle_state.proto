@@ -91,6 +91,12 @@ message AppState {
   int32 tier_index = 2;                // monotonic, never decremented
   int32 gates_cleared = 3;
   int64 tier_unlocked_until_ms = 4;
+
+  // Ignoring a checkpoint adds friction rather than suspending it. This is
+  // the ratchet that does it: it accrues while a checkpoint is overdue and
+  // never decreases. Kept separate from accumulated_ms on purpose, so the
+  // ledger still reports true time.
+  int64 penalty_ms = 5;
 }
 
 enum CycleResetPolicyProto {

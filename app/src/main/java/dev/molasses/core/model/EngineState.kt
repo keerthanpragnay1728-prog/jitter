@@ -9,6 +9,15 @@ data class AppSnapshot(
     val tierUnlockedUntilMs: Long,
     /** True when a gate is owed and has been neither cleared nor superseded. */
     val gatePending: Boolean,
+    /**
+     * Extra time added to the friction lookup for ignoring checkpoints.
+     *
+     * Deliberately a separate field and never folded into [accumulatedMs].
+     * The ledger has to report true time, and the debug screen shows the two
+     * side by side: a user looking at their own numbers should be able to see
+     * what they actually spent and what it is costing them.
+     */
+    val penaltyMs: Long = 0,
 )
 
 /** Immutable view of the engine, published on [dev.molasses.engine.FrictionEngine.state]. */

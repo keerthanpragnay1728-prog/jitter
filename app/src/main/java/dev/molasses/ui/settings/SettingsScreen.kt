@@ -249,6 +249,22 @@ fun SettingsScreen(
         }
 
         item { SectionHeader(R.string.settings_section_gate) }
+        // Condition of the precedence flip: the promise changed, so the copy
+        // has to change with it. Nobody should discover that ignoring a gate
+        // no longer avoids friction by being trapped by it.
+        item {
+            Column {
+                Text(
+                    stringResource(R.string.settings_gate_unavoidable_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    stringResource(R.string.settings_gate_unavoidable_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+        }
         item {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

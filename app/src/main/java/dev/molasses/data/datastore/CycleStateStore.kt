@@ -297,6 +297,7 @@ fun AppSnapshot.toProto(): AppState = AppState.newBuilder()
     .setTierIndex(tierIndex)
     .setGatesCleared(gatesCleared)
     .setTierUnlockedUntilMs(tierUnlockedUntilMs)
+    .setPenaltyMs(penaltyMs)
     .build()
 
 fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
@@ -315,6 +316,7 @@ fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
             // on the next scroll, which is both simpler and correct -- the
             // accumulated total is what decides whether a gate is owed.
             gatePending = false,
+            penaltyMs = a.penaltyMs,
         )
     },
     cycleAnchorWallMs = cycleAnchorWallMs,

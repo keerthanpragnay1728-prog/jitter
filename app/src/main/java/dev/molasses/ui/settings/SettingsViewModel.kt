@@ -66,6 +66,8 @@ data class LadderRow(
     val tierIndex: Int,
     val gatesCleared: Int,
     val tierUnlockedUntilMs: Long,
+    /** Never added to [accumulatedMs]. True time and effective time are two numbers. */
+    val penaltyMs: Long,
 )
 
 /** Requested vs. actual armed duration, parsed back out of the ledger. */
@@ -181,6 +183,7 @@ class SettingsViewModel @Inject constructor(
                         tierIndex = it.tierIndex,
                         gatesCleared = it.gatesCleared,
                         tierUnlockedUntilMs = it.tierUnlockedUntilMs,
+                        penaltyMs = it.penaltyMs,
                     )
                 }
                 .sortedByDescending { it.accumulatedMs }

@@ -4,12 +4,13 @@ import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EventType
-import dev.molasses.core.model.FrictionAction
+import dev.molasses.core.model.FrictionDecision
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -69,7 +70,7 @@ class FrictionEngineTest {
 
         fun enter(pkg: String, ms: Long) { at(ms); engine.onForegroundEnter(pkg, ms) }
         fun exit(pkg: String, ms: Long) { at(ms); engine.onForegroundExit(pkg, ms) }
-        fun scroll(pkg: String, ms: Long): FrictionAction { at(ms); return engine.onScroll(pkg, ms) }
+        fun scroll(pkg: String, ms: Long): FrictionDecision { at(ms); return engine.onScroll(pkg, ms) }
         fun clear(pkg: String, ms: Long) { at(ms); engine.onGateCleared(pkg, ms) }
         fun abandon(pkg: String, ms: Long) { at(ms); engine.onGateAbandoned(pkg, ms) }
         fun snap(pkg: String): AppSnapshot = engine.snapshot().perApp.getValue(pkg)
@@ -81,19 +82,92 @@ class FrictionEngineTest {
     fun `under five minutes nothing happens`() {
         val r = Rig()
         r.enter(ig, 0)
-        assertEquals(FrictionAction.None, r.scroll(ig, 1 * min))
-        assertEquals(FrictionAction.None, r.scroll(ig, 4 * min + 59_000))
+        // Tier 0 and no checkpoint due. Worth noting this now passes for a
+        // different reason than before: not because a pending gate suppresses
+        // the stall, but because nothing is owed.
+        assertEquals(FrictionDecision.NONE, r.scroll(ig, 1 * min))
+        assertEquals(FrictionDecision.NONE, r.scroll(ig, 4 * min + 59_000))
     }
 
     @Test
-    fun `at five minutes a gate is demanded, then the tier one stall applies`() {
+    fun `at five minutes a checkpoint is owed and the stall runs anyway`() {
         val r = Rig()
         r.enter(ig, 0)
-        assertEquals(FrictionAction.Gate(1), r.scroll(ig, 5 * min))
-        // Still gated until cleared -- a gate is not a suggestion.
-        assertEquals(FrictionAction.Gate(1), r.scroll(ig, 5 * min + 5_000))
+
+        // Both, from the first scroll. The old behaviour returned Gate and
+        // suppressed the stall until it was cleared, so walking away from the
+        // gate switched friction off entirely.
+        val first = r.scroll(ig, 5 * min)
+        assertEquals(1, first.gate)
+        assertEquals(1_000L, first.stallMs)
+
+        val second = r.scroll(ig, 5 * min + 5_000)
+        assertEquals(1, second.gate)
+        assertTrue("stall must not stop while a checkpoint is owed", second.stalls)
+
         r.clear(ig, 5 * min + 6_000)
-        assertEquals(FrictionAction.Stall(1_000), r.scroll(ig, 5 * min + 7_000))
+
+        val after = r.scroll(ig, 5 * min + 7_000)
+        assertNull("checkpoint should be paid", after.gate)
+        assertTrue("stall continues after clearing", after.stalls)
+    }
+
+    @Test
+    fun `ignoring a checkpoint adds friction rather than removing it`() {
+        // The invariant this flip exists to create, stated directly.
+        val ignored = Rig()
+        ignored.enter(ig, 0)
+        ignored.scroll(ig, 5 * min)
+        ignored.scroll(ig, 15 * min)
+
+        // Paying means paying every checkpoint, not just the first. The
+        // original version of this test cleared only at five minutes and then
+        // ignored the ten and fifteen minute ones, which accrued exactly the
+        // same penalty and made the test assert nothing.
+        val paid = Rig()
+        paid.enter(ig, 0)
+        paid.scroll(ig, 5 * min)
+        paid.clear(ig, 5 * min)
+        paid.scroll(ig, 10 * min)
+        paid.clear(ig, 10 * min)
+        paid.scroll(ig, 15 * min)
+
+        assertTrue(
+            "ignoring must cost more than paying: ignored=" +
+                "${ignored.snap(ig).penaltyMs} paid=${paid.snap(ig).penaltyMs}",
+            ignored.snap(ig).penaltyMs > paid.snap(ig).penaltyMs,
+        )
+        assertEquals("paying every toll accrues nothing", 0L, paid.snap(ig).penaltyMs)
+    }
+
+    @Test
+    fun `the penalty is a ratchet and clearing never refunds it`() {
+        val r = Rig()
+        r.enter(ig, 0)
+        r.scroll(ig, 5 * min)
+        r.scroll(ig, 12 * min)
+        val earned = r.snap(ig).penaltyMs
+        assertTrue("penalty should have accrued, got $earned", earned > 0)
+
+        r.clear(ig, 12 * min)
+        r.scroll(ig, 13 * min)
+        assertEquals("clearing must not refund the penalty", earned, r.snap(ig).penaltyMs)
+    }
+
+    @Test
+    fun `the penalty is never folded into accumulated time`() {
+        // The ledger reports what the user actually spent. The penalty is a
+        // separate number and is shown as one.
+        val r = Rig()
+        r.enter(ig, 0)
+        r.scroll(ig, 5 * min)
+        r.scroll(ig, 15 * min)
+        val snap = r.snap(ig)
+        assertTrue("penalty should have accrued", snap.penaltyMs > 0)
+        assertTrue(
+            "accumulated ${snap.accumulatedMs} should be true time, about 15m",
+            snap.accumulatedMs in (15 * min - 2_000)..(15 * min + 2_000),
+        )
     }
 
     @Test
@@ -102,13 +176,14 @@ class FrictionEngineTest {
         r.enter(ig, 0)
 
         fun clearAndStall(atMs: Long, tier: Int, stallMs: Long) {
-            assertEquals("gate at tier $tier", FrictionAction.Gate(tier), r.scroll(ig, atMs))
+            val owed = r.scroll(ig, atMs)
+            assertEquals("gate at tier $tier", tier, owed.gate)
+            // Present on the same scroll now, not only after clearing.
+            assertEquals("stall at tier $tier", stallMs, owed.stallMs)
             r.clear(ig, atMs)
-            assertEquals(
-                "stall after tier $tier",
-                FrictionAction.Stall(stallMs),
-                r.scroll(ig, atMs + 1_000),
-            )
+            val after = r.scroll(ig, atMs + 1_000)
+            assertNull("checkpoint paid at tier $tier", after.gate)
+            assertEquals("stall after tier $tier", stallMs, after.stallMs)
         }
 
         clearAndStall(5 * min, 1, 1_000)
@@ -143,16 +218,17 @@ class FrictionEngineTest {
         r.enter(ig, 0)
         r.scroll(ig, 15 * min)
         r.clear(ig, 15 * min)
-        assertEquals(
-            FrictionAction.Stall(5_000),
-            r.scroll(ig, 15 * min + 1_000),
-        )
-        // A duplicated or late clear must not walk it back.
+        val before = r.scroll(ig, 15 * min + 1_000).stallMs
+        assertTrue("a stall should be commanded at 15 min, got $before", before > 0)
+
+        // A duplicated or late clear must not walk it back. Relational rather
+        // than against a hardcoded 5000, so retuning cannot quietly turn this
+        // into a test of the constant instead of the invariant.
         r.clear(ig, 15 * min + 2_000)
         r.clear(ig, 15 * min + 2_500)
-        assertEquals(
-            FrictionAction.Stall(5_000),
-            r.scroll(ig, 15 * min + 3_000),
+        assertTrue(
+            "clearing lowered the stall",
+            r.scroll(ig, 15 * min + 3_000).stallMs >= before,
         )
     }
 
@@ -200,15 +276,26 @@ class FrictionEngineTest {
         r.clear(ig, 13 * min)
         // Unlocked to the tier-3 boundary (15 min), not 13 + 5 = 18.
         assertEquals(15 * min, r.snap(ig).tierUnlockedUntilMs)
-        assertEquals(FrictionAction.Stall(3_000), r.scroll(ig, 14 * min))
-        assertEquals(FrictionAction.Gate(3), r.scroll(ig, 15 * min))
+        val mid = r.scroll(ig, 14 * min)
+        assertNull("no checkpoint owed before the boundary", mid.gate)
+        // The stall is higher than true time alone earns, and deliberately:
+        // reaching 13 minutes means the five and ten minute checkpoints were
+        // both ignored, which accrued eight minutes of penalty. The tier
+        // index and the unlock boundary above are still on true time; only
+        // the stall reads the penalty.
+        assertTrue("penalty should have accrued", r.snap(ig).penaltyMs > 0)
+        assertTrue(
+            "stall ${mid.stallMs} should exceed the true-time tier 2 stall",
+            mid.stallMs > 3_000L,
+        )
+        assertEquals("checkpoint owed at the boundary", 3, r.scroll(ig, 15 * min).gate)
     }
 
     @Test
     fun `abandoning a gate changes nothing and re-gates on the next scroll`() {
         val r = Rig()
         r.enter(ig, 0)
-        assertEquals(FrictionAction.Gate(1), r.scroll(ig, 5 * min))
+        assertEquals(1, r.scroll(ig, 5 * min).gate)
         val before = r.snap(ig)
 
         r.abandon(ig, 5 * min + 1_000)
@@ -217,7 +304,7 @@ class FrictionEngineTest {
         assertEquals(before.gatesCleared, after.gatesCleared)
         assertEquals(before.tierUnlockedUntilMs, after.tierUnlockedUntilMs)
         assertEquals(before.tierIndex, after.tierIndex)
-        assertEquals(FrictionAction.Gate(1), r.scroll(ig, 5 * min + 2_000))
+        assertEquals(1, r.scroll(ig, 5 * min + 2_000).gate)
     }
 
     // -------------------------------------------------------- accounting
@@ -234,7 +321,7 @@ class FrictionEngineTest {
         assertEquals(4 * min, r.snap(ig).accumulatedMs)
 
         // Two more minutes in-app tips it over five.
-        assertEquals(FrictionAction.Gate(1), r.scroll(ig, 66 * min))
+        assertEquals(1, r.scroll(ig, 66 * min).gate)
     }
 
     @Test
@@ -243,14 +330,14 @@ class FrictionEngineTest {
         r.enter(ig, 0)
         // TYPE_WINDOW_STATE_CHANGED fires repeatedly inside one app.
         repeat(20) { r.enter(ig, (it * 10_000).toLong()) }
-        assertEquals(FrictionAction.Gate(1), r.scroll(ig, 5 * min))
+        assertEquals(1, r.scroll(ig, 5 * min).gate)
     }
 
     @Test
     fun `a scroll with no preceding window state change still accumulates`() {
         val r = Rig()
-        assertEquals(FrictionAction.None, r.scroll(ig, 0))
-        assertEquals(FrictionAction.Gate(1), r.scroll(ig, 5 * min))
+        assertEquals(FrictionDecision.NONE, r.scroll(ig, 0))
+        assertEquals(1, r.scroll(ig, 5 * min).gate)
     }
 
     @Test
@@ -261,8 +348,8 @@ class FrictionEngineTest {
         assertEquals(3 * min, r.snap(ig).accumulatedMs)
         assertEquals(0L, r.snap(yt).accumulatedMs)
 
-        assertEquals(FrictionAction.None, r.scroll(yt, 6 * min))
-        assertEquals(FrictionAction.Gate(1), r.scroll(yt, 8 * min))
+        assertEquals(FrictionDecision.NONE, r.scroll(yt, 6 * min))
+        assertEquals(1, r.scroll(yt, 8 * min).gate)
         // Instagram is untouched at 3 minutes.
         assertEquals(3 * min, r.snap(ig).accumulatedMs)
     }
@@ -273,7 +360,7 @@ class FrictionEngineTest {
         r.enter(ig, 10 * min)
         // Should be impossible; a boot-reset value leaking past the reconciler
         // must not produce negative accumulation.
-        assertEquals(FrictionAction.None, r.scroll(ig, 1 * min))
+        assertEquals(FrictionDecision.NONE, r.scroll(ig, 1 * min))
         assertTrue(r.snap(ig).accumulatedMs >= 0)
     }
 
@@ -300,7 +387,7 @@ class FrictionEngineTest {
 
         assertEquals("cycle should have rolled", 0, r.snap(ig).tierIndex)
         assertEquals(0L, r.snap(ig).accumulatedMs)
-        assertEquals(FrictionAction.None, r.scroll(ig, 15 * min + 6 * hour + 1 * min))
+        assertEquals(FrictionDecision.NONE, r.scroll(ig, 15 * min + 6 * hour + 1 * min))
     }
 
     @Test
@@ -369,8 +456,15 @@ class FrictionEngineTest {
 
         val r2 = Rig(persisted)
         r2.enter(ig, 0)
-        // Picks up mid-tier-2 with the gate already paid for.
-        assertEquals(FrictionAction.Stall(3_000), r2.scroll(ig, 1_000))
+        // Picks up mid-tier-2 with the gate already paid for. The stall is
+        // above the true-time tier 2 value because the penalty carried
+        // through the snapshot: the five and ten minute checkpoints were both
+        // passed without clearing before the one at twelve minutes was.
+        assertTrue(
+            "penalty must survive the restart",
+            r2.snap(ig).penaltyMs > 0,
+        )
+        assertTrue(r2.scroll(ig, 1_000).stallMs >= 3_000L)
         assertEquals(2, r2.snap(ig).tierIndex)
         assertEquals(1, r2.snap(ig).gatesCleared)
     }
@@ -411,7 +505,7 @@ class FrictionEngineTest {
     }
 
     @Test
-    fun `tier zero scrolling writes no ledger rows`() {
+    fun `scrolling below the first tier writes no ledger rows`() {
         val r = Rig()
         r.enter(ig, 0)
         repeat(200) { r.scroll(ig, (it * 100).toLong()) }

@@ -60,6 +60,8 @@
     <string name="settings_section_ladder">The ladder</string>
     <string name="settings_section_targets">Target apps</string>
     <string name="settings_section_policy">Cycle reset policy</string>
+    <string name="settings_gate_unavoidable_title">Checkpoints cannot be skipped</string>
+    <string name="settings_gate_unavoidable_body">Walking away from a checkpoint used to switch friction off until you cleared it. It no longer does. Scroll delays run continuously from six minutes onward, and an unpaid checkpoint makes them arrive sooner rather than stopping them. Clearing one buys time before the next; ignoring one costs you. There is no setting that turns friction off, and the typing task is the lightest way to pay.</string>
     <string name="settings_section_gate">Movement gate</string>
     <string name="settings_section_safety">Safety</string>
     <string name="settings_safety_body">Banking and UPI apps refuse to run when something is drawn over them, and some warn about accessibility services regardless. Jitter never draws over the apps listed here, and you can silence it entirely for fifteen minutes.</string>
@@ -107,7 +109,7 @@
     <string name="settings_policy_fixed_body">The cycle resets six hours after it started, whether or not you kept using the apps.</string>
 
     <string name="settings_alt_challenge_title">Alternative challenge</string>
-    <string name="settings_alt_challenge_body">Replaces the physical gate with a 25-second untimed typing task. For anyone who cannot or should not be made to walk.</string>
+    <string name="settings_alt_challenge_body">Replaces the physical gate with a 25-second untimed typing task. For anyone who cannot or should not be made to walk. Checkpoints still have to be paid either way.</string>
 
     <string name="settings_ladder_normal">0-5 min, normal</string>
     <string name="settings_ladder_terminal">%1$s min+ (terminal), gate every 5 min, %2$s ms stall</string>
@@ -241,6 +243,8 @@
     <string name="filter_allowlist_header">ALLOWED APPS (BYPASS FILTER)</string>
     <!-- Service and engine diagnostics. Field labels are shown on screen but
          must not be reworded: they are read alongside adb output. -->
+    <string name="debug_field_penalty" translatable="false">penalty</string>
+    <string name="debug_field_effective" translatable="false">effective</string>
     <string name="debug_section_service">SERVICE</string>
     <string name="debug_field_bound" translatable="false">bound</string>
     <string name="debug_field_enabled" translatable="false">enabled</string>

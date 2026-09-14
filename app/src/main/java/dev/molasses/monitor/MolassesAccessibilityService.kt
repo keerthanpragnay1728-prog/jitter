@@ -12,7 +12,6 @@ import dev.molasses.core.diag.ServiceHealthPolicy
 import dev.molasses.core.latency.LatencyRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
-import dev.molasses.core.model.FrictionAction
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.session.EventRoute
@@ -454,18 +453,21 @@ class MolassesAccessibilityService : AccessibilityService() {
         // advance even while overlays are suppressed, or a pause would be a
         // friction holiday and suppression over a bank would be a free ride.
         // Only the drawing is withheld.
-        val action = engine.onScroll(pkg, now())
+        val decision = engine.onScroll(pkg, now())
         if (overlaysSuppressed()) return
 
-        when (action) {
-            is FrictionAction.Stall -> shutter.arm(
-                ms = pinnedStallMs ?: action.ms,
+        // Both, in that order. A scroll can now earn a stall and a checkpoint
+        // at once, and the stall is armed first because it belongs to the
+        // gesture that just happened: arming it after showing the gate would
+        // put it behind a full-screen window where it absorbs nothing.
+        if (decision.stalls) {
+            shutter.arm(
+                ms = pinnedStallMs ?: decision.stallMs,
                 scrollEventTimeUptimeMs = eventTime,
                 callbackEntryUptimeMs = callbackEntryUptimeMs,
             )
-            is FrictionAction.Gate -> gate.show(pkg, action.tier, alternativeChallenge)
-            FrictionAction.None -> {}
         }
+        decision.gate?.let { tier -> gate.show(pkg, tier, alternativeChallenge) }
     }
 
     /**
