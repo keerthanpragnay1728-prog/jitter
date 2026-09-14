@@ -18,10 +18,21 @@ package dev.molasses.core.telephony
  *
  * ## Deliberately source agnostic
  * This takes [State] values and nothing else. It does not know whether they
- * came from `TelephonyManager` (which needs `READ_PHONE_STATE`) or were
- * derived from a dialer notification (which needs none). That decision has a
- * permissions cost attached and is made by the caller, so the logic can be
- * settled and tested before the decision is.
+ * came from `TelephonyManager` (which needs `READ_PHONE_STATE` and
+ * `READ_CALL_LOG`) or were derived from a dialer notification (which needs
+ * neither).
+ *
+ * The chosen source is the notification listener, because the two telephony
+ * permissions are exactly what the banking-app work in `SensitivePackages`
+ * removed, and the listener is being built anyway. A dialer notification is
+ * a single event rather than a stream, so the adapter synthesises
+ * `RINGING` then `IDLE` and the intermediate states never arrive.
+ *
+ * **The `OFFHOOK` branches are therefore unreachable under the current
+ * source.** They are kept deliberately, not left by accident: if an OEM
+ * dialer posts a notification this app cannot read, the telephony source has
+ * to be swappable without touching or re-testing this logic. Each is marked
+ * below. Do not delete them as dead code.
  *
  * ## Starting mid-call
  * The first state ever seen is treated as a baseline, not as a transition. A
@@ -79,6 +90,7 @@ class MissedCallDetector {
         if (previous == null) {
             // Baseline. A process that starts mid-call sees OFFHOOK here and
             // must remember that, or the IDLE that follows reads as a miss.
+            // Also unreachable under the notification source, and also kept.
             sawOffHookThisCall = next == State.OFFHOOK
             return Event.None
         }
@@ -90,6 +102,8 @@ class MissedCallDetector {
                 // A new ring. Reset the connected flag, but only when arriving
                 // from IDLE: RINGING during an OFFHOOK call is call waiting,
                 // and the original call is still connected.
+                // The RINGING-during-OFFHOOK case below is call waiting, and
+                // is likewise unreachable under the notification source.
                 if (previous == State.IDLE) {
                     sawOffHookThisCall = false
                     if (callerId == null) ringingCallerId = null
@@ -97,6 +111,8 @@ class MissedCallDetector {
                 Event.None
             }
 
+            // Unreachable under the notification source, which never
+            // reports a connected call. Kept for the telephony source.
             State.OFFHOOK -> {
                 sawOffHookThisCall = true
                 Event.Connected
