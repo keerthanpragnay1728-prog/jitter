@@ -31,6 +31,12 @@ class GateOverlayManager(
     private val scope: CoroutineScope,
     private val onCleared: (pkg: String) -> Unit,
     private val onAbandoned: (pkg: String) -> Unit,
+    /**
+     * Fired after the gate window is added or removed. The gate belongs to our
+     * own package, so without this the service reads showing it as the user
+     * going home and closes the session it is gating.
+     */
+    private val onWindowsChanged: () -> Unit = {},
 ) {
     private var host: OverlayHost? = null
     private var currentPkg: String? = null
@@ -80,6 +86,8 @@ class GateOverlayManager(
         // the handler runs, so teardown is not executing inside the very
         // coroutine it is about to cancel. watchJob is nulled first for the
         // same reason, so dismissInternal has nothing to cancel here.
+        onWindowsChanged()
+
         watchJob = scope.launch(Dispatchers.Main.immediate) {
             val outcome = detector.outcome.first()
             watchJob = null
@@ -154,6 +162,7 @@ class GateOverlayManager(
         detector.stop()
         host?.dismiss()
         host = null
+        onWindowsChanged()
         currentPkg = null
         currentTier = 0
     }

@@ -27,7 +27,6 @@ data class PermissionState(
     val usageAccess: Boolean,
     val activityRecognition: Boolean,
     val notifications: Boolean,
-    val overlay: Boolean,
 ) {
     /** The gate and the stall both work without notifications or overlay. */
     val essentialsGranted: Boolean get() = accessibility && usageAccess
@@ -65,7 +64,6 @@ class SettingsRepository(
         } else {
             true
         },
-        overlay = Settings.canDrawOverlays(appContext),
     )
 
     /**

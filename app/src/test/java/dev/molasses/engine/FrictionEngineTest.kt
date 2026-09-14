@@ -40,6 +40,7 @@ class FrictionEngineTest {
             ledger = ledger,
             wallClock = clock,
             monotonicClock = clock,
+            bootIdProvider = clock,
             scope = scope,
         )
 
@@ -47,6 +48,24 @@ class FrictionEngineTest {
             clock.mono = ms
             clock.wall = WALL_BASE + ms
         }
+
+        /** Advance the wall clock alone, as a user setting the clock forward does. */
+        fun warpWall(ms: Long) { clock.wall += ms }
+
+        /**
+         * A reboot: the monotonic clock restarts near zero and BOOT_COUNT
+         * increments. The wall clock carries on across it, which is the only
+         * reason an anchor can survive a reboot at all.
+         */
+        fun reboot(wallAdvanceMs: Long) {
+            clock.wall += wallAdvanceMs
+            clock.mono = 0
+            clock.boot += 1
+        }
+
+        fun tick(ms: Long) { clock.mono = ms; clock.wall = WALL_BASE + ms; engine.checkpoint(ms) }
+        fun tickNow() { engine.checkpoint(clock.mono) }
+        fun state() = engine.state.value
 
         fun enter(pkg: String, ms: Long) { at(ms); engine.onForegroundEnter(pkg, ms) }
         fun exit(pkg: String, ms: Long) { at(ms); engine.onForegroundExit(pkg, ms) }
@@ -271,7 +290,7 @@ class FrictionEngineTest {
 
     @Test
     fun `abstinence policy rolls the cycle after six idle hours`() {
-        val r = Rig()
+        val r = Rig(EngineSnapshot(resetPolicy = CycleResetPolicy.ABSTINENCE_6H))
         r.enter(ig, 0)
         r.scroll(ig, 15 * min)
         r.exit(ig, 15 * min)
@@ -286,7 +305,7 @@ class FrictionEngineTest {
 
     @Test
     fun `abstinence policy does not roll one minute short of six hours`() {
-        val r = Rig()
+        val r = Rig(EngineSnapshot(resetPolicy = CycleResetPolicy.ABSTINENCE_6H))
         r.enter(ig, 0)
         r.scroll(ig, 15 * min)
         r.exit(ig, 15 * min)
@@ -299,7 +318,7 @@ class FrictionEngineTest {
 
     @Test
     fun `abstinence policy does not roll while the app keeps being used`() {
-        val r = Rig()
+        val r = Rig(EngineSnapshot(resetPolicy = CycleResetPolicy.ABSTINENCE_6H))
         r.enter(ig, 0)
         // Seven hours of on-and-off use, never six clear hours away.
         var t = 0L

@@ -13,8 +13,15 @@
   assistive one; claiming otherwise is a Play Console policy violation.
 
   packageNames scopes the event firehose. It is re-set at runtime via
-  setServiceInfo() when the user edits their target list -- see
+  setServiceInfo() when the user edits their target list, see
   MolassesAccessibilityService.applyTargets().
+
+  dev.molasses is in the list on purpose. Without it no event arrives when the
+  user leaves a target app, so the session is never closed and time keeps
+  accruing against an app that is no longer on screen. Including it means every
+  overlay this app shows now produces events too, which is why
+  ForegroundEventRouter drops anything from a window this service owns before
+  any other handling.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeViewScrolled|typeWindowStateChanged|typeWindowsChanged"
@@ -23,7 +30,7 @@
     android:canRetrieveWindowContent="false"
     android:canPerformGestures="false"
     android:notificationTimeout="0"
-    android:packageNames="com.instagram.android,com.twitter.android,com.google.android.youtube"
+    android:packageNames="dev.molasses,com.instagram.android,com.twitter.android,com.google.android.youtube"
     android:isAccessibilityTool="false"
     android:settingsActivity="dev.molasses.ui.settings.SettingsActivity"
     android:description="@string/a11y_service_description"/>
