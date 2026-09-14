@@ -5,6 +5,7 @@ import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EngineState
 import dev.molasses.core.model.EventType
+import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.model.FrictionDecision
 import dev.molasses.core.time.BootIdProvider
 import dev.molasses.core.time.CycleWindow
@@ -16,6 +17,7 @@ import dev.molasses.core.async.ChannelSpecs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.random.Random
 import kotlinx.coroutines.launch
 
 /**
@@ -94,6 +96,17 @@ internal class MutableAppState(
 class FrictionEngine(
     initial: EngineSnapshot,
     private val store: EngineStore,
+    /**
+     * Stall floor, in milliseconds. A parameter rather than a constant read
+     * inside the curve so it can be retuned per device: segment D p50 decides
+     * what is observable, and it differs by hardware.
+     */
+    private val floorMs: Int = FrictionCurve.DEFAULT_FLOOR_MS,
+    /**
+     * Bernoulli source, 0.0 to 1.0. Injected so the probability dimension is
+     * reproducible in tests; production passes a real random.
+     */
+    private val roll: () -> Float = { Random.nextFloat() },
     private val ledger: FrictionLedger,
     private val wallClock: WallClock,
     private val monotonicClock: MonotonicClock,
@@ -214,7 +227,7 @@ class FrictionEngine(
         app.tier.raiseTo(index)
 
         val effective = live + app.penaltyMs
-        val effectiveIndex = TierPolicy.indexFor(effective)
+        val friction = FrictionCurve.frictionAt(effective, floorMs)
 
         val checkpointDue = live >= app.tierUnlockedUntilMs
         if (checkpointDue && !app.gatePending) {
@@ -223,7 +236,7 @@ class FrictionEngine(
             publish()
         }
 
-        if (index == 0 && !checkpointDue) return FrictionDecision.NONE
+        if (!friction.stalls && !checkpointDue) return FrictionDecision.NONE
 
         // Ledgered from tier 1 on only. Scroll events arrive in bursts of
         // dozens per second and normal (tier 0) usage is the common case, so
@@ -235,10 +248,17 @@ class FrictionEngine(
         // through the penalty above; it never suspends it. That inversion is
         // the whole point of this design: a gate a user walks away from used
         // to switch friction off, which rewarded ignoring it.
+        // Probability is Bernoulli per scroll event. A miss is not "no
+        // friction": the checkpoint below is unaffected, and the curve has
+        // already been read, so the accounting is identical either way.
+        val stallMs = if (FrictionCurve.shouldStall(friction, roll())) {
+            friction.stallMs.toLong()
+        } else {
+            0L
+        }
+
         return FrictionDecision(
-            // The one place the penalty is read. maxOf against the true tier
-            // so a stall can never come out below what true time alone earns.
-            stallMs = TierPolicy.stallMsFor(maxOf(app.tier.value, effectiveIndex)),
+            stallMs = stallMs,
             gate = if (checkpointDue) index else null,
         )
     }
