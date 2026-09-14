@@ -90,6 +90,19 @@ each of the faults they catch has already reached this repository:
 Sources are UTF-8 with no BOM. Every conversion is `%n$s`. A literal percent is
 `%%`. `formatted="false"` and positional arguments are mutually exclusive.
 
+The encoding check covers **every tracked file under `app/src` and `tools`**,
+not just resource XML, because the file that was actually damaged was Kotlin.
+It runs over `git ls-files` rather than `find`, so it skips Gradle's build
+output and checks exactly the set that reaches another machine.
+
+It fails on four things: a file that is not valid UTF-8, a BOM, a U+FFFD, and
+a CP1252 round-trip signature. The last one matters separately: mojibake is
+still *valid* UTF-8, so a decoder-based check passes it and only a pattern
+catches it.
+
+The script is kept pure ASCII and builds its search patterns with `printf`
+octal escapes. An earlier version wrote U+FFFD literally and flagged itself.
+
 ## The profile is asserted, not just documented
 
 `AccessibilityConfigTest` reads `accessibility_service_config.xml` and
