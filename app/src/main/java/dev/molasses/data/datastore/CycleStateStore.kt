@@ -13,6 +13,7 @@ import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.time.StampedInstant
+import dev.molasses.core.ui.FontScale
 import dev.molasses.engine.TierPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -134,6 +135,10 @@ class CycleStateStore(context: Context) {
 
     suspend fun setResetPolicy(policy: CycleResetPolicy) {
         store.updateData { it.toBuilder().setResetPolicy(policy.toProto()).build() }
+    }
+
+    suspend fun setFontScale(scale: FontScale) {
+        store.updateData { it.toBuilder().setFontScaleOrdinal(scale.ordinal).build() }
     }
 
     /**

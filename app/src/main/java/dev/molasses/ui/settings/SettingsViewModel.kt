@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.toEngineSnapshot
 import dev.molasses.data.db.UsageEventDao
@@ -66,6 +67,9 @@ class SettingsViewModel @Inject constructor(
     /** The user's additions only. The shipped defaults are not editable. */
     val sensitivePrefixes: StateFlow<List<String>> = repo.sensitivePrefixes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val fontScale: StateFlow<FontScale> = repo.fontScale
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FontScale.DEFAULT)
 
     val pauseRemainingMs: StateFlow<Long> = repo.pauseRemainingMs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
@@ -156,6 +160,10 @@ class SettingsViewModel @Inject constructor(
      */
     fun requestStallPreview() {
         viewModelScope.launch { store.requestStallPreview() }
+    }
+
+    fun setFontScale(scale: FontScale) {
+        viewModelScope.launch { repo.setFontScale(scale) }
     }
 
     fun setSensitivePrefixes(prefixes: List<String>) {

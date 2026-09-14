@@ -13,6 +13,7 @@ import dev.molasses.CycleState
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.time.StampedInstant
+import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.pauseInstant
 import dev.molasses.data.datastore.toModel
@@ -60,6 +61,12 @@ class SettingsRepository(
     val pauseRemainingMs: Flow<Long> = store.data.map {
         PauseWindow.remainingMs(it.pauseInstant(), nowStamped())
     }
+
+    /** Multiplies the sp sizes; it does not replace the system font scale. */
+    val fontScale: Flow<FontScale> =
+        store.data.map { FontScale.fromOrdinal(it.fontScaleOrdinal) }
+
+    suspend fun setFontScale(scale: FontScale) = store.setFontScale(scale)
 
     suspend fun setTargets(packages: List<String>) = store.setTargets(packages)
     suspend fun setResetPolicy(policy: CycleResetPolicy) = store.setResetPolicy(policy)

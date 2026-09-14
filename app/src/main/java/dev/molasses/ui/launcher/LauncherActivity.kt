@@ -7,12 +7,18 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -20,6 +26,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,17 +62,21 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -77,19 +89,27 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.R
+import dev.molasses.core.bit.BitStateMachine
+import dev.molasses.core.command.CommandParser
+import dev.molasses.core.command.ParseError
+import dev.molasses.core.command.ParseResult
+import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.DEFAULT_TARGETS
+import dev.molasses.data.repo.SettingsRepository
 import dev.molasses.ui.settings.SettingsActivity
 import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.MolassesTheme
 import dev.molasses.ui.theme.PhosphorDim
 import dev.molasses.ui.theme.PhosphorDivider
 import dev.molasses.ui.theme.PhosphorGreen
-import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import javax.inject.Inject
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 data class LaunchableApp(
     val label: String,
@@ -114,17 +134,44 @@ data class AppUsageRecord(
 @AndroidEntryPoint
 class LauncherActivity : ComponentActivity() {
 
+    @Inject lateinit var settingsRepository: SettingsRepository
+
+    /**
+     * Read once, at first composition. The launcher is a singleTask activity
+     * that outlives most of what it launches, and re-querying PackageManager
+     * on every recomposition is an IPC per frame. A newly installed app
+     * appears on the next cold start, which is the trade the terminal aesthetic
+     * can afford.
+     */
+    private val installedApps: List<LaunchableApp> by lazy { queryLaunchableApps() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {
-            MolassesTheme {
-                var showNotifInbox by remember { mutableStateOf(false) }
+            val fontScale by settingsRepository.fontScale
+                .collectAsState(initial = FontScale.DEFAULT)
 
+            MolassesTheme(fontScale = fontScale.multiplier) {
+                var showNotifInbox by remember { mutableStateOf(false) }
+                var showDrawer by remember { mutableStateOf(false) }
+                val pagerState = rememberPagerState(pageCount = { 2 })
+                val scope = rememberCoroutineScope()
+
+                // Per destination, and a no-op only on the console.
+                //
+                // A launcher that swallows back everywhere is a launcher you
+                // cannot get out of. Back has to pop the drawer, the inbox and
+                // the ledger; it is inert only on the console, which is home
+                // and has nowhere above it to go.
                 BackHandler(enabled = true) {
-                    if (showNotifInbox) {
-                        showNotifInbox = false
+                    when {
+                        showDrawer -> showDrawer = false
+                        showNotifInbox -> showNotifInbox = false
+                        pagerState.currentPage != PAGE_CONSOLE ->
+                            scope.launch { pagerState.animateScrollToPage(PAGE_CONSOLE) }
+                        else -> Unit
                     }
                 }
 
@@ -134,28 +181,25 @@ class LauncherActivity : ComponentActivity() {
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         MainLauncherWorkspace(
+                            appList = installedApps,
+                            pagerState = pagerState,
                             onOpenNotifInbox = { showNotifInbox = true },
+                            onOpenDrawer = { showDrawer = true },
                             onOpenSettings = {
                                 startActivity(Intent(this@LauncherActivity, SettingsActivity::class.java))
                             },
-                            onLaunchPackage = { pkg ->
-                                val intent = packageManager.getLaunchIntentForPackage(pkg)
-                                if (intent != null) startActivity(intent)
-                            },
+                            onLaunchPackage = ::launchPackage,
+                            actions = LauncherActions(
+                                showLedger = {
+                                    scope.launch { pagerState.animateScrollToPage(PAGE_LEDGER) }
+                                },
+                                openWifiPanel = ::openWifiPanel,
+                                openDndSettings = ::openDndSettings,
+                            ),
                             onDialer = {
                                 startActivity(Intent(Intent.ACTION_DIAL))
                             },
-                            onOpenMessaging = {
-                                val waIntent = packageManager.getLaunchIntentForPackage("com.whatsapp")
-                                if (waIntent != null) {
-                                    startActivity(waIntent)
-                                } else {
-                                    val smsIntent = Intent(Intent.ACTION_MAIN).apply {
-                                        addCategory(Intent.CATEGORY_APP_MESSAGING)
-                                    }
-                                    startActivity(Intent.createChooser(smsIntent, "Messages"))
-                                }
-                            },
+                            onOpenMessaging = ::openMessaging,
                             onOpenWellbeingSettings = {
                                 try {
                                     val dw = Intent("com.google.android.apps.wellbeing.action.WELLBEING_DASHBOARD")
@@ -176,52 +220,111 @@ class LauncherActivity : ComponentActivity() {
                                 onClose = { showNotifInbox = false }
                             )
                         }
+
+                        AnimatedVisibility(
+                            visible = showDrawer,
+                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                        ) {
+                            AppDrawerOverlay(
+                                apps = installedApps,
+                                onLaunchPackage = { pkg ->
+                                    showDrawer = false
+                                    launchPackage(pkg)
+                                },
+                                onClose = { showDrawer = false },
+                            )
+                        }
                     }
                 }
             }
         }
     }
+
+    // ------------------------------------------------------------- actions
+
+    private fun launchPackage(pkg: String) {
+        val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return
+        startActivity(intent)
+    }
+
+    private fun openMessaging() {
+        val wa = packageManager.getLaunchIntentForPackage(WHATSAPP_PACKAGE)
+        if (wa != null) {
+            startActivity(wa)
+            return
+        }
+        val sms = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_APP_MESSAGING)
+        }
+        runCatching { startActivity(sms) }
+    }
+
+    /**
+     * @return false when the device has no such panel, so the caller can say
+     *   that rather than reporting a success that did nothing.
+     */
+    private fun openWifiPanel(): Boolean = runCatching {
+        val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Settings.Panel.ACTION_WIFI
+        } else {
+            Settings.ACTION_WIFI_SETTINGS
+        }
+        startActivity(Intent(action))
+        true
+    }.getOrDefault(false)
+
+    private fun openDndSettings(): Boolean = runCatching {
+        startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+        true
+    }.getOrDefault(false)
+
+    private fun queryLaunchableApps(): List<LaunchableApp> {
+        val targets = DEFAULT_TARGETS.toSet()
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        return packageManager.queryIntentActivities(mainIntent, 0)
+            .filter { it.activityInfo.packageName != packageName }
+            .map {
+                val pkg = it.activityInfo.packageName
+                LaunchableApp(
+                    label = it.loadLabel(packageManager).toString(),
+                    packageName = pkg,
+                    isTarget = pkg in targets,
+                )
+            }
+            .distinctBy { it.packageName }
+            .sortedBy { it.label.lowercase() }
+    }
+
+    private companion object {
+        const val WHATSAPP_PACKAGE = "com.whatsapp"
+    }
 }
+
+/** Pager indices. Named because BackHandler and $ status both reference them. */
+const val PAGE_CONSOLE = 0
+const val PAGE_LEDGER = 1
 
 @Composable
 fun MainLauncherWorkspace(
+    appList: List<LaunchableApp>,
+    pagerState: androidx.compose.foundation.pager.PagerState,
+    actions: LauncherActions,
     onOpenNotifInbox: () -> Unit,
+    onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
     onLaunchPackage: (String) -> Unit,
     onDialer: () -> Unit,
     onOpenMessaging: () -> Unit,
     onOpenWellbeingSettings: () -> Unit,
 ) {
-    val pagerState = rememberPagerState(pageCount = { 2 })
-    val context = LocalContext.current
 
-    // The shipped default list, not a second copy of it. A literal here
-    // drifts the moment the defaults change, and the [TRACKED] badge would
-    // then disagree with what the service actually monitors.
-    //
-    // Still the *defaults* rather than the user's live target list, which
-    // lives in CycleStateStore. Reading it needs a ViewModel this screen does
-    // not have yet, so a user who has edited their targets sees a stale badge.
-    // Cosmetic, and noted in the README rather than fixed here.
-    val targetPackages = remember { DEFAULT_TARGETS.toSet() }
-
-    val apps = remember {
-        val pm = context.packageManager
-        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
-        }
-        pm.queryIntentActivities(mainIntent, 0)
-            .filter { it.activityInfo.packageName != context.packageName }
-            .map {
-                val pkg = it.activityInfo.packageName
-                LaunchableApp(
-                    label = it.loadLabel(pm).toString(),
-                    packageName = pkg,
-                    isTarget = targetPackages.contains(pkg),
-                )
-            }
-            .sortedBy { it.label.lowercase() }
-    }
+    // Queried once by the Activity and passed down, rather than re-run on
+    // every recomposition. queryIntentActivities is an IPC and this composable
+    // recomposes on every keystroke in the command field.
+    val apps = appList
 
     Column(
         modifier = Modifier
@@ -268,14 +371,16 @@ fun MainLauncherWorkspace(
             modifier = Modifier.fillMaxSize(),
         ) { page ->
             when (page) {
-                0 -> TerminalHomeView(
+                PAGE_CONSOLE -> TerminalHomeView(
                     apps = apps,
+                    actions = actions,
                     onOpenNotifInbox = onOpenNotifInbox,
+                    onOpenDrawer = onOpenDrawer,
                     onLaunchPackage = onLaunchPackage,
                     onDialer = onDialer,
                     onOpenMessaging = onOpenMessaging,
                 )
-                1 -> TextualWellbeingView(
+                PAGE_LEDGER -> TextualWellbeingView(
                     onOpenWellbeing = onOpenWellbeingSettings,
                 )
             }
@@ -286,7 +391,9 @@ fun MainLauncherWorkspace(
 @Composable
 fun TerminalHomeView(
     apps: List<LaunchableApp>,
+    actions: LauncherActions,
     onOpenNotifInbox: () -> Unit,
+    onOpenDrawer: () -> Unit,
     onLaunchPackage: (String) -> Unit,
     onDialer: () -> Unit,
     onOpenMessaging: () -> Unit,
@@ -297,20 +404,15 @@ fun TerminalHomeView(
     var dateText by remember { mutableStateOf("") }
     var batteryPercent by remember { mutableIntStateOf(100) }
 
-    // Draggable Creature Offset
-    var creatureOffsetX by remember { mutableFloatStateOf(0f) }
-    var creatureOffsetY by remember { mutableFloatStateOf(0f) }
-
-    // Smooth Multi-Frame Blink Animation
-    var creatureFace by remember { mutableStateOf("(o_o)") }
+    // Bit's resting face comes from the pure state machine, which owns the
+    // blink timing. The tick is the monotonic clock so the phase is
+    // reproducible and so a wall-clock change cannot freeze a frame.
+    var bitTickMs by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
+        val origin = SystemClock.elapsedRealtime()
         while (true) {
-            delay(3400L)
-            creatureFace = "( -_- )"
-            delay(120L)
-            creatureFace = "( o_o )"
-            delay(120L)
-            creatureFace = "(o_o)"
+            bitTickMs = SystemClock.elapsedRealtime() - origin
+            delay(BIT_FRAME_MS)
         }
     }
 
@@ -359,7 +461,88 @@ fun TerminalHomeView(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    // Inline autocomplete. Shows the argument *shape* only, never a filled in
+    // value: one stray completion must not be able to arm a real lock. The
+    // hint is drawn in the divider step, dim enough to ignore.
+    val commandHint = remember(query) { CommandParser.hintFor(query) }
+
+    // Bit's transient reaction and when it started. The monotonic clock, so a
+    // clock change cannot leave a face stuck on screen.
+    var reaction by remember { mutableStateOf<BitStateMachine.Reaction>(BitStateMachine.Reaction.None) }
+    var reactionStartedMs by remember { mutableLongStateOf(0L) }
+    var reactionAgeMs by remember { mutableLongStateOf(0L) }
+
+    fun react(next: BitStateMachine.Reaction) {
+        reaction = next
+        reactionStartedMs = SystemClock.elapsedRealtime()
+        reactionAgeMs = 0L
+    }
+
+    // Drives the reaction clock, and only while a reaction is running. An
+    // always-on ticker would recompose the console forever for nothing.
+    LaunchedEffect(reaction, reactionStartedMs) {
+        if (reaction == BitStateMachine.Reaction.None) return@LaunchedEffect
+        while (true) {
+            reactionAgeMs = SystemClock.elapsedRealtime() - reactionStartedMs
+            if (BitStateMachine.isExpired(reaction, reactionAgeMs)) {
+                reaction = BitStateMachine.Reaction.None
+                return@LaunchedEffect
+            }
+            delay(BIT_FRAME_MS)
+        }
+    }
+
+    /**
+     * Enter. Tries the grammar first, then falls back to launching the top
+     * filtered app.
+     *
+     * The order matters: a command that happens to share a prefix with an app
+     * name must still run as a command, because the grammar is the thing the
+     * user typed deliberately.
+     */
+    fun submit(): CommandOutcome {
+        val text = query.trim()
+        if (text.isEmpty()) return CommandOutcome.NotACommand
+
+        return when (val parsed = CommandParser.parse(text)) {
+            is ParseResult.Ok -> CommandDispatcher.dispatch(parsed.command, actions)
+            is ParseResult.Err -> when (parsed.error) {
+                // Not a command at all: fall back to app filtering, which is
+                // what a bare app name is.
+                is ParseError.UnknownCommand, ParseError.Empty -> CommandOutcome.NotACommand
+                // A real command typed wrong. Report it rather than silently
+                // trying to launch an app called "block".
+                else -> CommandOutcome.Failed(
+                    parsed.error.messageRes(),
+                    parsed.error.argument(),
+                )
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                // Up opens the drawer, down opens the shade. The threshold is
+                // a drag distance rather than a velocity so a slow deliberate
+                // pull works as well as a flick.
+                //
+                // Drags starting inside the status bar are not intercepted:
+                // that strip belongs to the system and this composable never
+                // receives those events anyway.
+                var dragged = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { dragged = 0f },
+                    onDragEnd = {
+                        when {
+                            dragged <= -SWIPE_THRESHOLD_PX -> onOpenDrawer()
+                            dragged >= SWIPE_THRESHOLD_PX -> onOpenNotifInbox()
+                        }
+                    },
+                ) { _, amount -> dragged += amount }
+            },
+    ) {
         Text(
             text = stringResource(R.string.launcher_telemetry_fmt, timeText, dateText, batteryPercent.toString()),
             fontFamily = FontFamily.Monospace,
@@ -369,51 +552,23 @@ fun TerminalHomeView(
 
         Spacer(Modifier.height(14.dp))
 
-        // Draggable & Interactive Daemon Creature Card
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(creatureOffsetX.roundToInt(), creatureOffsetY.roundToInt()) }
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        creatureOffsetX += dragAmount.x
-                        creatureOffsetY += dragAmount.y
-                    }
-                }
-                .fillMaxWidth()
-                .clickable {
-                    creatureFace = "(^o^)"
-                }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = creatureFace,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = PhosphorGreen,
+        BitCompanion(
+            frame = BitStateMachine.frame(
+                mood = BitStateMachine.Mood.IDLE,
+                reaction = reaction,
+                reactionAgeMs = reactionAgeMs,
+                tickMs = bitTickMs,
+            ),
+            onTap = { taps ->
+                react(
+                    when {
+                        taps >= 5 -> BitStateMachine.Reaction.TurnedAway
+                        taps >= 2 -> BitStateMachine.Reaction.Irritated
+                        else -> BitStateMachine.Reaction.Poked
+                    },
                 )
-
-                Spacer(Modifier.width(14.dp))
-
-                Column {
-                    Text(
-                        text = stringResource(R.string.launcher_bit_label),
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = PhosphorGreen,
-                    )
-                    Text(
-                        text = stringResource(R.string.launcher_bit_hint),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
-                        color = PhosphorDim,
-                    )
-                }
-            }
-        }
+            },
+        )
 
         Spacer(Modifier.height(14.dp))
 
@@ -528,14 +683,38 @@ fun TerminalHomeView(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(
                         onGo = {
-                            if (filteredApps.isNotEmpty()) {
-                                onLaunchPackage(filteredApps.first().packageName)
+                            when (val outcome = submit()) {
+                                is CommandOutcome.Executed -> {
+                                    react(BitStateMachine.Reaction.Confirm(outcome.message(context)))
+                                    query = ""
+                                }
+                                is CommandOutcome.NotWired ->
+                                    // Deliberately the FAILED face: nothing
+                                    // happened, so a confirmation would lie.
+                                    react(BitStateMachine.Reaction.Failed(outcome.message(context)))
+                                is CommandOutcome.Failed ->
+                                    react(BitStateMachine.Reaction.Failed(outcome.message(context)))
+                                CommandOutcome.NotACommand ->
+                                    if (filteredApps.isNotEmpty()) {
+                                        onLaunchPackage(filteredApps.first().packageName)
+                                        query = ""
+                                    }
                             }
                         },
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+        }
+
+        if (commandHint != null) {
+            Text(
+                text = stringResource(R.string.cmd_hint_fmt, commandHint),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = PhosphorDivider,
+                modifier = Modifier.padding(top = 4.dp, start = 2.dp),
+            )
         }
 
         Spacer(Modifier.height(10.dp))
@@ -1010,3 +1189,280 @@ private fun countUnlocks(usm: UsageStatsManager, startMs: Long, endMs: Long): In
 } catch (e: Exception) {
     null
 }
+
+/**
+ * Bit, as a draggable glyph on the background.
+ *
+ * ## No container
+ * Raw text on black. The previous version was a bordered card labelled
+ * "DRAGGABLE COMPANION" that did not move, which is the worst of both: it
+ * claimed a capability it did not have and it broke the zero-border rule to
+ * do it.
+ *
+ * ## Tap versus drag
+ * Separated by the platform touch slop rather than by a timer.
+ * `detectDragGestures` only begins past slop, so a tap that wobbles a few
+ * pixels still reads as a tap, which is what a thumb actually does.
+ *
+ * ## Momentum and the bezel
+ * Release throws the glyph with the velocity it was carrying, then it settles
+ * to the nearer vertical edge on a bouncy spring. Snapping to a bezel rather
+ * than resting anywhere is what stops Bit sitting in the middle of the app
+ * list obscuring it.
+ *
+ * Rapid taps are counted in a window so five in quick succession can turn Bit
+ * away, per the reaction ladder. The count resets once the window lapses,
+ * which is why it is compared against [SystemClock.elapsedRealtime] rather
+ * than accumulated forever.
+ */
+@Composable
+private fun BitCompanion(
+    frame: BitStateMachine.BitFrame,
+    onTap: (taps: Int) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val offsetX = remember { Animatable(0f) }
+    val offsetY = remember { Animatable(0f) }
+    var containerWidth by remember { mutableIntStateOf(0) }
+    var bitWidth by remember { mutableIntStateOf(0) }
+
+    var tapCount by remember { mutableIntStateOf(0) }
+    var lastTapMs by remember { mutableLongStateOf(0L) }
+
+    val velocityTracker = remember { VelocityTracker() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(BIT_ROW_HEIGHT)
+            .onSizeChanged { containerWidth = it.width },
+    ) {
+        Text(
+            text = frame.face,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 17.sp,
+            color = PhosphorGreen,
+            modifier = Modifier
+                .offset { IntOffset(offsetX.value.roundToInt(), offsetY.value.roundToInt()) }
+                .onSizeChanged { bitWidth = it.width }
+                .pointerInput(frame.ignoresInput) {
+                    // While Bit has turned away it genuinely ignores input,
+                    // rather than accepting taps and discarding them.
+                    if (frame.ignoresInput) return@pointerInput
+                    detectTapGestures(
+                        onTap = {
+                            val now = SystemClock.elapsedRealtime()
+                            tapCount =
+                                if (now - lastTapMs <= BIT_TAP_WINDOW_MS) tapCount + 1 else 1
+                            lastTapMs = now
+                            onTap(tapCount)
+                        },
+                    )
+                }
+                .pointerInput(frame.ignoresInput) {
+                    if (frame.ignoresInput) return@pointerInput
+                    detectDragGestures(
+                        onDragStart = { velocityTracker.resetTracking() },
+                        onDragEnd = {
+                            val velocity = velocityTracker.calculateVelocity()
+                            val maxX = (containerWidth - bitWidth).coerceAtLeast(0).toFloat()
+                            scope.launch {
+                                // Carry the throw, then settle to the nearer
+                                // bezel. Two animations rather than one so the
+                                // momentum is visible before the snap takes
+                                // over.
+                                offsetY.animateDecay(
+                                    velocity.y,
+                                    exponentialDecay(frictionMultiplier = BIT_DECAY_FRICTION),
+                                )
+                            }
+                            scope.launch {
+                                offsetX.animateDecay(
+                                    velocity.x,
+                                    exponentialDecay(frictionMultiplier = BIT_DECAY_FRICTION),
+                                )
+                                val target = if (offsetX.value > maxX / 2f) maxX else 0f
+                                offsetX.animateTo(
+                                    targetValue = target,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessLow,
+                                    ),
+                                )
+                            }
+                        },
+                    ) { change, dragAmount ->
+                        change.consume()
+                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+                        scope.launch {
+                            offsetX.snapTo(offsetX.value + dragAmount.x)
+                            offsetY.snapTo(offsetY.value + dragAmount.y)
+                        }
+                    }
+                },
+        )
+
+        val line = frame.line
+        if (line != null) {
+            Text(
+                text = line,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = PhosphorDim,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/**
+ * The swipe-up app drawer: every launchable app, alphabetical, with a filter.
+ *
+ * No settings entry here. `[CFG]` in the header is the single path to
+ * settings, and a second one in a drawer is how two settings screens get built
+ * by accident.
+ */
+@Composable
+private fun AppDrawerOverlay(
+    apps: List<LaunchableApp>,
+    onLaunchPackage: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    var filter by remember { mutableStateOf("") }
+    val shown = remember(filter, apps) {
+        val trimmed = filter.trim()
+        if (trimmed.isEmpty()) apps
+        else apps.filter {
+            it.label.contains(trimmed, ignoreCase = true) ||
+                it.packageName.contains(trimmed, ignoreCase = true)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(JitterBackground)
+            .padding(horizontal = 18.dp, vertical = 44.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = stringResource(R.string.drawer_title),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = PhosphorGreen,
+            )
+            Text(
+                text = stringResource(R.string.launcher_chevron_glyph),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = PhosphorGreen,
+                modifier = Modifier.clickable { onClose() }.padding(4.dp),
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.launcher_prompt_symbol),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = PhosphorGreen,
+            )
+            Box(modifier = Modifier.weight(1f)) {
+                if (filter.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.drawer_search_placeholder),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = PhosphorDim,
+                    )
+                }
+                BasicTextField(
+                    value = filter,
+                    onValueChange = { filter = it },
+                    textStyle = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = PhosphorGreen,
+                    ),
+                    singleLine = true,
+                    cursorBrush = SolidColor(PhosphorGreen),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        if (shown.isEmpty()) {
+            Text(
+                text = stringResource(R.string.drawer_empty),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = PhosphorDim,
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            items(shown, key = { it.packageName }) { app ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onLaunchPackage(app.packageName) }
+                        .padding(vertical = 7.dp, horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = app.label,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = PhosphorGreen,
+                    )
+                    if (app.isTarget) {
+                        Text(
+                            text = stringResource(R.string.launcher_target_badge),
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            color = PhosphorDim,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Bit's frame interval. 25 fps is well above the 12 fps glitch floor. */
+private const val BIT_FRAME_MS = 40L
+
+/** Taps inside this window count toward the same burst. */
+private const val BIT_TAP_WINDOW_MS = 400L
+
+/** Higher is stickier. Tuned so a flick crosses the screen but does not fly. */
+private const val BIT_DECAY_FRICTION = 2.2f
+
+private val BIT_ROW_HEIGHT = 44.dp
+
+/**
+ * Drag distance that counts as a page-level swipe.
+ *
+ * Distance rather than velocity, so a slow deliberate pull works as well as a
+ * flick. Comfortably above the touch slop, so a tap that wanders does not
+ * open the drawer by accident.
+ */
+private const val SWIPE_THRESHOLD_PX = 140f

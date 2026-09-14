@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.safety.SensitivePackages
+import dev.molasses.core.ui.FontScale
 import dev.molasses.engine.TierPolicy
 
 /**
@@ -66,6 +67,7 @@ fun SettingsScreen(
     val altChallenge by vm.alternativeChallenge.collectAsStateWithLifecycle()
     val sensitivePrefixes by vm.sensitivePrefixes.collectAsStateWithLifecycle()
     val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
+    val fontScale by vm.fontScale.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -200,6 +202,30 @@ fun SettingsScreen(
                     checked = altChallenge,
                     onCheckedChange = { vm.setAlternativeChallenge(it) },
                 )
+            }
+        }
+
+        item { SectionHeader(R.string.settings_section_appearance) }
+        item {
+            Column {
+                Text(
+                    stringResource(R.string.settings_font_scale_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    stringResource(R.string.settings_font_scale_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Spacer(Modifier.height(8.dp))
+                for (scale in FontScale.entries) {
+                    PolicyRow(
+                        selected = fontScale == scale,
+                        title = fontScaleLabel(scale),
+                        subtitle = R.string.settings_font_scale_body,
+                        onSelect = { vm.setFontScale(scale) },
+                    )
+                }
             }
         }
 
@@ -447,4 +473,20 @@ private fun SensitivePrefixEditor(
             Text(stringResource(R.string.settings_safety_extra_save))
         }
     }
+}
+
+/**
+ * Font scale to its label.
+ *
+ * A plain function returning a @StringRes rather than a `when` inside the
+ * composable, per the repo rule: the mapping stays pure and the resource is
+ * resolved at the call site.
+ */
+@StringRes
+private fun fontScaleLabel(scale: FontScale): Int = when (scale) {
+    FontScale.VERY_SMALL -> R.string.settings_font_very_small
+    FontScale.SMALL -> R.string.settings_font_small
+    FontScale.MEDIUM -> R.string.settings_font_medium
+    FontScale.LARGE -> R.string.settings_font_large
+    FontScale.VERY_LARGE -> R.string.settings_font_very_large
 }
