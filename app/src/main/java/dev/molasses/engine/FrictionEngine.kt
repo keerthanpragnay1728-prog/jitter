@@ -5,7 +5,7 @@ import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EngineState
 import dev.molasses.core.model.EventType
-import dev.molasses.core.model.FrictionAction
+import dev.molasses.core.model.FrictionDecision
 import dev.molasses.core.time.BootIdProvider
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.MonotonicClock
@@ -35,8 +35,24 @@ internal class MutableAppState(
      */
     var tierUnlockedUntilMs: Long = TierPolicy.TIER_WIDTH_MS,
     var gatePending: Boolean = false,
+    /**
+     * Extra time added to the curve lookup for ignoring a checkpoint.
+     *
+     * A ratchet. It accrues while a checkpoint is overdue and **never
+     * decreases**, so clearing a gate stops it growing rather than refunding
+     * it. That is what keeps "clearing a gate never lowers the stall
+     * duration" true: a plain double-rate model would break that invariant
+     * the moment the toll was paid.
+     *
+     * Deliberately not folded into [accumulatedMs]. The ledger reports true
+     * time; this is a separate number and is shown separately.
+     */
+    var penaltyMs: Long = 0,
 ) {
     val tier = MonotonicInt(tierIndex)
+
+    /** Live accumulated at the last penalty evaluation. */
+    var penaltyAnchorMs: Long = 0
 
     fun snapshot(liveAccumulatedMs: Long = accumulatedMs) = AppSnapshot(
         pkg = pkg,
@@ -45,6 +61,7 @@ internal class MutableAppState(
         gatesCleared = gatesCleared,
         tierUnlockedUntilMs = tierUnlockedUntilMs,
         gatePending = gatePending,
+        penaltyMs = penaltyMs,
     )
 }
 
@@ -92,6 +109,7 @@ class FrictionEngine(
                 gatesCleared = s.gatesCleared,
                 tierUnlockedUntilMs = s.tierUnlockedUntilMs,
                 gatePending = s.gatePending,
+                penaltyMs = s.penaltyMs,
             )
         }
         .toMutableMap()
@@ -174,7 +192,7 @@ class FrictionEngine(
         publish()
     }
 
-    fun onScroll(pkg: String, nowMs: Long): FrictionAction {
+    fun onScroll(pkg: String, nowMs: Long): FrictionDecision {
         // Some apps emit scroll before any usable window-state transition.
         // Treating that as an implicit enter is strictly better than dropping
         // the time on the floor.
@@ -182,30 +200,76 @@ class FrictionEngine(
 
         val app = appState(pkg)
         val live = liveAccumulatedMs(app, nowMs)
+        accruePenalty(app, live)
+
+        // tierIndex and the checkpoint schedule both run on TRUE time. The
+        // penalty offsets the *stall lookup* and nothing else.
+        //
+        // Letting it drive tierIndex as well was wrong, and six existing
+        // tests caught it: it would have pushed the checkpoint schedule
+        // forward too, so ignoring a gate would have made the next gate
+        // arrive later. That is the opposite of the intent, and it also made
+        // the ledger's tier column stop describing time the user had spent.
         val index = TierPolicy.indexFor(live)
         app.tier.raiseTo(index)
 
-        if (index == 0) return FrictionAction.None
+        val effective = live + app.penaltyMs
+        val effectiveIndex = TierPolicy.indexFor(effective)
+
+        val checkpointDue = live >= app.tierUnlockedUntilMs
+        if (checkpointDue && !app.gatePending) {
+            app.gatePending = true
+            ledger.log(pkg, EventType.GATE_SHOWN, "tier=$index live=$live")
+            publish()
+        }
+
+        if (index == 0 && !checkpointDue) return FrictionDecision.NONE
 
         // Ledgered from tier 1 on only. Scroll events arrive in bursts of
         // dozens per second and normal (tier 0) usage is the common case, so
         // logging those would dominate the table while reconstructing nothing
         // the accumulated total does not already say.
-        ledger.log(pkg, EventType.SCROLL, "tier=$index")
+        if (index > 0) ledger.log(pkg, EventType.SCROLL, "tier=$index")
 
-        if (live >= app.tierUnlockedUntilMs) {
-            // The tier has been entered but not paid for.
-            if (!app.gatePending) {
-                app.gatePending = true
-                ledger.log(pkg, EventType.GATE_SHOWN, "tier=$index live=$live")
-                publish()
-            }
-            return FrictionAction.Gate(index)
+        // The stall is unconditional. An unresolved checkpoint adds friction
+        // through the penalty above; it never suspends it. That inversion is
+        // the whole point of this design: a gate a user walks away from used
+        // to switch friction off, which rewarded ignoring it.
+        return FrictionDecision(
+            // The one place the penalty is read. maxOf against the true tier
+            // so a stall can never come out below what true time alone earns.
+            stallMs = TierPolicy.stallMsFor(maxOf(app.tier.value, effectiveIndex)),
+            gate = if (checkpointDue) index else null,
+        )
+    }
+
+    /**
+     * Grow [MutableAppState.penaltyMs] while a checkpoint is overdue.
+     *
+     * Accrues against *accumulated* time rather than wall time, at 1.0x, so
+     * overdue minutes count double toward the curve and time spent outside
+     * the app costs nothing. Ignoring the five minute checkpoint entirely
+     * therefore reaches the terminal tier at fifteen real minutes instead of
+     * twenty five.
+     *
+     * Monotonic by construction: the delta is floored at zero and the field
+     * is only ever added to.
+     */
+    private fun accruePenalty(app: MutableAppState, liveMs: Long) {
+        // Charge only the part of this interval that was actually overdue,
+        // not the whole interval because it happened to end overdue.
+        //
+        // The naive version charged from the previous sample whenever the
+        // current one was past the boundary, which over-charges by however
+        // long the interval started before the checkpoint came due. With a
+        // 15 s checkpoint tick that error is bounded and easy to miss; the
+        // ladder walk caught it by jumping five minutes between scrolls and
+        // landing two tiers high.
+        val overdueSince = maxOf(app.penaltyAnchorMs, app.tierUnlockedUntilMs)
+        if (liveMs > overdueSince) {
+            app.penaltyMs += liveMs - overdueSince
         }
-
-        // Paid for. Stall at the tier reached, which is >= the tier entered,
-        // never below it.
-        return FrictionAction.Stall(TierPolicy.stallMsFor(app.tier.value))
+        app.penaltyAnchorMs = liveMs
     }
 
     /**
@@ -252,6 +316,10 @@ class FrictionEngine(
         openPkg?.let { pkg ->
             val app = appState(pkg)
             app.accumulatedMs = liveAccumulatedMs(app, nowMs)
+            // Accrued here too. A user who stops scrolling while a checkpoint
+            // is overdue is still sitting in the app, and the penalty is for
+            // the time, not for the gesture.
+            accruePenalty(app, app.accumulatedMs)
             openStartMonotonicMs = nowMs
             lastTargetUse = now
         }

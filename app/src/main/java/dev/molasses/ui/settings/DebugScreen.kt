@@ -335,6 +335,14 @@ fun DebugScreen(
                             R.string.debug_value_ms, TierPolicy.stallMsFor(row.tierIndex),
                         ),
                     )
+                    // True time and effective time as two numbers, never one.
+                    // A user looking at their own figures should be able to
+                    // see what they actually spent and what it is costing.
+                    MonoRow(R.string.debug_field_penalty, formatDuration(row.penaltyMs))
+                    MonoRow(
+                        R.string.debug_field_effective,
+                        formatDuration(row.accumulatedMs + row.penaltyMs),
+                    )
                     MonoRow(R.string.debug_field_gates_cleared, row.gatesCleared.toString())
                     MonoRow(
                         R.string.debug_field_unlocked_until,
