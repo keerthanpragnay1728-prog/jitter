@@ -187,12 +187,25 @@
     <string name="launcher_status_ready">DAEMON: ACTIVE | CYCLE: 6H</string>
     <string name="launcher_target_badge">[TRACKED]</string>
     <!-- Launcher Telemetry & Quick Access -->
-    <string name="launcher_telemetry_fmt">%1$s | %2$s | BAT: %3$s%%</string>
-    <string name="launcher_quick_phone">[PHONE]</string>
-    <string name="launcher_quick_messages">[MESSAGES]</string>
     <string name="launcher_filter_label">NOTIF FILTER</string>
     <string name="launcher_filter_active">MUTED</string>
     <string name="launcher_filter_dormant">OPEN</string>
+    <!-- Favourites. Bracketed lowercase: in a zero-border layout the brackets
+         are the only tap-target affordance left, matching [CFG] and [DO IT].
+         Bare lowercase reads as ls output, something listed rather than
+         something pressable. -->
+    <string name="launcher_fav_phone">[phone]</string>
+    <string name="launcher_fav_messages">[messages]</string>
+    <string name="launcher_fav_calendar">[calendar]</string>
+    <string name="launcher_fav_calculator">[calculator]</string>
+    <string name="launcher_fav_clock">[clock]</string>
+    <!-- The bar itself is drawn cell by cell so the charging cell can be
+         brightened individually, so the line is three pieces rather than one
+         template. All translatable="false": this is a fixed-width readout. -->
+    <string name="launcher_pwr_label" translatable="false">PWR </string>
+    <string name="launcher_pwr_suffix_fmt" translatable="false"> %1$s %2$s%%</string>
+    <string name="launcher_clock_fmt" translatable="false">%1$s  %2$s</string>
+    <string name="launcher_cursor" translatable="false">\u2588</string>
     <string name="launcher_cfg">[CFG]</string>
     <string name="launcher_filter_row_title">Notification filter</string>
     <!-- Decorative glyphs. Shown on screen, never reworded or translated. -->

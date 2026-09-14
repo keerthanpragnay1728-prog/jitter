@@ -14,11 +14,18 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -87,6 +94,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.R
 import dev.molasses.core.bit.BitStateMachine
@@ -95,6 +105,7 @@ import dev.molasses.core.command.ParseError
 import dev.molasses.core.command.ParseResult
 import dev.molasses.core.ui.BezelSnap
 import dev.molasses.core.ui.FontScale
+import dev.molasses.core.ui.PowerBar
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.repo.SettingsRepository
 import dev.molasses.ui.settings.SettingsActivity
@@ -201,6 +212,7 @@ class LauncherActivity : ComponentActivity() {
                                 startActivity(Intent(Intent.ACTION_DIAL))
                             },
                             onOpenMessaging = ::openMessaging,
+                            onLaunchIntent = ::launchIntent,
                             onOpenWellbeingSettings = {
                                 try {
                                     val dw = Intent("com.google.android.apps.wellbeing.action.WELLBEING_DASHBOARD")
@@ -247,6 +259,19 @@ class LauncherActivity : ComponentActivity() {
     private fun launchPackage(pkg: String) {
         val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return
         startActivity(intent)
+    }
+
+    /**
+     * Launch by action, optionally narrowed by category.
+     *
+     * Silently does nothing when no app handles it. A launcher that toasts
+     * "no calendar installed" every time a favourite is tapped is worse than
+     * one where the row simply does not respond, and the row is only ever
+     * tapped deliberately.
+     */
+    private fun launchIntent(action: String, category: String?) {
+        val intent = Intent(action).apply { category?.let { addCategory(it) } }
+        runCatching { startActivity(intent) }
     }
 
     private fun openMessaging() {
@@ -319,6 +344,7 @@ fun MainLauncherWorkspace(
     onLaunchPackage: (String) -> Unit,
     onDialer: () -> Unit,
     onOpenMessaging: () -> Unit,
+    onLaunchIntent: (String, String?) -> Unit,
     onOpenWellbeingSettings: () -> Unit,
 ) {
 
@@ -346,9 +372,12 @@ fun MainLauncherWorkspace(
                     Text(
                         text = title,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal,
-                        color = if (pagerState.currentPage == index) PhosphorGreen else PhosphorDim,
+                        // Subdued on purpose. Page tabs are navigation
+                        // chrome; the status line below is the data, and the
+                        // two must not compete.
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = if (pagerState.currentPage == index) PhosphorDim else PhosphorDivider,
                     )
                 }
             }
@@ -356,9 +385,9 @@ fun MainLauncherWorkspace(
             Text(
                 text = stringResource(R.string.launcher_cfg),
                 fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 11.sp,
-                color = PhosphorGreen,
+                fontWeight = FontWeight.Normal,
+                fontSize = 9.sp,
+                color = PhosphorDim,
                 modifier = Modifier
                     .clickable { onOpenSettings() }
                     .padding(4.dp),
@@ -380,6 +409,7 @@ fun MainLauncherWorkspace(
                     onLaunchPackage = onLaunchPackage,
                     onDialer = onDialer,
                     onOpenMessaging = onOpenMessaging,
+                    onLaunchIntent = onLaunchIntent,
                 )
                 PAGE_LEDGER -> TextualWellbeingView(
                     onOpenWellbeing = onOpenWellbeingSettings,
@@ -398,12 +428,15 @@ fun TerminalHomeView(
     onLaunchPackage: (String) -> Unit,
     onDialer: () -> Unit,
     onOpenMessaging: () -> Unit,
+    onLaunchIntent: (String, String?) -> Unit,
 ) {
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var timeText by remember { mutableStateOf("") }
     var dateText by remember { mutableStateOf("") }
     var batteryPercent by remember { mutableIntStateOf(100) }
+    var charging by remember { mutableStateOf(false) }
+    var lastKeystrokeMs by remember { mutableLongStateOf(0L) }
 
     // Bit's resting face comes from the pure state machine, which owns the
     // blink timing. The tick is the monotonic clock so the phase is
@@ -436,19 +469,36 @@ fun TerminalHomeView(
             override fun onReceive(c: Context?, intent: Intent?) {
                 val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
                 val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                // Never assume scale is 100. Some devices report 255.
                 if (level >= 0 && scale > 0) {
                     batteryPercent = (level * 100) / scale
                 }
+                val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == BatteryManager.BATTERY_STATUS_FULL
             }
         }
-        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        val sticky = context.registerReceiver(receiver, filter)
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED).apply {
+            // ACTION_TIME_TICK alone fires once a minute and never reports a
+            // date rollover or a timezone move, so the date goes stale.
+            addAction(Intent.ACTION_DATE_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            addAction(Intent.ACTION_TIME_CHANGED)
+        }
+        val sticky = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
         sticky?.let {
             val level = it.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
             val scale = it.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
             if (level >= 0 && scale > 0) {
                 batteryPercent = (level * 100) / scale
             }
+            val status = it.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+            charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
         }
         onDispose { context.unregisterReceiver(receiver) }
     }
@@ -544,11 +594,11 @@ fun TerminalHomeView(
                 ) { _, amount -> dragged += amount }
             },
     ) {
-        Text(
-            text = stringResource(R.string.launcher_telemetry_fmt, timeText, dateText, batteryPercent.toString()),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
-            color = PhosphorDim,
+        PowerLine(
+            percent = batteryPercent,
+            charging = charging,
+            timeText = timeText,
+            dateText = dateText,
         )
 
         Spacer(Modifier.height(14.dp))
@@ -619,29 +669,16 @@ fun TerminalHomeView(
 
         Spacer(Modifier.height(12.dp))
 
-        // Quick Launch Actions
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.launcher_quick_phone),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
-                color = PhosphorGreen,
-                modifier = Modifier
-                    .clickable { onDialer() }
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
-            )
-            Text(
-                text = stringResource(R.string.launcher_quick_messages),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
-                color = PhosphorGreen,
-                modifier = Modifier
-                    .clickable { onOpenMessaging() }
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
-            )
+        // Favourites, one per line, left aligned and ragged right. The
+        // brackets are the affordance: in a zero-border layout they are the
+        // only thing distinguishing something pressable from something
+        // listed, and they match [CFG] and the gate's [DO IT].
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Favourite(R.string.launcher_fav_phone, onDialer)
+            Favourite(R.string.launcher_fav_messages, onOpenMessaging)
+            Favourite(R.string.launcher_fav_calendar) { onLaunchIntent(Intent.ACTION_MAIN, "android.intent.category.APP_CALENDAR") }
+            Favourite(R.string.launcher_fav_calculator) { onLaunchIntent(Intent.ACTION_MAIN, "android.intent.category.APP_CALCULATOR") }
+            Favourite(R.string.launcher_fav_clock) { onLaunchIntent(android.provider.AlarmClock.ACTION_SHOW_ALARMS, null) }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -661,6 +698,8 @@ fun TerminalHomeView(
                 fontSize = 13.sp,
             )
 
+            PromptCursor(lastKeystrokeMs = lastKeystrokeMs)
+
             Box(modifier = Modifier.weight(1f)) {
                 if (query.isEmpty()) {
                     Text(
@@ -673,7 +712,10 @@ fun TerminalHomeView(
 
                 BasicTextField(
                     value = query,
-                    onValueChange = { query = it },
+                    onValueChange = {
+                        query = it
+                        lastKeystrokeMs = SystemClock.elapsedRealtime()
+                    },
                     textStyle = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
@@ -1502,3 +1544,181 @@ private val BIT_ROW_HEIGHT = 44.dp
  * open the drawer by accident.
  */
 private const val SWIPE_THRESHOLD_PX = 140f
+
+/** One favourite row. The brackets come from the string, not from here. */
+@Composable
+private fun Favourite(@StringRes labelRes: Int, onClick: () -> Unit) {
+    Text(
+        text = stringResource(labelRes),
+        fontFamily = FontFamily.Monospace,
+        fontSize = 15.sp,
+        color = PhosphorGreen,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+    )
+}
+
+/**
+ * The status line, and the primary anchor of the screen.
+ *
+ * Larger and brighter than the page tabs above it on purpose: this is the
+ * data, they are navigation chrome.
+ *
+ * ## It does not recompose per second
+ * The clock text arrives as a parameter and changes at most once a minute.
+ * The charging shimmer is one `rememberInfiniteTransition`, started only
+ * while charging and while the screen is on, and stopped entirely otherwise.
+ * Nothing here polls.
+ */
+@Composable
+private fun PowerLine(
+    percent: Int,
+    charging: Boolean,
+    timeText: String,
+    dateText: String,
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var screenOn by remember { mutableStateOf(true) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> screenOn = true
+                Lifecycle.Event.ON_STOP -> screenOn = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val animate = charging && screenOn
+    val phase = if (animate) {
+        val transition = rememberInfiniteTransition(label = "pwr")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = PowerBar.CHARGE_CYCLE_MS.toInt(),
+                    easing = LinearEasing,
+                ),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "pwrPhase",
+        ).value
+    } else {
+        0f
+    }
+
+    val brightIndex = PowerBar.chargingCellIndex(percent, animate, phase)
+    // Low battery dims toward the divider step. Never red: that hue is the
+    // terminal tier alone, and a red battery would teach the user to read red
+    // as "the phone is broken", which is the confusion the shutter's tell
+    // exists to prevent.
+    val base = if (PowerBar.isLow(percent)) PhosphorDivider else PhosphorGreen
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.launcher_pwr_label),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = base,
+            )
+            val bar = PowerBar.bar(percent, POWER_GLYPHS)
+            bar.forEachIndexed { index, glyph ->
+                // Index 0 is the opening bracket, so cell n is at n + 1.
+                val bright = brightIndex != null && index == brightIndex + 1
+                Text(
+                    text = glyph.toString(),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = if (bright) FontWeight.Bold else FontWeight.Normal,
+                    fontSize = 13.sp,
+                    color = if (bright) PhosphorGreen else base,
+                )
+            }
+            Text(
+                text = stringResource(
+                    R.string.launcher_pwr_suffix_fmt,
+                    PowerBar.hexCapacity(percent),
+                    percent.toString(),
+                ),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = base,
+            )
+        }
+        Text(
+            text = stringResource(R.string.launcher_clock_fmt, timeText, dateText),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            color = PhosphorDim,
+        )
+    }
+}
+
+/**
+ * Block glyphs, with the ASCII set one edit away.
+ *
+ * Not a setting: this is a per-device rendering fact, and a user should not
+ * have to know what a monospace fallback is. Verify on device and change here.
+ */
+private val POWER_GLYPHS = PowerBar.Glyphs.BLOCK
+
+/**
+ * The block cursor after the prompt.
+ *
+ * Solid while typing, blinking only once idle. A cursor blinking under the
+ * user's own fingers is distracting, and the moment it matters least is
+ * exactly the moment it is hardest to ignore.
+ *
+ * Driven from one infinite transition rather than a recomposition timer, so
+ * nothing else on the console recomposes on the blink.
+ */
+@Composable
+private fun PromptCursor(lastKeystrokeMs: Long) {
+    var idle by remember { mutableStateOf(true) }
+
+    // Restarts on every keystroke, so the cursor stays solid for as long as
+    // typing continues and only settles into a blink after a real pause.
+    LaunchedEffect(lastKeystrokeMs) {
+        idle = false
+        delay(CURSOR_IDLE_AFTER_MS)
+        idle = true
+    }
+
+    val alpha = if (idle) {
+        val transition = rememberInfiniteTransition(label = "cursor")
+        transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                // A square wave, not a fade. A terminal cursor is on or off.
+                animation = tween(
+                    durationMillis = (CURSOR_BLINK_MS / 2).toInt(),
+                    easing = { if (it < 0.5f) 0f else 1f },
+                ),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "cursorAlpha",
+        ).value
+    } else {
+        1f
+    }
+
+    Text(
+        text = stringResource(R.string.launcher_cursor),
+        fontFamily = FontFamily.Monospace,
+        fontSize = 13.sp,
+        color = PhosphorGreen.copy(alpha = alpha),
+    )
+}
+
+/** Full on-off cycle. */
+private const val CURSOR_BLINK_MS = 530L
+
+/** Typing is considered finished after this long with no keystroke. */
+private const val CURSOR_IDLE_AFTER_MS = 900L
