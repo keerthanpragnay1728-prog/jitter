@@ -49,8 +49,6 @@ fun SettingsScreen(
     onOpenUsageAccess: () -> Unit,
     onRequestActivityRecognition: () -> Unit,
     onRequestNotifications: () -> Unit,
-    onOpenOverlay: () -> Unit,
-    onTestStall: () -> Unit,
     onOpenDebug: () -> Unit,
     vm: SettingsViewModel = hiltViewModel(),
 ) {
@@ -114,16 +112,6 @@ fun SettingsScreen(
                 onClick = onRequestNotifications,
             )
         }
-        item {
-            ChecklistRow(
-                index = 5,
-                title = R.string.settings_perm_overlay_title,
-                subtitle = R.string.settings_perm_overlay_body,
-                satisfied = permissions.overlay,
-                onClick = onOpenOverlay,
-            )
-        }
-
         item { SectionHeader(R.string.settings_section_ladder) }
         item { LadderCard() }
 
@@ -210,7 +198,10 @@ fun SettingsScreen(
 
         item { SectionHeader(R.string.settings_section_try) }
         item {
-            Button(onClick = onTestStall, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = { vm.requestStallPreview() },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Text(stringResource(R.string.settings_test_stall))
             }
         }

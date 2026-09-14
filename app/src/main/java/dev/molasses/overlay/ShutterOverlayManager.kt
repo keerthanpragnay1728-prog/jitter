@@ -8,6 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.media.AudioManager
 import android.os.Build
 import android.os.SystemClock
 import android.telephony.PhoneStateListener
@@ -58,6 +59,13 @@ class ShutterOverlayManager(
     private val scope: CoroutineScope,
     /** Shared with the service, which records segment A. */
     val latency: LatencyRegistry = LatencyRegistry(),
+    /**
+     * Fired after this manager adds or removes a window, so the service can
+     * re-read which window ids belong to it. Without that, arming the sink
+     * emits a window event from our own package that is indistinguishable
+     * from the user going home.
+     */
+    private val onWindowsChanged: () -> Unit = {},
 ) {
     private val sink = SinkView(service)
     private var added = false
@@ -94,6 +102,35 @@ class ShutterOverlayManager(
 
     private var telephonyCallback: Any? = null
 
+    private val audio: AudioManager? = service.getSystemService(AudioManager::class.java)
+
+    /**
+     * Set when the telephony callback could not be registered, which is the
+     * normal case now that READ_PHONE_STATE is not requested. Surfaced in the
+     * debug screen rather than only logged: swallowing it would silently
+     * disable a panic condition, and a panic path that fails open is worse
+     * than no panic path.
+     */
+    var telephonyPanicUnavailable: String? = null
+        private set
+
+    /**
+     * Primary call check, and permission-free.
+     *
+     * `AudioManager.getMode()` needs no grant and also catches VoIP, which
+     * `TelephonyCallback.CallStateListener` misses entirely. It is checked
+     * before every arm and again on each disarm tick.
+     *
+     * MODE_IN_COMMUNICATION is also set by some assistant and voice recording
+     * flows, so this can occasionally refuse to arm with no call in progress.
+     * That is the correct direction to fail: a stall that survives a call is a
+     * much worse outcome than a stall that declines to start.
+     */
+    private fun callInProgress(): Boolean {
+        val mode = audio?.mode ?: return false
+        return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
+    }
+
     // ------------------------------------------------------------- lifecycle
 
     /** Called when a target app enters the foreground. Idempotent. */
@@ -102,6 +139,7 @@ class ShutterOverlayManager(
         try {
             windowManager.addView(sink, params)
             added = true
+            onWindowsChanged()
         } catch (e: Exception) {
             // A duplicate add, a dead token, or a display that went away.
             // Never fatal: without the sink the app simply behaves normally.
@@ -124,6 +162,7 @@ class ShutterOverlayManager(
             Log.w(TAG, "sink removeView failed", e)
         } finally {
             added = false
+            onWindowsChanged()
         }
     }
 
@@ -151,6 +190,12 @@ class ShutterOverlayManager(
     ) {
         if (!added) attach()
         if (!added) return
+
+        // Checked before every arm, not only on a call-state transition.
+        if (callInProgress()) {
+            Log.d(TAG, "refusing to arm: audio mode ${audio?.mode}")
+            return
+        }
 
         val now = SystemClock.elapsedRealtime()
         if (armedUntilElapsed <= now) {
@@ -201,9 +246,16 @@ class ShutterOverlayManager(
         disarmJob?.cancel()
         disarmJob = scope.launch(Dispatchers.Main.immediate) {
             while (true) {
+                // Re-checked on the existing tick rather than from a new timer.
+                // A call that starts mid-stall has to release it.
+                if (callInProgress()) {
+                    disarm("audio mode ${audio?.mode}")
+                    return@launch
+                }
                 val remaining = armedUntilElapsed - SystemClock.elapsedRealtime()
                 if (remaining <= 0) break
-                delay(remaining)
+                delay(minOf(remaining, CALL_POLL_INTERVAL_MS))
+                if (armedUntilElapsed <= SystemClock.elapsedRealtime()) break
             }
             disarm("deadline")
         }
@@ -299,9 +351,13 @@ class ShutterOverlayManager(
                 telephonyCallback = cb
             }
         }.onFailure {
-            // Almost always a missing READ_PHONE_STATE grant. The 8 s ceiling
-            // and the tap escape still bound the worst case, so this is a
-            // degraded panic path, not a dead one.
+            // Expected: READ_PHONE_STATE is deliberately not requested. The
+            // AudioManager path above is the primary check and covers VoIP as
+            // well, so this is a lost secondary rather than a lost capability.
+            // Recorded so the debug screen can say so out loud; runCatching on
+            // its own would stop the crash and quietly disable a panic
+            // condition.
+            telephonyPanicUnavailable = it::class.java.simpleName + ": " + it.message
             Log.w(TAG, "call-state panic path unavailable", it)
         }
     }
@@ -445,6 +501,13 @@ class ShutterOverlayManager(
             IDLE_FLAGS and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
 
         const val MAX_CONTINUOUS_ARMED_MS = 8_000L
+
+        /**
+         * Upper bound on how long a stall can outlive the start of a call.
+         * Short enough to be imperceptible, long enough that the poll costs
+         * nothing: AudioManager.getMode() is a cached binder read.
+         */
+        const val CALL_POLL_INTERVAL_MS = 250L
         const val PANIC_TAPS = 4
         const val PANIC_WINDOW_MS = 1_500L
         const val PANIC_REGION_DP = 64f

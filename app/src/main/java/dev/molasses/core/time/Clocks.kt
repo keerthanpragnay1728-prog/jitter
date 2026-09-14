@@ -18,3 +18,13 @@ fun interface MonotonicClock {
 fun interface WallClock {
     fun wallMs(): Long
 }
+
+/**
+ * `Settings.Global.BOOT_COUNT`. Read through a port for the same reason the
+ * two clocks are: a boot boundary is the one condition under which
+ * [MonotonicClock] readings from before and after cannot be compared, and the
+ * engine has to know about it without importing `android.provider`.
+ */
+fun interface BootIdProvider {
+    fun bootId(): Int
+}

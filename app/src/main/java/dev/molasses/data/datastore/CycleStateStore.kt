@@ -12,6 +12,7 @@ import dev.molasses.CycleState
 import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
+import dev.molasses.core.time.StampedInstant
 import dev.molasses.engine.TierPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +62,11 @@ class CycleStateStore(context: Context) {
             val b = old.toBuilder()
                 .clearPerApp()
                 .setCycleAnchorWallMs(snapshot.cycleAnchorWallMs)
+                .setCycleAnchorElapsedMs(snapshot.cycleAnchorElapsedMs)
+                .setCycleAnchorBootId(snapshot.cycleAnchorBootId)
                 .setLastTargetUseWallMs(snapshot.lastTargetUseWallMs)
+                .setLastTargetUseElapsedMs(snapshot.lastTargetUseElapsedMs)
+                .setLastTargetUseBootId(snapshot.lastTargetUseBootId)
                 .setBootId(bootId)
                 .setLastSeenWallMs(System.currentTimeMillis())
                 .setLastSeenElapsedMs(SystemClock.elapsedRealtime())
@@ -84,18 +89,28 @@ class CycleStateStore(context: Context) {
         creditedByPkg: Map<String, Long>,
         lastTargetUseWallMs: Long?,
         bootId: Int,
-        cycleAnchorWallMs: Long,
+        anchor: StampedInstant,
     ) {
         store.updateData { old ->
             val b = old.toBuilder()
                 .setBootId(bootId)
                 .setLastSeenWallMs(System.currentTimeMillis())
                 .setLastSeenElapsedMs(SystemClock.elapsedRealtime())
-                .setCycleAnchorWallMs(cycleAnchorWallMs)
+                .setCycleAnchorWallMs(anchor.wallMs)
+                .setCycleAnchorElapsedMs(anchor.elapsedMs)
+                .setCycleAnchorBootId(anchor.bootId)
                 .setOpenSessionPkg("")
                 .clearOpenSessionStartWallMs()
                 .clearOpenSessionStartElapsedMs()
-            lastTargetUseWallMs?.let { b.setLastTargetUseWallMs(it) }
+            // A replayed last-use timestamp comes from UsageStats, which
+            // reports wall-clock times only. Stamp the monotonic half from
+            // this instant and accept that the pair is a lower bound: the
+            // clamp can only under-credit from it, never over-credit.
+            lastTargetUseWallMs?.let {
+                b.setLastTargetUseWallMs(it)
+                b.setLastTargetUseElapsedMs(SystemClock.elapsedRealtime())
+                b.setLastTargetUseBootId(bootId)
+            }
             for ((pkg, credited) in creditedByPkg) {
                 if (credited <= 0) continue
                 val existing = old.perAppMap[pkg] ?: AppState.getDefaultInstance()
@@ -119,6 +134,28 @@ class CycleStateStore(context: Context) {
 
     suspend fun setResetPolicy(policy: CycleResetPolicy) {
         store.updateData { it.toBuilder().setResetPolicy(policy.toProto()).build() }
+    }
+
+    /**
+     * One-shot schema migration, run from the reconciler before the engine is
+     * seeded.
+     *
+     * Version 1 moves the default cycle policy to `FIXED_WINDOW_6H`. It cannot
+     * be done by changing the serializer default alone: proto3 pins an enum's
+     * zero value as its default, `ABSTINENCE_6H` is 0, and an install created
+     * before the flip has a stored 0 that is indistinguishable from "never
+     * set". Renumbering the enum would reinterpret every stored file instead,
+     * which is worse. A user who has explicitly chosen abstinence after the
+     * migration keeps it, because [schemaVersion] is already 1 by then.
+     */
+    suspend fun migrate() {
+        store.updateData { old ->
+            if (old.schemaVersion >= SCHEMA_VERSION) return@updateData old
+            old.toBuilder()
+                .setResetPolicy(CycleResetPolicyProto.FIXED_WINDOW_6H)
+                .setSchemaVersion(SCHEMA_VERSION)
+                .build()
+        }
     }
 
     suspend fun setTargets(packages: List<String>) {
@@ -163,8 +200,27 @@ class CycleStateStore(context: Context) {
         }
     }
 
+    /**
+     * Ask the accessibility service to arm the touch sink briefly over
+     * whatever is on screen. The settings Activity has no service token and so
+     * cannot open a trusted overlay itself.
+     */
+    suspend fun requestStallPreview() {
+        store.updateData { it.toBuilder().setPreviewStallNonce(it.previewStallNonce + 1).build() }
+    }
+
+    /** Debug builds only. Zero restores the curve. */
+    suspend fun setPinnedStallMs(ms: Long) {
+        store.updateData { it.toBuilder().setDebugPinnedStallMs(ms.coerceAtLeast(0)).build() }
+    }
+
     suspend fun clearAll() {
         store.updateData { CycleStateSerializer.defaultValue }
+    }
+
+    companion object {
+        /** Bump alongside a new branch in [migrate]. */
+        const val SCHEMA_VERSION = 1
     }
 }
 
@@ -208,4 +264,15 @@ fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
     cycleAnchorWallMs = cycleAnchorWallMs,
     lastTargetUseWallMs = lastTargetUseWallMs,
     resetPolicy = resetPolicy.toModel(),
+    cycleAnchorElapsedMs = cycleAnchorElapsedMs,
+    cycleAnchorBootId = cycleAnchorBootId,
+    lastTargetUseElapsedMs = lastTargetUseElapsedMs,
+    lastTargetUseBootId = lastTargetUseBootId,
+)
+
+/** The cycle anchor as the engine and [CycleWindow] want it. */
+fun CycleState.anchorInstant(): StampedInstant = StampedInstant(
+    wallMs = cycleAnchorWallMs,
+    elapsedMs = cycleAnchorElapsedMs,
+    bootId = cycleAnchorBootId,
 )

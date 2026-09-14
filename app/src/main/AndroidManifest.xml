@@ -2,23 +2,41 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <!--
+      No SYSTEM_ALERT_WINDOW and no READ_PHONE_STATE.
+
+      Every floating element is a TYPE_ACCESSIBILITY_OVERLAY window owned by
+      the accessibility service, which needs no overlay grant. The call panic
+      check uses AudioManager.getMode(), which needs no phone grant and also
+      catches VoIP.
+
+      No foreground service of any type either. An AccessibilityService is
+      already system-bound and persistent.
+    -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS"/>
-    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
 
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true"/>
     <uses-feature android:name="android.hardware.sensor.stepdetector" android:required="false"/>
     <uses-feature android:name="android.hardware.sensor.barometer" android:required="false"/>
 
-    <!-- Needed for the target-app picker in settings: without it PackageManager
-         returns only our own package on API 30+. -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission"/>
+    <!--
+      Package visibility for the target picker, and later for the launcher's
+      app list. A <queries> element rather than QUERY_ALL_PACKAGES: the
+      permission is flagged on review and this is the narrower grant that does
+      the same job. Without either, PackageManager returns only our own package
+      on API 30+.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
+    </queries>
 
     <application
         android:name=".MolassesApp"

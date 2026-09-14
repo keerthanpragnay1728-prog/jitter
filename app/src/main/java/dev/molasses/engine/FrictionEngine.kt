@@ -6,7 +6,10 @@ import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EngineState
 import dev.molasses.core.model.EventType
 import dev.molasses.core.model.FrictionAction
+import dev.molasses.core.time.BootIdProvider
+import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.MonotonicClock
+import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.time.WallClock
 import kotlinx.coroutines.CoroutineScope
 import dev.molasses.core.async.ChannelSpecs
@@ -56,9 +59,14 @@ internal class MutableAppState(
  * (`SystemClock.elapsedRealtime()`). The brief does not say which clock, and
  * this is the only safe reading: durations measured on the wall clock are
  * user-settable, and the whole point of the ladder is that accumulated time
- * cannot be argued with. Wall-clock concerns -- the cycle anchor and the
- * abstinence window -- go through [wallClock] and are clamped by
- * `ClockTamperClamp` before they ever reach here.
+ * cannot be argued with.
+ *
+ * The cycle anchor and the abstinence window do have to survive a reboot, so
+ * they carry a wall-clock stamp as well. They are held as `StampedInstant`
+ * and every deadline question about them goes through `CycleWindow`, which
+ * applies `ClockTamperClamp`. Setting the system clock forward six hours
+ * therefore credits nothing, which matters because it would otherwise be the
+ * cheapest bypass in the app.
  *
  * ## The invariant
  * Clearing a gate is a toll, not a refund. [onGateCleared] writes exactly two
@@ -72,6 +80,7 @@ class FrictionEngine(
     private val ledger: FrictionLedger,
     private val wallClock: WallClock,
     private val monotonicClock: MonotonicClock,
+    private val bootIdProvider: BootIdProvider,
     private val scope: CoroutineScope,
 ) {
     private val apps: MutableMap<String, MutableAppState> = initial.perApp
@@ -87,8 +96,23 @@ class FrictionEngine(
         }
         .toMutableMap()
 
-    private var cycleAnchorWallMs: Long = initial.cycleAnchorWallMs
-    private var lastTargetUseWallMs: Long = initial.lastTargetUseWallMs
+    /**
+     * Start of the current cycle, or [StampedInstant.UNSET] between cycles.
+     * Under `FIXED_WINDOW_6H` the deadline is this plus six hours; under
+     * `ABSTINENCE_6H` it is only provenance and [lastTargetUse] decides.
+     */
+    private var anchor: StampedInstant = StampedInstant(
+        wallMs = initial.cycleAnchorWallMs,
+        elapsedMs = initial.cycleAnchorElapsedMs,
+        bootId = initial.cycleAnchorBootId,
+    )
+
+    private var lastTargetUse: StampedInstant = StampedInstant(
+        wallMs = initial.lastTargetUseWallMs,
+        elapsedMs = initial.lastTargetUseElapsedMs,
+        bootId = initial.lastTargetUseBootId,
+    )
+
     private var resetPolicy: CycleResetPolicy = initial.resetPolicy
 
     private var openPkg: String? = null
@@ -124,14 +148,21 @@ class FrictionEngine(
         // resetting and accumulate nothing at all.
         if (openPkg == pkg) return
 
+        val now = now(nowMs)
         openPkg?.let { closeSession(it, nowMs) }
 
-        maybeRollCycle()
+        maybeRollCycle(now, nowMs)
 
         openPkg = pkg
         openStartMonotonicMs = nowMs
         appState(pkg)
-        lastTargetUseWallMs = wallClock.wallMs()
+        // The anchor is set here and only here on the entry path: this is the
+        // "first target-app foreground after a completed cycle or a clean
+        // state" the brief anchors on. A rollover leaves it unset precisely so
+        // that the next entry re-anchors rather than the cycle running from an
+        // instant the user was not in the app.
+        if (!anchor.isSet) anchor = now
+        lastTargetUse = now
         ledger.log(pkg, EventType.RESUMED)
         publish()
     }
@@ -217,12 +248,24 @@ class FrictionEngine(
      * reconciler never has to scan more than a few minutes of `UsageStats`.
      */
     internal fun checkpoint(nowMs: Long) {
+        val now = now(nowMs)
         openPkg?.let { pkg ->
             val app = appState(pkg)
             app.accumulatedMs = liveAccumulatedMs(app, nowMs)
             openStartMonotonicMs = nowMs
-            lastTargetUseWallMs = wallClock.wallMs()
+            lastTargetUse = now
         }
+        // Fold first, then roll. Folding banks the time spent up to this
+        // instant; rolling then discards it, which is the right order because
+        // a session that spans the deadline must not carry its pre-deadline
+        // minutes into the new cycle.
+        //
+        // Evaluating rollover here, and not only on foreground entry, is the
+        // whole point of the tick. With a launch-only check a user who simply
+        // stays in the app past six hours never rolls: the countdown runs
+        // negative and the stall stays pinned at its ceiling for as long as
+        // the session lasts.
+        maybeRollCycle(now, nowMs)
         publish()
     }
 
@@ -245,9 +288,13 @@ class FrictionEngine(
         val now = monotonicClock.elapsedMs()
         return EngineSnapshot(
             perApp = apps.mapValues { (_, a) -> a.snapshot(liveAccumulatedMs(a, now)) },
-            cycleAnchorWallMs = cycleAnchorWallMs,
-            lastTargetUseWallMs = lastTargetUseWallMs,
+            cycleAnchorWallMs = anchor.wallMs,
+            lastTargetUseWallMs = lastTargetUse.wallMs,
             resetPolicy = resetPolicy,
+            cycleAnchorElapsedMs = anchor.elapsedMs,
+            cycleAnchorBootId = anchor.bootId,
+            lastTargetUseElapsedMs = lastTargetUse.elapsedMs,
+            lastTargetUseBootId = lastTargetUse.bootId,
         )
     }
 
@@ -262,7 +309,7 @@ class FrictionEngine(
     private fun closeSession(pkg: String, nowMs: Long) {
         val app = appState(pkg)
         app.accumulatedMs = liveAccumulatedMs(app, nowMs)
-        lastTargetUseWallMs = wallClock.wallMs()
+        lastTargetUse = now(nowMs)
         openPkg = null
         openStartMonotonicMs = 0
     }
@@ -293,35 +340,68 @@ class FrictionEngine(
      * lifetime of a counter, so the guard stays meaningful inside a cycle,
      * which is the scope the invariant is actually about.
      */
-    private fun maybeRollCycle() {
-        val nowWall = wallClock.wallMs()
-        val due = when (resetPolicy) {
-            CycleResetPolicy.ABSTINENCE_6H ->
-                lastTargetUseWallMs > 0 &&
-                    nowWall - lastTargetUseWallMs >= CycleResetPolicy.WINDOW_MS
-            CycleResetPolicy.FIXED_WINDOW_6H ->
-                cycleAnchorWallMs > 0 &&
-                    nowWall - cycleAnchorWallMs >= CycleResetPolicy.WINDOW_MS
+    private fun maybeRollCycle(now: StampedInstant, nowMs: Long) {
+        val reference = when (resetPolicy) {
+            CycleResetPolicy.ABSTINENCE_6H -> lastTargetUse
+            CycleResetPolicy.FIXED_WINDOW_6H -> anchor
         }
-        if (!due) {
-            if (cycleAnchorWallMs == 0L) cycleAnchorWallMs = nowWall
-            return
-        }
+        if (!CycleWindow.isDue(reference, now)) return
 
+        val ageMs = CycleWindow.ageMs(reference, now)
         val keys = apps.keys.toList()
         for (pkg in keys) apps[pkg] = MutableAppState(pkg)
-        cycleAnchorWallMs = nowWall
-        ledger.log("", EventType.RECONCILED, "cycle rollover policy=$resetPolicy")
+
+        if (openPkg != null) {
+            // Rolling over in place, mid-session. The new cycle starts now,
+            // because the user is in a target app at this instant, which is
+            // exactly the condition the anchor is defined by. The session
+            // start has to move with it or liveAccumulatedMs would re-credit
+            // the whole pre-deadline session against the fresh AppState.
+            anchor = now
+            openStartMonotonicMs = nowMs
+        } else {
+            // Nothing open: leave the cycle unanchored so the next foreground
+            // entry starts it. Anchoring at this instant instead would burn
+            // window on a user who is not using anything.
+            anchor = StampedInstant.UNSET
+        }
+        ledger.log(
+            "",
+            EventType.RECONCILED,
+            "cycle rollover policy=$resetPolicy age=${ageMs}ms open=${openPkg ?: "-"}",
+        )
     }
 
+    /**
+     * Both clocks and the boot count, read at one instant.
+     *
+     * [nowMs] rather than a fresh [MonotonicClock] read, so the monotonic half
+     * is identical to the value the caller is doing its own arithmetic with.
+     * A second read here would be a few microseconds later and would make the
+     * session accounting and the deadline accounting disagree by that much.
+     */
+    private fun now(nowMs: Long) = StampedInstant(
+        wallMs = wallClock.wallMs(),
+        elapsedMs = nowMs,
+        bootId = bootIdProvider.bootId(),
+    )
+
     private fun buildState(): EngineState {
-        val now = monotonicClock.elapsedMs()
+        val nowMs = monotonicClock.elapsedMs()
+        val now = now(nowMs)
         return EngineState(
-            perApp = apps.mapValues { (_, a) -> a.snapshot(liveAccumulatedMs(a, now)) },
+            perApp = apps.mapValues { (_, a) -> a.snapshot(liveAccumulatedMs(a, nowMs)) },
             openSessionPkg = openPkg,
-            cycleAnchorWallMs = cycleAnchorWallMs,
-            lastTargetUseWallMs = lastTargetUseWallMs,
+            cycleAnchorWallMs = anchor.wallMs,
+            lastTargetUseWallMs = lastTargetUse.wallMs,
             resetPolicy = resetPolicy,
+            cycleRemainingMs = CycleWindow.remainingMs(
+                anchor = when (resetPolicy) {
+                    CycleResetPolicy.ABSTINENCE_6H -> lastTargetUse
+                    CycleResetPolicy.FIXED_WINDOW_6H -> anchor
+                },
+                now = now,
+            ),
         )
     }
 

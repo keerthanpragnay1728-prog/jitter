@@ -30,6 +30,35 @@ message CycleState {
   // running engine holds per-app state in memory and overwrites any direct
   // edit at its next checkpoint, so the editor would appear to do nothing.
   int64 debug_override_nonce = 13;
+
+  // Bumped by the "Test Phantom Stall" button. The settings Activity cannot
+  // open a TYPE_ACCESSIBILITY_OVERLAY window itself, and SYSTEM_ALERT_WINDOW
+  // is no longer requested, so the preview is a request to the service rather
+  // than something the Activity does directly.
+  int64 preview_stall_nonce = 14;
+
+  // Debug builds only. Pins the commanded stall to a constant so arm and
+  // disarm transitions are countable while measuring segment D.
+  int64 debug_pinned_stall_ms = 15;
+
+  // The monotonic and boot-count halves of cycle_anchor_wall_ms and
+  // last_target_use_wall_ms. A wall-clock stamp on its own is defeated by
+  // setting the system clock forward six hours, which needs no root and no
+  // tooling. Carrying elapsedRealtime and BOOT_COUNT alongside lets
+  // CycleWindow apply ClockTamperClamp to the deadline instead of trusting
+  // the wall delta.
+  int64 cycle_anchor_elapsed_ms = 16;
+  int32 cycle_anchor_boot_id = 17;
+  int64 last_target_use_elapsed_ms = 18;
+  int32 last_target_use_boot_id = 19;
+
+  // Bumped when a migration that cannot be expressed as a proto3 default has
+  // been applied to this file. Currently only version 1, which flips an
+  // install created under the old ABSTINENCE_6H default over to
+  // FIXED_WINDOW_6H. proto3 pins the zero value of an enum as its default and
+  // ABSTINENCE_6H is already 0, so the new default cannot be expressed by
+  // renumbering without silently reinterpreting every stored file.
+  int32 schema_version = 20;
 }
 
 message AppState {

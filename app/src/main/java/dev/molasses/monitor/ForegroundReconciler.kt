@@ -10,8 +10,11 @@ import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EventType
 import dev.molasses.core.time.ClockTamperClamp
+import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.ForegroundReplay
+import dev.molasses.core.time.StampedInstant
 import dev.molasses.data.datastore.CycleStateStore
+import dev.molasses.data.datastore.anchorInstant
 import dev.molasses.data.datastore.toEngineSnapshot
 import dev.molasses.engine.FrictionLedger
 import kotlinx.coroutines.Dispatchers
@@ -54,21 +57,28 @@ class ForegroundReconciler(
     )
 
     suspend fun reconcile(): Outcome = withContext(Dispatchers.IO) {
+        // Before anything reads the policy, including the engine seed below.
+        store.migrate()
+
         val state = store.current()
         val bootId = readBootCount()
         val nowWall = System.currentTimeMillis()
         val nowElapsed = SystemClock.elapsedRealtime()
+        val now = StampedInstant(wallMs = nowWall, elapsedMs = nowElapsed, bootId = bootId)
 
         val bootChanged = state.lastSeenWallMs != 0L && state.bootId != bootId
         val targets = state.targetPackagesList.toSet()
 
         // Nothing to reconcile on a first run.
         if (state.lastSeenWallMs == 0L) {
+            // A first run leaves the cycle unanchored on purpose. The anchor
+            // is defined as the first target-app foreground, and nothing has
+            // been in the foreground yet.
             store.applyReconciliation(
                 creditedByPkg = emptyMap(),
                 lastTargetUseWallMs = null,
                 bootId = bootId,
-                cycleAnchorWallMs = if (state.cycleAnchorWallMs == 0L) nowWall else state.cycleAnchorWallMs,
+                anchor = state.anchorInstant(),
             )
             return@withContext Outcome(
                 snapshot = store.current().toEngineSnapshot(),
@@ -131,11 +141,11 @@ class ForegroundReconciler(
             creditedByPkg = credited,
             lastTargetUseWallMs = replay?.lastTargetUseWallMs,
             bootId = bootId,
-            cycleAnchorWallMs = if (state.cycleAnchorWallMs == 0L) nowWall else state.cycleAnchorWallMs,
+            anchor = state.anchorInstant(),
         )
 
         val reconciled = store.current().toEngineSnapshot()
-        val rolled = maybeRollCycleOnConnect(reconciled, nowWall, verdict)
+        val rolled = maybeRollCycleOnConnect(reconciled, now)
 
         Outcome(
             snapshot = rolled,
@@ -155,32 +165,41 @@ class ForegroundReconciler(
      */
     private fun maybeRollCycleOnConnect(
         snapshot: EngineSnapshot,
-        nowWall: Long,
-        verdict: ClockTamperClamp.Verdict,
+        now: StampedInstant,
     ): EngineSnapshot {
-        val due = when (snapshot.resetPolicy) {
-            CycleResetPolicy.ABSTINENCE_6H ->
-                snapshot.lastTargetUseWallMs > 0 &&
-                    nowWall - snapshot.lastTargetUseWallMs >= CycleResetPolicy.WINDOW_MS &&
-                    !verdict.tampered
-            CycleResetPolicy.FIXED_WINDOW_6H ->
-                snapshot.cycleAnchorWallMs > 0 &&
-                    nowWall - snapshot.cycleAnchorWallMs >= CycleResetPolicy.WINDOW_MS &&
-                    !verdict.tampered
+        val reference = when (snapshot.resetPolicy) {
+            CycleResetPolicy.ABSTINENCE_6H -> StampedInstant(
+                wallMs = snapshot.lastTargetUseWallMs,
+                elapsedMs = snapshot.lastTargetUseElapsedMs,
+                bootId = snapshot.lastTargetUseBootId,
+            )
+            CycleResetPolicy.FIXED_WINDOW_6H -> StampedInstant(
+                wallMs = snapshot.cycleAnchorWallMs,
+                elapsedMs = snapshot.cycleAnchorElapsedMs,
+                bootId = snapshot.cycleAnchorBootId,
+            )
         }
-        if (!due) return snapshot
+        // Same rule as the engine tick, same helper. The clamp lives inside
+        // CycleWindow now, so there is no separate tamper suppression here:
+        // a wall clock moved forward credits nothing towards the age and the
+        // cycle simply is not due.
+        if (!CycleWindow.isDue(reference, now)) return snapshot
 
-        // Step 4, second half: the anchor may not move forward by more than
-        // the clamped monotonic delta in a single pass. A rollover is already
-        // suppressed under detected tampering, so this is a second line of
-        // defence rather than the main one.
-        val anchor = if (snapshot.cycleAnchorWallMs == 0L) {
-            nowWall
-        } else {
-            minOf(nowWall, snapshot.cycleAnchorWallMs + verdict.maxAnchorAdvanceMs)
-        }
-        ledger.log("", EventType.RECONCILED, "cycle rollover on connect policy=${snapshot.resetPolicy}")
-        return snapshot.copy(perApp = emptyMap(), cycleAnchorWallMs = anchor)
+        ledger.log(
+            "",
+            EventType.RECONCILED,
+            "cycle rollover on connect policy=${snapshot.resetPolicy} " +
+                "age=${CycleWindow.ageMs(reference, now)}ms",
+        )
+        // Unanchored, not anchored at now. Nothing is in the foreground at
+        // service-connect time, and the first target-app entry after this is
+        // what starts the new cycle.
+        return snapshot.copy(
+            perApp = emptyMap(),
+            cycleAnchorWallMs = 0,
+            cycleAnchorElapsedMs = 0,
+            cycleAnchorBootId = 0,
+        )
     }
 
     /**

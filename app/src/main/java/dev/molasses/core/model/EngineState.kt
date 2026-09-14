@@ -18,6 +18,13 @@ data class EngineState(
     val cycleAnchorWallMs: Long = 0,
     val lastTargetUseWallMs: Long = 0,
     val resetPolicy: CycleResetPolicy = CycleResetPolicy.DEFAULT,
+    /**
+     * Deadline minus now, clamped into `[0, WINDOW_MS]`. This is the number
+     * the status header shows as RESETS IN, and it is computed here rather
+     * than in the UI so that the clamp is applied once, in the pure layer,
+     * instead of once per surface that wants to display it.
+     */
+    val cycleRemainingMs: Long = CycleResetPolicy.WINDOW_MS,
 )
 
 /**
@@ -30,4 +37,14 @@ data class EngineSnapshot(
     val cycleAnchorWallMs: Long = 0,
     val lastTargetUseWallMs: Long = 0,
     val resetPolicy: CycleResetPolicy = CycleResetPolicy.DEFAULT,
+    /**
+     * The monotonic and boot-count halves of the two wall-clock stamps above.
+     * Persisted because without them a restart would reduce both stamps to
+     * bare wall-clock timestamps, and a bare wall-clock deadline is defeated
+     * by setting the system clock forward. See `StampedInstant`.
+     */
+    val cycleAnchorElapsedMs: Long = 0,
+    val cycleAnchorBootId: Int = 0,
+    val lastTargetUseElapsedMs: Long = 0,
+    val lastTargetUseBootId: Int = 0,
 )

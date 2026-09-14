@@ -143,6 +143,19 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { store.setAppStateForDebug(pkg, accumulatedMs, tierIndex) }
     }
 
+    /**
+     * Ask the accessibility service to arm the sink over this screen. The
+     * Activity cannot open a trusted overlay itself.
+     */
+    fun requestStallPreview() {
+        viewModelScope.launch { store.requestStallPreview() }
+    }
+
+    /** Debug builds only. Zero restores the curve. */
+    fun setPinnedStallMs(ms: Long) {
+        viewModelScope.launch { store.setPinnedStallMs(ms) }
+    }
+
     fun clearLedger() {
         viewModelScope.launch { withContext(Dispatchers.IO) { dao.clear() } }
     }
