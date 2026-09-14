@@ -4,6 +4,7 @@ import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EventType
+import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.model.FrictionDecision
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -30,7 +31,10 @@ class FrictionEngineTest {
      * wall clock tracks it. Divergence between the two is the reconciler's
      * problem and is tested in `ClockTamperClampTest`, not here.
      */
-    private class Rig(initial: EngineSnapshot = EngineSnapshot()) {
+    private class Rig(
+        initial: EngineSnapshot = EngineSnapshot(),
+        roll: () -> Float = { 0f },
+    ) {
         val store = FakeStore()
         val ledger = FakeLedger()
         val clock = SplitClock(wall = WALL_BASE, mono = 0)
@@ -38,6 +42,10 @@ class FrictionEngineTest {
         val engine = FrictionEngine(
             initial = initial,
             store = store,
+            // Defaults to always stalling. The Bernoulli dimension is tested
+            // in FrictionCurveTest; a random miss here would make every
+            // precedence and accounting test flaky for an unrelated reason.
+            roll = roll,
             ledger = ledger,
             wallClock = clock,
             monotonicClock = clock,
@@ -97,17 +105,21 @@ class FrictionEngineTest {
         // Both, from the first scroll. The old behaviour returned Gate and
         // suppressed the stall until it was cleared, so walking away from the
         // gate switched friction off entirely.
+        // The checkpoint is owed at five minutes. The stall is not yet due:
+        // the curve's onset is six minutes, so this minute is the one window
+        // where a checkpoint arrives before any friction does.
         val first = r.scroll(ig, 5 * min)
         assertEquals(1, first.gate)
-        assertEquals(1_000L, first.stallMs)
+        assertEquals("before the curve's onset", 0L, first.stallMs)
 
-        val second = r.scroll(ig, 5 * min + 5_000)
+        // Past the onset and still unpaid: both, which is the whole point.
+        val second = r.scroll(ig, 7 * min)
         assertEquals(1, second.gate)
         assertTrue("stall must not stop while a checkpoint is owed", second.stalls)
 
-        r.clear(ig, 5 * min + 6_000)
+        r.clear(ig, 7 * min)
 
-        val after = r.scroll(ig, 5 * min + 7_000)
+        val after = r.scroll(ig, 7 * min + 1_000)
         assertNull("checkpoint should be paid", after.gate)
         assertTrue("stall continues after clearing", after.stalls)
     }
@@ -171,30 +183,94 @@ class FrictionEngineTest {
     }
 
     @Test
-    fun `full ladder walk produces the documented behaviour`() {
+    fun `checkpoints arrive every five minutes and stalls never fall`() {
+        // Renamed from "full ladder walk": there is no ladder of stall values
+        // any more. What the walk actually pins now is the structure, which
+        // is the part that must not drift: a checkpoint at every five minute
+        // boundary on true time, and a stall that never decreases.
         val r = Rig()
         r.enter(ig, 0)
 
-        fun clearAndStall(atMs: Long, tier: Int, stallMs: Long) {
+        var previousStall = 0L
+        fun checkpoint(atMs: Long, tier: Int) {
             val owed = r.scroll(ig, atMs)
-            assertEquals("gate at tier $tier", tier, owed.gate)
-            // Present on the same scroll now, not only after clearing.
-            assertEquals("stall at tier $tier", stallMs, owed.stallMs)
+            assertEquals("checkpoint at tier $tier", tier, owed.gate)
+            assertTrue(
+                "stall fell at tier $tier: $previousStall to ${owed.stallMs}",
+                owed.stallMs >= previousStall,
+            )
+            previousStall = owed.stallMs
             r.clear(ig, atMs)
             val after = r.scroll(ig, atMs + 1_000)
             assertNull("checkpoint paid at tier $tier", after.gate)
-            assertEquals("stall after tier $tier", stallMs, after.stallMs)
+            assertTrue("stall must survive the clear", after.stallMs >= previousStall)
         }
 
-        clearAndStall(5 * min, 1, 1_000)
-        clearAndStall(10 * min, 2, 3_000)
-        clearAndStall(15 * min, 3, 5_000)
-        clearAndStall(20 * min, 4, 5_000)
-        // Terminal: re-arms every five minutes, stall pinned at 5000 ms,
-        // indefinitely. No silent cap.
-        clearAndStall(25 * min, 5, 5_000)
-        clearAndStall(30 * min, 6, 5_000)
-        clearAndStall(120 * min, 24, 5_000)
+        checkpoint(5 * min, 1)
+        checkpoint(10 * min, 2)
+        checkpoint(15 * min, 3)
+        checkpoint(20 * min, 4)
+        // Terminal: re-arms every five minutes, indefinitely. No silent cap.
+        checkpoint(25 * min, 5)
+        checkpoint(30 * min, 6)
+        checkpoint(120 * min, 24)
+
+        assertEquals("terminal stall", 5_000L, previousStall)
+    }
+
+    @Test
+    fun `the curve onset is six minutes, not five`() {
+        // The one behavioural change the curve brings on its own, isolated so
+        // it is not mistaken for a consequence of the precedence flip.
+        val r = Rig()
+        r.enter(ig, 0)
+        // The five minute checkpoint has to be paid first, or the penalty it
+        // accrues pulls the onset forward and this measures the wrong thing.
+        // Thirty seconds of ignoring it is enough to reach six minutes of
+        // effective time at five and a half minutes of real time, which is
+        // the penalty working exactly as intended.
+        r.scroll(ig, 5 * min)
+        r.clear(ig, 5 * min)
+
+        assertEquals(0L, r.scroll(ig, 5 * min + 30_000).stallMs)
+        assertTrue(r.scroll(ig, 6 * min + 1_000).stalls)
+    }
+
+    @Test
+    fun `ignoring the first checkpoint pulls the onset forward`() {
+        // The other side of the same coin, asserted rather than left implicit.
+        val ignored = Rig()
+        ignored.enter(ig, 0)
+        ignored.scroll(ig, 5 * min)
+        assertTrue(
+            "thirty seconds overdue should reach the onset early",
+            ignored.scroll(ig, 5 * min + 30_000).stalls,
+        )
+    }
+
+    @Test
+    fun `no stall is ever commanded below the floor`() {
+        val r = Rig()
+        r.enter(ig, 0)
+        for (m in listOf(6, 7, 8, 9, 10, 12, 15, 20, 25, 40)) {
+            val stall = r.scroll(ig, m.toLong() * min).stallMs
+            if (stall > 0) {
+                assertTrue(
+                    "at ${m}m the stall was ${stall}ms, below the floor",
+                    stall >= FrictionCurve.DEFAULT_FLOOR_MS,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `a probability miss withholds the stall and never the checkpoint`() {
+        // A Bernoulli miss must not become an excuse to skip the toll.
+        val r = Rig(roll = { 1f })
+        r.enter(ig, 0)
+        val owed = r.scroll(ig, 10 * min)
+        assertEquals("checkpoint is not subject to chance", 2, owed.gate)
+        assertEquals("the roll missed, so no stall", 0L, owed.stallMs)
     }
 
     // ------------------------------------------------------- the invariant
