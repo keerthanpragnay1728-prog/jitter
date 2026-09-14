@@ -68,6 +68,50 @@ characters into this file would make it trip its own check.
 `*.xml` is in scope because display copy lives in `res/values/strings.xml`. It
 was out of scope once, and an em dash sat in shipped copy unnoticed.
 
+## Service model
+
+No `FOREGROUND_SERVICE` of any type, and no self-started background services.
+System-bound services (`AccessibilityService`, `NotificationListenerService`)
+are permitted because the OS requires them to be discrete classes and controls
+their binding lifecycle.
+
+## The accessibility profile is user-visible
+
+Banking and UPI apps read the declared `AccessibilityServiceInfo` of every
+enabled service and refuse to run, or warn loudly, based on what they find.
+Three attributes in `accessibility_service_config.xml` are therefore load
+bearing and are not to be changed casually:
+
+- `android:packageNames` stays scoped to the monitored targets plus
+  `dev.molasses`.
+- `android:canRetrieveWindowContent` stays `false`.
+- `android:accessibilityFlags` does not include `flagRetrieveInteractiveWindows`.
+
+Removing the last one means `getWindows()` returns an empty list. If a feature
+needs to know about another window, route it through `UsageStatsManager` or
+drop the feature. Do not add the flag back.
+
+Jitter must never draw any overlay over a package in
+`core/safety/SensitivePackages`. An overlay sets `FLAG_WINDOW_IS_OBSCURED` on
+that app's touches and a hardened payment app is entitled to refuse the
+transaction.
+
+## Which clock a deadline is measured on
+
+Measure with the clock whose failure mode costs the user friction, never the
+one whose failure mode grants it.
+
+The cycle window uses `ClockTamperClamp`, which credits
+`min(wall delta, elapsed delta)`. Under-crediting there means the cycle takes
+longer to reset, so the user gets more friction.
+
+A pause or a lockout is the opposite: under-crediting keeps it open longer,
+which means less friction. Those are measured on `elapsedRealtime` alone and
+expire outright across a reboot. See `core/safety/PauseWindow`.
+
+Reusing the cycle clamp for a pause is a real bug that a test caught here
+once, not a hypothetical.
+
 ## Branch naming
 
 Use `patch/<topic>` or `feat/<topic>`. Lowercase, hyphenated, under 30

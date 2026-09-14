@@ -19,11 +19,15 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -32,6 +36,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.engine.TierPolicy
 
 /**
@@ -59,6 +64,8 @@ fun SettingsScreen(
     val targets by vm.targets.collectAsStateWithLifecycle()
     val policy by vm.resetPolicy.collectAsStateWithLifecycle()
     val altChallenge by vm.alternativeChallenge.collectAsStateWithLifecycle()
+    val sensitivePrefixes by vm.sensitivePrefixes.collectAsStateWithLifecycle()
+    val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -196,6 +203,28 @@ fun SettingsScreen(
             }
         }
 
+        item { SectionHeader(R.string.settings_section_safety) }
+        item {
+            Text(
+                stringResource(R.string.settings_safety_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+        item {
+            PauseControl(
+                remainingMs = pauseRemainingMs,
+                onPause = { vm.setPaused(true) },
+                onResume = { vm.setPaused(false) },
+            )
+        }
+        item {
+            SensitivePrefixEditor(
+                userPrefixes = sensitivePrefixes,
+                onChange = { vm.setSensitivePrefixes(it) },
+            )
+        }
+
         item { SectionHeader(R.string.settings_section_try) }
         item {
             Button(
@@ -314,6 +343,108 @@ private fun PolicyRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
             )
+        }
+    }
+}
+
+/**
+ * "Pause Jitter (15m)" and its countdown.
+ *
+ * The countdown is minutes and seconds rather than a progress bar because the
+ * situation it exists for is standing at a till with a card reader waiting,
+ * and a number answers "can I pay yet" in one glance.
+ *
+ * Recomposes from the store rather than from a timer, so the digits step when
+ * the state changes rather than once a second. A per-second recomposition of
+ * a settings screen is not worth the wakeups, and the user is looking at the
+ * payment app, not at this.
+ */
+@Composable
+private fun PauseControl(
+    remainingMs: Long,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+) {
+    val active = remainingMs > 0
+    Column(Modifier.fillMaxWidth()) {
+        if (active) {
+            val totalSeconds = remainingMs / 1000
+            Text(
+                stringResource(
+                    R.string.settings_pause_active,
+                    (totalSeconds / 60).toString(),
+                    (totalSeconds % 60).toString().padStart(2, '0'),
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onResume, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_pause_resume))
+            }
+        } else {
+            Button(onClick = onPause, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_pause_start))
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.settings_pause_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+    }
+}
+
+/**
+ * The user's additions to the never-draw-over set.
+ *
+ * One package prefix per line. The shipped defaults are shown read-only above
+ * the field and cannot be removed: letting someone delete `com.phonepe` from
+ * this list is not a preference, it is a way to lose money.
+ */
+@Composable
+private fun SensitivePrefixEditor(
+    userPrefixes: List<String>,
+    onChange: (List<String>) -> Unit,
+) {
+    // Local draft so a partly typed line is not written to the store on every
+    // keystroke, which would also re-resolve the set inside the service.
+    var draft by rememberSaveable(userPrefixes) { mutableStateOf(userPrefixes.joinToString("\n")) }
+
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            stringResource(R.string.settings_safety_defaults_title),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            SensitivePackages.DEFAULT_PREFIXES.sorted().joinToString("\n"),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            stringResource(R.string.settings_safety_extra_title),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            stringResource(R.string.settings_safety_extra_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.settings_safety_extra_label)) },
+            minLines = 3,
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = { onChange(draft.lines()) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.settings_safety_extra_save))
         }
     }
 }

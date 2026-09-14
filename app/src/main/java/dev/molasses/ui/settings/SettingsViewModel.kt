@@ -63,6 +63,13 @@ class SettingsViewModel @Inject constructor(
     val alternativeChallenge: StateFlow<Boolean> = repo.alternativeChallenge
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    /** The user's additions only. The shipped defaults are not editable. */
+    val sensitivePrefixes: StateFlow<List<String>> = repo.sensitivePrefixes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val pauseRemainingMs: StateFlow<Long> = repo.pauseRemainingMs
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
+
     val ladder: StateFlow<List<LadderRow>> = store.data
         .map { state ->
             state.toEngineSnapshot().perApp.values
@@ -149,6 +156,19 @@ class SettingsViewModel @Inject constructor(
      */
     fun requestStallPreview() {
         viewModelScope.launch { store.requestStallPreview() }
+    }
+
+    fun setSensitivePrefixes(prefixes: List<String>) {
+        viewModelScope.launch { repo.setSensitivePrefixes(prefixes) }
+    }
+
+    /**
+     * Start or end the 15 minute pause. Suppresses every overlay; does not
+     * touch accumulated time or tier, so this is an escape hatch and not a
+     * friction holiday.
+     */
+    fun setPaused(active: Boolean) {
+        viewModelScope.launch { repo.setPaused(active) }
     }
 
     /** Debug builds only. Zero restores the curve. */

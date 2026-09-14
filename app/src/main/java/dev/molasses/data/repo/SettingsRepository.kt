@@ -6,10 +6,15 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import dev.molasses.CycleState
 import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.core.safety.PauseWindow
+import dev.molasses.core.time.StampedInstant
 import dev.molasses.data.datastore.CycleStateStore
+import dev.molasses.data.datastore.pauseInstant
 import dev.molasses.data.datastore.toModel
 import dev.molasses.monitor.MolassesAccessibilityService
 import kotlinx.coroutines.flow.Flow
@@ -44,10 +49,46 @@ class SettingsRepository(
     val resetPolicy: Flow<CycleResetPolicy> = store.data.map { it.resetPolicy.toModel() }
     val alternativeChallenge: Flow<Boolean> = store.data.map { it.alternativeChallenge }
 
+    /** Only the user's additions. The shipped defaults are not editable. */
+    val sensitivePrefixes: Flow<List<String>> =
+        store.data.map { it.sensitivePackagePrefixesList.toList() }
+
+    /**
+     * Milliseconds left in the pause, recomputed on every store emission and
+     * not on a timer. The settings screen renders its own countdown from this.
+     */
+    val pauseRemainingMs: Flow<Long> = store.data.map {
+        PauseWindow.remainingMs(it.pauseInstant(), nowStamped())
+    }
+
     suspend fun setTargets(packages: List<String>) = store.setTargets(packages)
     suspend fun setResetPolicy(policy: CycleResetPolicy) = store.setResetPolicy(policy)
     suspend fun setAlternativeChallenge(enabled: Boolean) =
         store.setAlternativeChallenge(enabled)
+
+    suspend fun setSensitivePrefixes(prefixes: List<String>) =
+        store.setSensitivePrefixes(prefixes)
+
+    suspend fun setPaused(active: Boolean) = store.setPaused(active, readBootCount())
+
+    /** Live remainder, for a UI that wants to tick without a store write. */
+    fun pauseRemainingNowMs(state: CycleState): Long =
+        PauseWindow.remainingMs(state.pauseInstant(), nowStamped())
+
+    private fun nowStamped() = StampedInstant(
+        wallMs = System.currentTimeMillis(),
+        elapsedMs = SystemClock.elapsedRealtime(),
+        bootId = readBootCount(),
+    )
+
+    /**
+     * `Settings.Global.BOOT_COUNT`. Read here rather than passed in because a
+     * pause is armed from the settings process, which has no service handle.
+     */
+    private fun readBootCount(): Int =
+        runCatching {
+            Settings.Global.getInt(appContext.contentResolver, Settings.Global.BOOT_COUNT, 0)
+        }.getOrDefault(0)
 
     fun permissionState(): PermissionState = PermissionState(
         accessibility = isAccessibilityServiceEnabled(),

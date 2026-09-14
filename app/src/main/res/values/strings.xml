@@ -61,6 +61,21 @@
     <string name="settings_section_targets">Target apps</string>
     <string name="settings_section_policy">Cycle reset policy</string>
     <string name="settings_section_gate">Movement gate</string>
+    <string name="settings_section_safety">Safety</string>
+    <string name="settings_safety_body">Banking and UPI apps refuse to run when something is drawn over them, and some warn about accessibility services regardless. Jitter never draws over the apps listed here, and you can silence it entirely for fifteen minutes.</string>
+    <string name="settings_pause_start">Pause Jitter (15m)</string>
+    <!-- %1$s is minutes, %2$s is zero padded seconds. Both are strings, not
+         %d: several strings in this file take Double thresholds and a %d
+         given a Double throws IllegalFormatConversionException at runtime, so
+         the whole file uses %n$s without exception. -->
+    <string name="settings_pause_active">Paused. %1$s:%2$s left.</string>
+    <string name="settings_pause_resume">Resume now</string>
+    <string name="settings_pause_hint">Stalls and gates stop appearing. Your accumulated time keeps counting, so this does not buy you a clean slate.</string>
+    <string name="settings_safety_defaults_title">Always excluded</string>
+    <string name="settings_safety_extra_title">Your additions</string>
+    <string name="settings_safety_extra_body">One package name per line. A partial name matches everything below it, so com.icicibank covers every app that bank ships. This list cannot cover every Indian bank, so add yours if you see a warning.</string>
+    <string name="settings_safety_extra_label">Package prefixes</string>
+    <string name="settings_safety_extra_save">Save excluded apps</string>
     <string name="settings_section_try">Try it</string>
 
     <string name="settings_checklist_done">OK</string>
@@ -78,9 +93,9 @@
     <string name="settings_targets_hint">Scrolling in these apps accumulates time.</string>
     <string name="settings_targets_empty">No launchable apps listed yet.</string>
 
-    <string name="settings_policy_abstinence_title">After 6 hours away (default)</string>
+    <string name="settings_policy_abstinence_title">After 6 hours away</string>
     <string name="settings_policy_abstinence_body">The cycle resets only after six continuous hours with no time in any target app.</string>
-    <string name="settings_policy_fixed_title">Every 6 hours</string>
+    <string name="settings_policy_fixed_title">Every 6 hours (default)</string>
     <string name="settings_policy_fixed_body">The cycle resets six hours after it started, whether or not you kept using the apps.</string>
 
     <string name="settings_alt_challenge_title">Alternative challenge</string>

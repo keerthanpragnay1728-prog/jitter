@@ -169,6 +169,44 @@ class CycleStateStore(context: Context) {
     }
 
     /**
+     * Extra never-draw-over prefixes. The shipped defaults are applied on top
+     * of whatever is stored here, so this list can only widen the set.
+     */
+    suspend fun setSensitivePrefixes(prefixes: List<String>) {
+        store.updateData {
+            it.toBuilder()
+                .clearSensitivePackagePrefixes()
+                .addAllSensitivePackagePrefixes(
+                    prefixes.map { p -> p.trim().lowercase() }.filter { p -> p.isNotEmpty() },
+                )
+                .build()
+        }
+    }
+
+    /**
+     * Start or clear the 15 minute pause.
+     *
+     * Stamped on `elapsedRealtime` and `BOOT_COUNT`, never the wall clock:
+     * see [dev.molasses.core.safety.PauseWindow] for why the usual clamp is
+     * the wrong tool here.
+     */
+    suspend fun setPaused(active: Boolean, bootId: Int) {
+        store.updateData {
+            val b = it.toBuilder()
+            if (active) {
+                b.setPauseArmed(true)
+                    .setPauseStartedElapsedMs(SystemClock.elapsedRealtime())
+                    .setPauseStartedBootId(bootId)
+            } else {
+                b.setPauseArmed(false)
+                    .clearPauseStartedElapsedMs()
+                    .clearPauseStartedBootId()
+            }
+            b.build()
+        }
+    }
+
+    /**
      * Debug builds only. Sets one package's accumulated time and tier index
      * directly, bypassing the engine's monotonic guard, so the stall tiers can
      * be exercised without first clearing a gate.
@@ -269,6 +307,21 @@ fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
     lastTargetUseElapsedMs = lastTargetUseElapsedMs,
     lastTargetUseBootId = lastTargetUseBootId,
 )
+
+/**
+ * The pause stamp as [dev.molasses.core.safety.PauseWindow] wants it.
+ *
+ * `wallMs` is set to 1 purely as the "is set" marker; nothing reads its value,
+ * because a pause is measured on the monotonic clock alone. Using the real
+ * wall time here would invite a future caller to compare it, which is the bug
+ * this deliberately makes impossible.
+ */
+fun CycleState.pauseInstant(): StampedInstant =
+    if (!pauseArmed) {
+        StampedInstant.UNSET
+    } else {
+        StampedInstant(wallMs = 1L, elapsedMs = pauseStartedElapsedMs, bootId = pauseStartedBootId)
+    }
 
 /** The cycle anchor as the engine and [CycleWindow] want it. */
 fun CycleState.anchorInstant(): StampedInstant = StampedInstant(

@@ -133,6 +133,14 @@ class ShutterOverlayManager(
 
     // ------------------------------------------------------------- lifecycle
 
+    /**
+     * True while the sink view is in the window hierarchy. Read by the
+     * service to decide how hard to poll for a foreground change: while
+     * anything of ours is on the glass, a switch to a banking app has to be
+     * noticed in hundreds of milliseconds rather than seconds.
+     */
+    val isAttached: Boolean get() = added
+
     /** Called when a target app enters the foreground. Idempotent. */
     fun attach() {
         if (added) return
