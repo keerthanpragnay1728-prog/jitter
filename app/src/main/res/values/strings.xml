@@ -195,9 +195,14 @@
     <string name="launcher_chevron_glyph" translatable="false">v</string>
     <string name="ledger_screentime_label">TODAY\'S SCREEN TIME</string>
     <string name="ledger_screentime_fmt">%1$s hr, %2$s min</string>
+    <!-- Rendered wherever a value is not known. Never a zero: a confident 0
+         is indistinguishable from a real idle day. -->
+    <string name="ledger_value_unknown" translatable="false">--</string>
+    <string name="ledger_distribution_empty">No app usage recorded today. Usage access may not be granted.</string>
     <string name="ledger_distribution">DISTRIBUTION METRICS</string>
     <string name="ledger_app_minutes_fmt">%1$s min</string>
     <string name="filter_allowlist_body">Apps marked [ALLOWED] bypass the filter and deliver heads-up banners immediately. All other apps stay silently in this inbox.</string>
+    <string name="filter_allowlist_empty">No allowlist yet. The notification filter service is not built, so nothing is being filtered and nothing is being held back.</string>
     <string name="filter_allowed_badge">[ALLOWED]</string>
     <string name="action_back">Back</string>
     <!-- Extended Terminal & Telemetry Page -->
