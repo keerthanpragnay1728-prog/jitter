@@ -98,19 +98,53 @@ transaction.
 
 ## Which clock a deadline is measured on
 
-Measure with the clock whose failure mode costs the user friction, never the
-one whose failure mode grants it.
+**Always err toward more friction.** Every deadline in this app is either a
+restriction or a relief, and the two want opposite clamps. Getting the
+direction wrong hands the user a bypass, so the direction is named at every
+call site rather than inferred.
 
-The cycle window uses `ClockTamperClamp`, which credits
-`min(wall delta, elapsed delta)`. Under-crediting there means the cycle takes
-longer to reset, so the user gets more friction.
+### Restrictions: cycle accumulation, `LockRegistry`
 
-A pause or a lockout is the opposite: under-crediting keeps it open longer,
-which means less friction. Those are measured on `elapsedRealtime` alone and
-expire outright across a reboot. See `core/safety/PauseWindow`.
+Credit `min(wallDelta, elapsedDelta)`, floored at zero.
+`ClockTamperClamp.Direction.RESTRICTION`.
 
-Reusing the cycle clamp for a pause is a real bug that a test caught here
-once, not a hypothetical.
+The attack is a **forward** clock jump. Set the date thirty days ahead and a
+bare wall-clock deadline expires a thirty day lock instantly. `max()` would
+credit the jump. `min()` takes the monotonic delta, which did not move, so the
+lock holds.
+
+A restriction has to span reboots to be worth anything, so it carries a
+wall-clock stamp and accepts one residual hole: wind the clock forward, then
+reboot. That costs a reboot rather than a tap, and it is visible in the ledger
+as a `CLOCK_WARP` row.
+
+### Relief: `PauseWindow`, `$ allow`, any friction suspension
+
+Credit `max(wallDelta, elapsedDelta)`, floored at zero.
+`ClockTamperClamp.Direction.RELIEF`.
+
+The attack is a **backward** wind. Winding the clock back an hour makes the
+wall delta small or negative, and `min()` credits nothing, so a fifteen minute
+pause stays open forever. `max()` still takes the monotonic delta and expires
+it on schedule.
+
+Relief must not trust a wall clock across a reboot: there is no reading that
+survives the boot to bound it. `Verdict.bootChanged` exists so a relief caller
+can treat a boot as expiry. `PauseWindow` goes further and drops the wall clock
+entirely, measuring on `elapsedRealtime` alone and expiring across a reboot.
+That is simpler and airtight, and it is the right default for any relief short
+enough that a reboot outlasts it.
+
+### Both of these are bugs that shipped here
+
+A pause built on the restriction clamp was held open indefinitely by winding
+the clock back an hour. `PauseWindowTest` caught it. The mirror image, a lock
+built on the relief clamp, is pinned by
+`LockRegistryTest.a forward clock jump does not shorten a lock`.
+
+`ClampDirectionTest` asserts the general invariant: for any gap, relief credits
+at least as much as restriction. So when in doubt, restriction is the safe
+default, and it is the default parameter value for that reason.
 
 ## Branch naming
 
