@@ -17,25 +17,45 @@ needed a scan of every blob in every commit, not just the tip.
 Exits non-zero if anything is found.
 """
 import re
+import signal
 import subprocess
 import sys
+
+# Behave like a normal unix filter when piped into head or less.
+try:
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+except (AttributeError, ValueError):
+    pass
 
 # CP1252 round-trip signatures. When UTF-8 text is decoded as CP1252 or
 # Latin-1 and re-encoded as UTF-8, these byte sequences are what you get.
 # Written as code points so this file stays pure ASCII.
+def _seq(*points):
+    """Build a byte-sequence signature from code points.
+
+    Written this way so this file's own bytes stay pure ASCII. Spelling the
+    sequences literally would make the scanner match itself, which is exactly
+    what happened to tools/check-encoding.sh at b2086c3.
+    """
+    return "".join(chr(p) for p in points)
+
+
+# CP1252 round-trip signatures. When UTF-8 text is decoded as CP1252 or
+# Latin-1 and re-encoded as UTF-8, these are what you get.
 MOJIBAKE = [
-    ("â€™", "right single quote via CP1252"),
-    ("â€œ", "left double quote via CP1252"),
-    ("â€", "right double quote via CP1252"),
-    ("â€“", "en dash via CP1252"),
-    ("â€”", "em dash via CP1252"),
-    ("â€¢", "bullet via CP1252"),
-    ("Â ", "non-breaking space via CP1252"),
-    ("Ã©", "e-acute via CP1252"),
-    ("Ã¨", "e-grave via CP1252"),
-    ("ï»¿", "BOM decoded as Latin-1"),
+    (_seq(0xE2, 0x20AC, 0x2122), "right single quote via CP1252"),
+    (_seq(0xE2, 0x20AC, 0x153), "left double quote via CP1252"),
+    (_seq(0xE2, 0x20AC, 0x9D), "right double quote via CP1252"),
+    (_seq(0xE2, 0x20AC, 0x201C), "en dash via CP1252"),
+    (_seq(0xE2, 0x20AC, 0x201D), "em dash via CP1252"),
+    (_seq(0xE2, 0x20AC, 0xA2), "bullet via CP1252"),
+    (_seq(0xC2, 0xA0), "non-breaking space via CP1252"),
+    (_seq(0xC3, 0xA9), "e-acute via CP1252"),
+    (_seq(0xC3, 0xA8), "e-grave via CP1252"),
+    (_seq(0xEF, 0xBB, 0xBF), "BOM decoded as Latin-1"),
 ]
 
+REPLACEMENT = _seq(0xFFFD)
 SKIP = (".png", ".jpg", ".jpeg", ".webp", ".ttf", ".otf", ".jar", ".keystore",
         ".zip", ".so", ".ico", ".pb", ".bin", ".gz")
 
@@ -56,7 +76,7 @@ def scan(data):
             ctx = data[max(0, i - 30):i + 15]
             out.append(("CP1252_RAW_BYTE", "0x%02x at %d: %r" % (b, i, ctx)))
 
-    for m in re.finditer("�", text):
+    for m in re.finditer(re.escape(REPLACEMENT), text):
         out.append(("U_FFFD", repr(text[max(0, m.start() - 30):m.start() + 15])))
 
     for seq, label in MOJIBAKE:
