@@ -26,6 +26,67 @@ rewinds `tierIndex`. Gates are a toll, not a refund.
 
 ---
 
+## Banking and UPI apps
+
+Launching PhonePe, Google Pay, Paytm, BHIM or a banking app on a phone with
+Jitter enabled can raise "Suspicious App Detected: The below app has enhanced
+access that can be used by fraudsters to steal your money."
+
+That warning is not about anything Jitter does at runtime. Those apps cannot
+observe our behaviour. They read two things:
+
+1. The declared `AccessibilityServiceInfo` of every enabled accessibility
+   service, which is static and public.
+2. `MotionEvent.FLAG_WINDOW_IS_OBSCURED` on their own touches, which is set
+   whenever anything is drawn over them.
+
+A runtime "drop our hooks when a bank is open" trick is invisible to the first
+check and buys nothing on its own. So the response is in the declared profile
+and in what we draw.
+
+**Declared profile.** `packageNames` is scoped to the monitored targets plus
+`dev.molasses`, `canRetrieveWindowContent` is `false`, and
+`flagRetrieveInteractiveWindows` has been removed. That last one is the flag
+that reads as "this service can enumerate and inspect every window on screen",
+and it is the one worth giving up.
+
+**Never draw over a payment app.** `core/safety/SensitivePackages` holds a set
+of package prefixes (PhonePe, Paytm, Google Pay, BHIM, SBI and ICICI by
+default). While one of them is foreground, no overlay is drawn at all: not the
+stall sink, not a gate. This is the half that actually matters, because an
+overlay over a payment screen can block a transaction outright rather than
+merely producing a warning.
+
+The default list names six families and there are dozens of Indian bank apps,
+so it is user-extensible in settings under SAFETY. Add yours if you see a
+warning.
+
+Because those packages are deliberately absent from `packageNames`, no
+accessibility event ever names them, and `UsageStatsManager` is the only
+witness that one is in front. While any overlay of ours is on the glass the
+foreground poll tightens from 2 s to 400 ms, which bounds how long a stall
+sink can sit over an app the user has just switched to.
+
+**Pause Jitter (15m).** Settings has a one-tap pause with a countdown. It
+suppresses every overlay for fifteen minutes. It does **not** pause
+accumulation: foreground time keeps counting and `tierIndex` keeps climbing,
+so a pause is an escape hatch and not a clean slate. It is measured on
+`elapsedRealtime` rather than the wall clock, so winding the system clock back
+cannot hold it open.
+
+**Honestly:** some banks warn regardless. The warning is driven by heuristics
+we do not control, and any enabled accessibility service can trip some of
+them. If that happens, the pause is the answer, and disabling the service from
+the system accessibility page always works.
+
+**What the removal cost.** `getWindows()` now returns an empty list. The Phase
+0.1 overlay collision guard used it to enumerate our own windows and now
+learns those window ids from events instead, degrading to the package-name
+check rather than to nothing. Bit's fullscreen auto-retract loses
+`getBoundsInScreen()` entirely and will need a proxy signal.
+
+---
+
 ## Distribution
 
 Jitter is distributed by sideload and, once it is buildable, F-Droid. That is

@@ -7,19 +7,22 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityWindowInfo
 import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.core.latency.LatencyRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.FrictionAction
+import dev.molasses.core.safety.PauseWindow
+import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.session.EventRoute
 import dev.molasses.core.session.ForegroundEventRouter
 import dev.molasses.core.session.ForegroundSessionTracker
 import dev.molasses.core.session.WindowEvent
 import dev.molasses.core.time.MonotonicClock
+import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.time.WallClock
 import dev.molasses.data.datastore.CycleStateStore
+import dev.molasses.data.datastore.pauseInstant
 import dev.molasses.data.datastore.toEngineSnapshot
 import dev.molasses.data.db.UsageEventDao
 import dev.molasses.data.repo.DataStoreEngineStore
@@ -106,7 +109,21 @@ class MolassesAccessibilityService : AccessibilityService() {
      * `View.getWindowToken()` gives us our own tokens but nothing on the event
      * side to compare them against, so the id is the only key available.
      *
-     * Refreshed from `getWindows()` whenever an overlay is added or removed.
+     * This used to be refreshed from `getWindows()`. That needs
+     * `flagRetrieveInteractiveWindows`, which is gone for banking-app
+     * compatibility, and without the flag `getWindows()` returns an empty
+     * list. So the set is now *learned*: any event wearing our own package
+     * name has its window id recorded here.
+     *
+     * That is circular only in appearance. The package check in
+     * [ForegroundEventRouter] already drops those events on its own; learning
+     * the id adds coverage for a later event from the same window that arrives
+     * without a usable package name. The guard degrades to the package check
+     * alone rather than to nothing, which is why the flag could be removed at
+     * all.
+     *
+     * Bounded and cleared on teardown so a long-lived service cannot grow it
+     * without limit.
      */
     private val ownWindowIds = mutableSetOf<Int>()
 
@@ -119,6 +136,15 @@ class MolassesAccessibilityService : AccessibilityService() {
      * duration makes arm and disarm transitions countable.
      */
     private var pinnedStallMs: Long? = null
+
+    /**
+     * Packages Jitter must never draw over: the shipped financial set plus
+     * whatever the user has added in settings.
+     */
+    private var sensitivePrefixes: Set<String> = SensitivePackages.DEFAULT_PREFIXES
+
+    /** When the user last hit "Pause Jitter". [StampedInstant.UNSET] if never. */
+    private var pauseStartedAt: StampedInstant = StampedInstant.UNSET
 
     private val probe by lazy { ForegroundProbe(this) }
 
@@ -146,7 +172,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             ledger = ledger,
             scope = scope,
             latency = latency,
-            onWindowsChanged = ::refreshOwnWindowIds,
+            onWindowsChanged = ::onOverlayWindowsChanged,
         )
 
         val detector = MovementDetector(this) { path ->
@@ -166,7 +192,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             onAbandoned = { pkg ->
                 if (ready) engine.onGateAbandoned(pkg, now())
             },
-            onWindowsChanged = ::refreshOwnWindowIds,
+            onWindowsChanged = ::onOverlayWindowsChanged,
         )
 
         scope.launch {
@@ -234,6 +260,20 @@ class MolassesAccessibilityService : AccessibilityService() {
                 // This drops any open session, which is acceptable for a debug
                 // path and would not be for anything else.
                 pinnedStallMs = state.debugPinnedStallMs.takeIf { it > 0 }
+
+                sensitivePrefixes =
+                    SensitivePackages.resolve(state.sensitivePackagePrefixesList)
+
+                val wasPaused = PauseWindow.isActive(pauseStartedAt, nowStamped())
+                pauseStartedAt = state.pauseInstant()
+                val nowPaused = PauseWindow.isActive(pauseStartedAt, nowStamped())
+                if (nowPaused && !wasPaused && ready) {
+                    // Take everything down the instant the user asks, rather
+                    // than waiting for the next event to notice.
+                    withContext(Dispatchers.Main.immediate) {
+                        tearDownOverlays("paused by user")
+                    }
+                }
 
                 // Settings asked for a stall preview. The sink is a trusted
                 // overlay owned by this service, so the request has to land
@@ -314,6 +354,14 @@ class MolassesAccessibilityService : AccessibilityService() {
             else -> return
         }
 
+        // Learn our own window ids. The router drops these by package anyway;
+        // recording the id covers a later event from the same window that
+        // arrives without one. Bounded so the set cannot grow unbounded on a
+        // service that lives for weeks.
+        if (pkg == packageName && ownWindowIds.size < MAX_OWN_WINDOW_IDS) {
+            ownWindowIds += event.windowId
+        }
+
         val route = router.route(
             WindowEvent(
                 packageName = pkg,
@@ -362,7 +410,14 @@ class MolassesAccessibilityService : AccessibilityService() {
             latency.forPackage(pkg).record(Segment.A, callbackEntryUptimeMs - eventTime)
         }
 
-        when (val action = engine.onScroll(pkg, now())) {
+        // The engine is asked either way: accumulated time and tierIndex must
+        // advance even while overlays are suppressed, or a pause would be a
+        // friction holiday and suppression over a bank would be a free ride.
+        // Only the drawing is withheld.
+        val action = engine.onScroll(pkg, now())
+        if (overlaysSuppressed()) return
+
+        when (action) {
             is FrictionAction.Stall -> shutter.arm(
                 ms = pinnedStallMs ?: action.ms,
                 scrollEventTimeUptimeMs = eventTime,
@@ -373,40 +428,53 @@ class MolassesAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * True when nothing may be drawn on screen, for any reason.
+     *
+     * Two reasons, both non-negotiable:
+     *
+     * 1. A financial app is in the foreground. An overlay sets
+     *    `FLAG_WINDOW_IS_OBSCURED` on that app's touches and a hardened
+     *    banking or UPI app is entitled to refuse the transaction. Adding
+     *    friction is never worth costing someone a payment at a till.
+     * 2. The user hit "Pause Jitter". That is the escape hatch for the case
+     *    where a bank warns anyway and they need us quiet right now.
+     *
+     * Read on the accessibility callback thread, so both halves are plain
+     * in-memory reads. [foregroundPkg] is maintained by the watchdog, and
+     * [pauseStartedAt] by the settings observer.
+     */
+    private fun overlaysSuppressed(): Boolean =
+        SensitivePackages.isSensitive(foregroundPkg, sensitivePrefixes) ||
+            PauseWindow.isActive(pauseStartedAt, nowStamped())
+
+    private fun nowStamped() = StampedInstant(
+        wallMs = wall.wallMs(),
+        elapsedMs = now(),
+        bootId = bootId,
+    )
+
+    /**
+     * Tear every overlay down immediately, without touching accounting.
+     *
+     * Distinct from [leaveTarget]: the session stays open and time keeps
+     * accruing. This is only about what is on the glass.
+     */
+    private fun tearDownOverlays(reason: String) {
+        shutter.release(reason)
+        shutter.detach()
+        if (gate.isShowing) gate.abandon(reason)
+    }
+
     private fun enterTarget(pkg: String) {
         foregroundPkg = pkg
         val id = sessions.open(pkg)
+        // Accounting first and unconditionally. Suppression is about the
+        // glass, never about the ledger.
         engine.onForegroundEnter(pkg, now())
         shutter.setCurrentPackage(pkg)
-        shutter.attach()
+        if (!overlaysSuppressed()) shutter.attach()
         armWatchdog(pkg, id)
-    }
-
-    /**
-     * Foreground *exit* detection.
-     *
-     * A target app leaving does not reliably produce a clean transition of its
-     * own, so exit is inferred from a window-state change attributed to a
-     * different package, backed by a 2 s watchdog for the apps that emit
-     * nothing at all on the way out (and for launcher transitions that report
-     * the launcher's package only intermittently).
-     */
-    private fun onWindowChanged(pkg: String) {
-        val previous = foregroundPkg
-        foregroundPkg = pkg
-
-        if (pkg in targets) {
-            engine.onForegroundEnter(pkg, now())
-            shutter.setCurrentPackage(pkg)
-            shutter.attach()
-            armWatchdog(pkg)
-            return
-        }
-
-        // Left the target app.
-        if (previous != null && previous in targets) {
-            leaveTarget(previous, "window changed to $pkg")
-        }
     }
 
     /**
@@ -440,9 +508,18 @@ class MolassesAccessibilityService : AccessibilityService() {
      */
     private fun armWatchdog(pkg: String, id: ForegroundSessionTracker.SessionId) {
         watchdogJob?.cancel()
+        // Tight while something of ours is drawn, because that is the window
+        // in which a switch to a banking app puts an overlay over a payment
+        // screen. Bounded in cost: the shutter caps its own arm at 8 s and the
+        // gate is user-dismissable, so the fast poll is never the steady state.
+        val interval = if (shutter.isAttached || gate.isShowing) {
+            OVERLAY_WATCHDOG_INTERVAL_MS
+        } else {
+            WATCHDOG_INTERVAL_MS
+        }
         watchdogJob = scope.launch(Dispatchers.IO) {
             while (true) {
-                delay(WATCHDOG_INTERVAL_MS)
+                delay(interval)
                 if (!checkStillForeground(pkg, id)) return@launch
             }
         }
@@ -462,30 +539,60 @@ class MolassesAccessibilityService : AccessibilityService() {
         val active = probe.currentForegroundPackage()
         // null means "no information". A missing PACKAGE_USAGE_STATS grant
         // must not read as the user leaving every app.
-        if (active == null || active == pkg) return true
+        if (active == null) return true
+
+        if (active == pkg) {
+            // Still in the target app, but the foreground reading is also how
+            // a financial app first becomes visible to us: those packages are
+            // deliberately absent from packageNames, so no accessibility event
+            // ever names them and UsageStats is the only witness.
+            return true
+        }
+
         withContext(Dispatchers.Main.immediate) {
             foregroundPkg = active
+            if (SensitivePackages.isSensitive(active, sensitivePrefixes)) {
+                // Before anything that could throw. An overlay left over a UPI
+                // PIN screen is the failure this whole section exists to
+                // prevent, and it must come down even if the accounting below
+                // fails.
+                tearDownOverlays("financial app foreground")
+                Log.i(TAG, "overlays suppressed: $active")
+            }
             leaveTarget(id, "watchdog saw $active")
         }
         return false
     }
 
     /**
-     * Re-read which windows belong to us.
+     * An overlay was added or removed.
      *
-     * Called by the overlay managers on every add and remove. `getWindows()`
-     * needs `flagRetrieveInteractiveWindows`, which is already set, and costs
-     * no content read.
+     * This used to re-read `getWindows()`. Without
+     * `flagRetrieveInteractiveWindows` that returns an empty list, so there is
+     * nothing to re-read and the learned [ownWindowIds] set is cleared instead
+     * when the screen goes quiet. Clearing on the way down rather than on the
+     * way up matters: a window id is reused by the platform, so a stale id
+     * held after our overlay is gone would drop a real event from whatever
+     * inherits it.
+     *
+     * Also re-paces the watchdog. While anything of ours is on the glass the
+     * cost of being slow to notice a financial app is an overlay sitting over
+     * a payment screen, so the poll tightens from 2 s to 400 ms for as long as
+     * that lasts.
      */
-    private fun refreshOwnWindowIds() {
-        ownWindowIds.clear()
-        runCatching {
-            windows?.forEach { w ->
-                if (w.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY) {
-                    ownWindowIds += w.id
-                }
-            }
-        }.onFailure { Log.w(TAG, "could not enumerate windows", it) }
+    private fun onOverlayWindowsChanged() {
+        if (!shutter.isAttached && !gate.isShowing) ownWindowIds.clear()
+        repaceWatchdog()
+    }
+
+    /**
+     * Restart the watchdog at the interval the current screen state calls for.
+     * No-op when nothing is being watched.
+     */
+    private fun repaceWatchdog() {
+        val pkg = sessions.openPkg ?: return
+        val id = sessions.openId ?: return
+        armWatchdog(pkg, id)
     }
 
 
@@ -545,6 +652,20 @@ class MolassesAccessibilityService : AccessibilityService() {
         private const val TAG = "Molasses.Service"
         const val CHECKPOINT_INTERVAL_MS = 15_000L
         const val WATCHDOG_INTERVAL_MS = 2_000L
+
+        /**
+         * Watchdog interval while any overlay of ours is on the glass. Bounds
+         * how long a stall sink can sit over a banking app the user has just
+         * switched to.
+         */
+        const val OVERLAY_WATCHDOG_INTERVAL_MS = 400L
+
+        /**
+         * Cap on the learned own-window set. We show at most a handful of
+         * windows; anything beyond this is a leak, and dropping the surplus is
+         * safe because the package check carries the guard regardless.
+         */
+        const val MAX_OWN_WINDOW_IDS = 32
 
         /** Length of the settings-screen stall preview. */
         const val PREVIEW_STALL_MS = 1_000L

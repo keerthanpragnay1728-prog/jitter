@@ -59,6 +59,20 @@ message CycleState {
   // ABSTINENCE_6H is already 0, so the new default cannot be expressed by
   // renumbering without silently reinterpreting every stored file.
   int32 schema_version = 20;
+
+  // Extra package prefixes the user has added to the never-draw-over set.
+  // The shipped defaults in SensitivePackages are always applied on top of
+  // this, so an empty list is safe and removing a default is not possible.
+  repeated string sensitive_package_prefixes = 21;
+
+  // "Pause Jitter (15m)". Stored on elapsedRealtime plus BOOT_COUNT and NOT
+  // on the wall clock, because for a pause the wall clock's failure mode
+  // grants friction relief rather than costing it. See PauseWindow.
+  int64 pause_started_elapsed_ms = 22;
+  int32 pause_started_boot_id = 23;
+  // Set when a pause has ever been armed. Needed because elapsed 0 is a real
+  // reading a few milliseconds after boot, so it cannot double as "unset".
+  bool pause_armed = 24;
 }
 
 message AppState {
