@@ -1,9 +1,13 @@
-# Molasses
+# Jitter
 
-A progressive-friction focus tool for Android. Codename **Molasses**.
+A progressive-friction focus tool for Android.
 
 Instagram, X and YouTube are never blocked. Instead, the longer you use them
 inside a six-hour cycle, the more the phone *feels* like it is failing.
+
+The package id is `dev.molasses` and the class names still say Molasses. That
+was the working name and renaming the package would orphan every existing
+install for no user-visible gain, so it stays.
 
 | Cumulative foreground time | Behaviour |
 |---|---|
@@ -19,6 +23,32 @@ inside a six-hour cycle, the more the phone *feels* like it is failing.
 **The invariant:** clearing a movement gate unlocks the *next* tier of usage.
 It never resets accumulated time, never lowers the stall duration, and never
 rewinds `tierIndex`. Gates are a toll, not a refund.
+
+---
+
+## Distribution
+
+Jitter is distributed by sideload and, once it is buildable, F-Droid. That is
+permanent, not a staging step on the way to Google Play.
+
+An accessibility service that exists to make other apps harder to use is not
+something Play will keep listed. The Play Console policy on accessibility APIs
+requires that the service exist to help users with disabilities, and
+`isAccessibilityTool` is set to `false` in the service config precisely because
+claiming otherwise would be a false declaration. Every part of the design
+follows from accepting that:
+
+- No `SYSTEM_ALERT_WINDOW`, no `READ_PHONE_STATE`, no `QUERY_ALL_PACKAGES`, no
+  foreground service, no network permission. The permission set is small enough
+  to read in full on the install screen.
+- The accessibility service description is written as a prominent disclosure in
+  plain language, because a sideloading user has no store listing to read.
+- No update mechanism of its own, no telemetry, no account.
+
+To install, enable install from unknown sources, install the APK, then grant
+the accessibility service and usage access from the setup checklist in
+settings. Uninstalling removes everything; the app stores nothing outside its
+own data directory.
 
 ---
 
@@ -163,14 +193,27 @@ report.
 ### 2. What does "resets only after 6 continuous hours" mean?
 
 The phrase is ambiguous between an abstinence window and a wall-clock window.
-Both are implemented, selectable in settings, and the default is
-**`ABSTINENCE_6H`**: six continuous hours with zero foreground time on *any*
-target app.
+Both are implemented and selectable in settings. The default is
+**`FIXED_WINDOW_6H`**: the cycle is anchored on the first target app you open
+from a clean state and ends six hours later whether you keep scrolling or not.
 
-`FIXED_WINDOW_6H` is offered because the brief's wording permits it, but it is
-not the default for a concrete reason: under a fixed window a user can wait out
-the clock while still scrolling, which makes the entire friction ladder
-decorative.
+`ABSTINENCE_6H` was the default originally, on the argument that a fixed window
+lets a user wait out the clock while still scrolling. That is true, and it is
+also the weaker half of the argument: waiting out six hours of a fixed window
+means six hours of the ladder doing its job. An abstinence window has the worse
+property that a user who opens Instagram once an hour never sees a reset at
+all, so the countdown is unreadable and the ladder only ever climbs.
+
+The deadline is evaluated on the 15 s checkpoint tick, not only when a target
+app comes to the foreground. Checking on entry alone means a session that runs
+past six hours never rolls: the countdown goes negative and the stall stays
+pinned at its ceiling for the rest of the session.
+
+The anchor is stored as a `StampedInstant`: wall clock, `elapsedRealtime`, and
+`BOOT_COUNT` together. A bare wall-clock deadline is defeated by opening
+settings and moving the system clock forward six hours, which is the cheapest
+bypass in the app and needs nothing but the date and time screen. See the
+clamp section below.
 
 ### 3. A third ambiguity I hit (`tierIndex` monotonicity vs. cycle reset)
 
@@ -688,9 +731,12 @@ one) and `monitor/ForegroundProbe.kt` (see bug 3).
 (`SystemClock.elapsedRealtime()`). The brief does not say which clock; this is
 the only safe reading, because durations measured on the wall clock are
 user-settable and the whole point of the ladder is that accumulated time cannot
-be argued with. Wall-clock concerns (the cycle anchor and the abstinence
-window) go through `WallClock` and are clamped by `ClockTamperClamp` before
-they reach the engine.
+be argued with.
+
+The cycle anchor and the abstinence window do have to survive a reboot, so they
+carry a wall-clock stamp as well. Both are held as `StampedInstant` and every
+deadline question about them goes through `CycleWindow`, which applies
+`ClockTamperClamp`.
 
 ### The clock-tamper clamp
 
@@ -706,9 +752,23 @@ boot count changed                    ->  elapsedRealtime reset; trust wall
                                           only, floored at zero
 ```
 
-A rollover is suppressed while tampering is detected. The suppression lifts on
-the next connect with agreeing clocks, which re-evaluates against the real
-`last_target_use_wall_ms`.
+`CycleWindow` is the single caller that turns that verdict into a deadline
+answer, and the engine tick, the foreground-entry path and the reconciler all
+go through it. They each used to re-derive the comparison locally, which is how
+they came to disagree.
+
+There is no separate "suppress the rollover while tampering is detected" rule
+any more. A wall clock moved forward credits nothing towards the age of the
+anchor, so the cycle simply is not due, and the rule and the clamp cannot drift
+apart.
+
+The one gap left is a reboot. `elapsedRealtime` restarts at zero and there is
+no monotonic reading that spans the boot, so across one the wall delta is the
+only witness available and is trusted, floored at zero. Setting the clock
+forward and then rebooting therefore still works. It costs a reboot, which is
+a different order of effort from opening the settings app, and closing it would
+mean persisting a trusted time source the platform does not offer without a
+network permission this app does not have.
 
 ### Why there is no foreground service
 
@@ -801,9 +861,14 @@ product.
   not already say.
 - A single session is capped at 12 h and a negative monotonic delta credits
   zero, so a clock bug cannot fling a user to the terminal tier.
-- The abstinence check runs on foreground entry and on service connect. A cycle
-  coming due while the process is dead is the common case, so the connect path
-  has to check too.
+- The cycle deadline is checked on foreground entry, on the 15 s checkpoint
+  tick, and on service connect. Entry alone misses a session that runs past the
+  deadline; the tick alone misses a cycle that comes due while the process is
+  dead, which is the common case under `ABSTINENCE_6H`.
+- A rollover with a target app open re-anchors at that instant, because the
+  user is in a target app and that is what the anchor means. A rollover with
+  nothing open leaves the cycle unanchored, so the next foreground entry starts
+  it rather than burning window on someone who is not using anything.
 - A `ForegroundReplay` seed from `open_session_pkg` is *not* shortened by a
   later `ACTIVITY_RESUMED` in the same window. Apps fire `ACTIVITY_RESUMED` per
   activity, so trusting the later one would hand out a bypass: kill the
