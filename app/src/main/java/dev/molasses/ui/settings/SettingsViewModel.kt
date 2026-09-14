@@ -281,6 +281,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { store.setPinnedStallMs(ms) }
     }
 
+    /** Debug builds only. Zero restores the curve; 1..100 forces a percentage. */
+    fun setForcedProbabilityPct(pct: Int) {
+        viewModelScope.launch { store.setForcedProbabilityPct(pct) }
+    }
+
     fun clearLedger() {
         viewModelScope.launch { withContext(Dispatchers.IO) { dao.clear() } }
     }
