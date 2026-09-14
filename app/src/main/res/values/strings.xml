@@ -271,6 +271,8 @@
     <string name="cmd_ack_status">ACK: LEDGER</string>
     <string name="cmd_ack_wifi_panel">ACK: WIFI PANEL</string>
     <string name="cmd_ack_dnd_panel">ACK: DND SETTINGS</string>
+    <string name="cmd_ack_alarm">ACK: ALARM %1$s</string>
+    <string name="cmd_ack_timer">ACK: TIMER %1$s</string>
     <string name="cmd_err_empty">Type a command or an app name.</string>
     <string name="cmd_err_unknown">Unknown command: %1$s</string>
     <string name="cmd_err_missing">Missing argument. Usage: %1$s</string>
@@ -278,16 +280,69 @@
     <string name="cmd_err_duration">Bad duration: %1$s. Try 30m, 2h, 1h30m, 3d.</string>
     <string name="cmd_err_time">Bad time: %1$s. Try 6am, 18:30, 6:30pm.</string>
     <string name="cmd_err_toggle">Expected on or off, got %1$s</string>
-    <string name="cmd_err_no_lock">Parsed %1$s. Locks are not enforced yet.</string>
-    <string name="cmd_err_no_alarm">Parsed %1$s. Scheduling is not wired yet.</string>
-    <string name="cmd_err_no_log">No system log page yet.</string>
+    <!--
+      Unavailable, not failed. The user cannot fix any of these by retyping,
+      which is why Bit shows a different face for them: a dry face the user
+      can act on teaches them to read it, and one they cannot teaches them to
+      ignore it.
+
+      These take no format arguments. A surface knows which command it is
+      answering about but not what the user typed, and echoing the parse back
+      on "no wifi panel" would be noise. The commands where seeing the parse
+      matters are the long locks, and those echo it in the confirmation.
+    -->
+    <string name="cmd_na_no_lock">Locks are not enforced yet. The grammar is real; the subsystem is not.</string>
+    <string name="cmd_na_no_log">No system log page yet.</string>
+    <string name="cmd_na_no_scheduling">Reminder scheduling is not wired yet.</string>
     <!-- Not "not yet". A sideloaded app cannot reboot or power off a device
-         at all, so this must not imply the feature is coming. -->
-    <string name="cmd_err_privileged">Android does not let an app do that. Use the power button.</string>
-    <string name="cmd_err_no_panel">This device has no settings panel for that.</string>
-    <string name="cmd_err_wifi_toggle">Android does not let an app switch wifi. Try $ wifi to open the panel.</string>
-    <string name="cmd_err_dnd_toggle">Setting DND needs a permission Jitter does not request. Try $ dnd to open settings.</string>
+         at all, so this must not imply the feature is coming, and it must not
+         blame the service binding either. -->
+    <string name="cmd_na_privileged">Android does not let an app do that. Use the power button.</string>
+    <string name="cmd_na_no_panel">This device has no settings panel for that.</string>
+    <string name="cmd_na_no_clock_app">No clock app on this device handles that.</string>
+    <string name="cmd_na_wifi_toggle">Android does not let an app switch wifi. Try $ wifi to open the panel.</string>
+    <string name="cmd_na_dnd_toggle">Setting DND needs a permission Jitter does not request. Try $ dnd to open settings.</string>
+    <string name="cmd_na_relief_needs_monitor">The monitor is not running, so nothing would read the lease.</string>
+    <!-- A wiring bug rather than a condition the user is in. It has to render
+         as something rather than crash the launcher. -->
+    <string name="cmd_na_wiring">That command has no handler. This is a bug in Jitter.</string>
+    <!-- LockRegistry is extend-only, so a mistyped long lock is unfixable for
+         its whole duration. The echo is the canonical parse, so a duration
+         read differently than it was typed is visible before it is armed. -->
+    <string name="cmd_confirm_line">%1$s. Enter again to confirm, anything else cancels.</string>
     <string name="cmd_hint_fmt">%1$s</string>
+    <!--
+      Usage shapes. Argument SHAPE only, never a value: one stray completion
+      must not be able to arm a real lock. Not translatable, because these are
+      the grammar itself and a translated verb would not parse.
+    -->
+    <string name="cmd_usage_block" translatable="false">block &lt;app&gt; &lt;duration&gt;</string>
+    <string name="cmd_usage_focus" translatable="false">focus &lt;duration&gt;</string>
+    <string name="cmd_usage_allow" translatable="false">allow &lt;app&gt; &lt;duration&gt;</string>
+    <string name="cmd_usage_bedtime" translatable="false">bedtime</string>
+    <string name="cmd_usage_status" translatable="false">status</string>
+    <string name="cmd_usage_log" translatable="false">log [app]</string>
+    <string name="cmd_usage_alarm" translatable="false">alarm &lt;time&gt;</string>
+    <string name="cmd_usage_timer" translatable="false">timer &lt;duration&gt;</string>
+    <string name="cmd_usage_rem" translatable="false">rem &lt;duration&gt; &lt;text&gt;</string>
+    <string name="cmd_usage_reboot" translatable="false">reboot</string>
+    <string name="cmd_usage_poweroff" translatable="false">poweroff</string>
+    <string name="cmd_usage_wifi" translatable="false">wifi [on|off]</string>
+    <string name="cmd_usage_dnd" translatable="false">dnd [on|off]</string>
+    <!-- One line each, for the manual the registry generates. -->
+    <string name="cmd_desc_block">Lock one app until the duration is up.</string>
+    <string name="cmd_desc_focus">Lock every tracked app and silence notifications.</string>
+    <string name="cmd_desc_allow">Suspend checkpoints for one app. Friction keeps accruing.</string>
+    <string name="cmd_desc_bedtime">Lock until the configured wake time.</string>
+    <string name="cmd_desc_status">Show the ledger.</string>
+    <string name="cmd_desc_log">Filter the system log, or clear the filter.</string>
+    <string name="cmd_desc_alarm">Set an alarm in the clock app.</string>
+    <string name="cmd_desc_timer">Start a timer in the clock app.</string>
+    <string name="cmd_desc_rem">Remind me after the duration.</string>
+    <string name="cmd_desc_reboot">Restart the device.</string>
+    <string name="cmd_desc_poweroff">Power the device off.</string>
+    <string name="cmd_desc_wifi">Open the wifi panel.</string>
+    <string name="cmd_desc_dnd">Open do not disturb settings.</string>
     <!-- App drawer -->
     <string name="drawer_title">ALL APPS</string>
     <string name="drawer_search_placeholder">filter...</string>

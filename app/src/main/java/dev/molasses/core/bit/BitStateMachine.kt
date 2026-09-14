@@ -30,8 +30,19 @@ object BitStateMachine {
         /** A command succeeded. Carries the ack line to render alongside. */
         data class Confirm(val ack: String) : Reaction
 
-        /** A command did not parse or could not run. Carries the error line. */
+        /** Bad input. The user can fix this by typing something else. */
         data class Failed(val message: String) : Reaction
+
+        /**
+         * Parsed, and could not run here or yet.
+         *
+         * A third reaction and not a reuse of [Failed], because "block is not
+         * wired yet" and "block what?" are different information and must not
+         * look identical. One the user can fix by retyping; the other they
+         * cannot, and showing the same face for both teaches them to ignore
+         * it.
+         */
+        data class Unavailable(val message: String) : Reaction
 
         /** Bit was tapped once. */
         data object Poked : Reaction
@@ -64,6 +75,9 @@ object BitStateMachine {
     const val BLINK_NARROW = "( o_o )"
     const val HAPPY = "(^o^)"
     const val DRY = "(._.)"
+
+    /** Unavailable. Flat rather than dry: nothing went wrong, it just cannot. */
+    const val FLAT = "(-_-)"
     const val IRRITATED = "(-_-;)"
     const val TURNED_AWAY = "[===]"
     const val BATTERY_CRITICAL = "[ . . ]"
@@ -86,6 +100,9 @@ object BitStateMachine {
      * has to survive the moment of looking away from the keyboard.
      */
     const val FAILED_TOTAL_MS = 2_000L
+
+    /** Same hold as a failure: an unavailable reason is equally worth reading. */
+    const val UNAVAILABLE_TOTAL_MS = 2_000L
 
     const val POKE_TOTAL_MS = 1_200L
     const val IRRITATED_TOTAL_MS = 1_200L
@@ -145,6 +162,13 @@ object BitStateMachine {
             expired = { idleFrame(mood, tickMs).copy(line = null, reactionActive = false) },
         ) { DRY }
 
+        is Reaction.Unavailable -> phased(
+            ageMs = reactionAgeMs,
+            total = UNAVAILABLE_TOTAL_MS,
+            line = reaction.message,
+            expired = { idleFrame(mood, tickMs).copy(line = null, reactionActive = false) },
+        ) { FLAT }
+
         Reaction.Poked -> phased(
             ageMs = reactionAgeMs,
             total = POKE_TOTAL_MS,
@@ -184,6 +208,7 @@ object BitStateMachine {
         Reaction.None, Reaction.BatteryCritical -> false
         is Reaction.Confirm -> reactionAgeMs >= CONFIRM_TOTAL_MS
         is Reaction.Failed -> reactionAgeMs >= FAILED_TOTAL_MS
+        is Reaction.Unavailable -> reactionAgeMs >= UNAVAILABLE_TOTAL_MS
         Reaction.Poked -> reactionAgeMs >= POKE_TOTAL_MS
         Reaction.Irritated -> reactionAgeMs >= IRRITATED_TOTAL_MS
         Reaction.TurnedAway -> reactionAgeMs >= TURNED_AWAY_TOTAL_MS

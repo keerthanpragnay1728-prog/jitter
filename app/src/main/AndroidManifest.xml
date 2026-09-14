@@ -36,6 +36,27 @@
             <action android:name="android.intent.action.MAIN"/>
             <category android:name="android.intent.category.LAUNCHER"/>
         </intent>
+        <!--
+          The command bar reports a command as unavailable when nothing on the
+          device handles its Intent. Without these entries resolveActivity
+          returns null on API 30+ even where a clock app is installed, and
+          "$ alarm 6am" would report no clock app on a phone that has one.
+        -->
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_TIMER"/>
+        </intent>
+        <intent>
+            <action android:name="android.settings.panel.action.WIFI"/>
+        </intent>
+        <intent>
+            <action android:name="android.settings.WIFI_SETTINGS"/>
+        </intent>
+        <intent>
+            <action android:name="android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS"/>
+        </intent>
     </queries>
 
     <application

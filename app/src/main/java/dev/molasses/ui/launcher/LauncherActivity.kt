@@ -101,6 +101,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.R
 import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.command.CommandParser
+import dev.molasses.core.command.ConfirmPrompt
+import dev.molasses.core.command.DispatchResult
 import dev.molasses.core.command.ParseError
 import dev.molasses.core.command.ParseResult
 import dev.molasses.core.ui.BezelSnap
@@ -201,13 +203,17 @@ class LauncherActivity : ComponentActivity() {
                                 startActivity(Intent(this@LauncherActivity, SettingsActivity::class.java))
                             },
                             onLaunchPackage = ::launchPackage,
-                            actions = LauncherActions(
-                                showLedger = {
-                                    scope.launch { pagerState.animateScrollToPage(PAGE_LEDGER) }
-                                },
-                                openWifiPanel = ::openWifiPanel,
-                                openDndSettings = ::openDndSettings,
-                            ),
+                            // Remembered so the prompt can build its
+                            // dispatcher once rather than on every keystroke.
+                            actions = remember(pagerState) {
+                                LauncherActions(
+                                    showLedger = {
+                                        scope.launch { pagerState.animateScrollToPage(PAGE_LEDGER) }
+                                    },
+                                    startIntent = ::startIfHandled,
+                                    canResolve = ::canResolve,
+                                )
+                            },
                             onDialer = {
                                 startActivity(Intent(Intent.ACTION_DIAL))
                             },
@@ -287,23 +293,24 @@ class LauncherActivity : ComponentActivity() {
     }
 
     /**
-     * @return false when the device has no such panel, so the caller can say
-     *   that rather than reporting a success that did nothing.
+     * @return false when nothing handled it, so the caller can say that rather
+     *   than reporting a success that did nothing.
      */
-    private fun openWifiPanel(): Boolean = runCatching {
-        val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            Settings.Panel.ACTION_WIFI
-        } else {
-            Settings.ACTION_WIFI_SETTINGS
-        }
-        startActivity(Intent(action))
+    private fun startIfHandled(intent: Intent): Boolean = runCatching {
+        startActivity(intent)
         true
     }.getOrDefault(false)
 
-    private fun openDndSettings(): Boolean = runCatching {
-        startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
-        true
-    }.getOrDefault(false)
+    /**
+     * Whether anything on this device handles [intent].
+     *
+     * Package visibility on API 30+ means this answers only for actions
+     * declared in the manifest's `queries` block. An action that is missing
+     * there reads as unhandled on a device that handles it perfectly well, so
+     * the two lists are kept in step.
+     */
+    private fun canResolve(intent: Intent): Boolean =
+        packageManager.resolveActivity(intent, 0) != null
 
     private fun queryLaunchableApps(): List<LaunchableApp> {
         val targets = DEFAULT_TARGETS.toSet()
@@ -517,6 +524,14 @@ fun TerminalHomeView(
     // hint is drawn in the divider step, dim enough to ignore.
     val commandHint = remember(query) { CommandParser.hintFor(query) }
 
+    // The dispatcher, rebuilt only when the action table changes. Surfaces
+    // read live state when asked, so nothing here needs to recompose for the
+    // service binding or an app being installed.
+    val dispatch = remember(actions) { launcherDispatch(actions) }
+
+    // A long lock held for a second Enter. Null except in that window.
+    var pending by remember { mutableStateOf<ConfirmPrompt.Pending?>(null) }
+
     // Bit's transient reaction and when it started. The monotonic clock, so a
     // clock change cannot leave a face stuck on screen.
     var reaction by remember { mutableStateOf<BitStateMachine.Reaction>(BitStateMachine.Reaction.None) }
@@ -551,22 +566,29 @@ fun TerminalHomeView(
      * name must still run as a command, because the grammar is the thing the
      * user typed deliberately.
      */
-    fun submit(): CommandOutcome {
+    fun submit(): DispatchResult {
         val text = query.trim()
-        if (text.isEmpty()) return CommandOutcome.NotACommand
+        if (text.isEmpty()) return DispatchResult.NotACommand
+
+        // A pending long lock first. The armed line is the canonical echo, so
+        // this only fires on the exact text the user was shown.
+        when (val decision = ConfirmPrompt.onSubmit(pending, text)) {
+            is ConfirmPrompt.Decision.Confirm -> {
+                pending = null
+                return dispatch.dispatch(decision.command, confirmed = true)
+            }
+            ConfirmPrompt.Decision.Dispatch -> pending = null
+        }
 
         return when (val parsed = CommandParser.parse(text)) {
-            is ParseResult.Ok -> CommandDispatcher.dispatch(parsed.command, actions)
+            is ParseResult.Ok -> dispatch.dispatch(parsed.command)
             is ParseResult.Err -> when (parsed.error) {
                 // Not a command at all: fall back to app filtering, which is
                 // what a bare app name is.
-                is ParseError.UnknownCommand, ParseError.Empty -> CommandOutcome.NotACommand
+                is ParseError.UnknownCommand, ParseError.Empty -> DispatchResult.NotACommand
                 // A real command typed wrong. Report it rather than silently
                 // trying to launch an app called "block".
-                else -> CommandOutcome.Failed(
-                    parsed.error.messageRes(),
-                    parsed.error.argument(),
-                )
+                else -> parsed.error.asFailure()
             }
         }
     }
@@ -714,6 +736,10 @@ fun TerminalHomeView(
                     value = query,
                     onValueChange = {
                         query = it
+                        // Any edit cancels a pending confirmation. Leaving it
+                        // armed would mean an Enter on a half-typed line runs
+                        // something that was confirmed in a different form.
+                        pending = ConfirmPrompt.onTextChanged(pending, it)
                         lastKeystrokeMs = SystemClock.elapsedRealtime()
                     },
                     textStyle = TextStyle(
@@ -727,17 +753,29 @@ fun TerminalHomeView(
                     keyboardActions = KeyboardActions(
                         onGo = {
                             when (val outcome = submit()) {
-                                is CommandOutcome.Executed -> {
+                                is DispatchResult.Confirmed -> {
                                     react(BitStateMachine.Reaction.Confirm(outcome.message(context)))
                                     query = ""
                                 }
-                                is CommandOutcome.NotWired ->
-                                    // Deliberately the FAILED face: nothing
-                                    // happened, so a confirmation would lie.
+                                // A third face, not the dry one. "Locks are
+                                // not enforced yet" and "block what?" are
+                                // different information, and showing the same
+                                // face for both teaches the user to ignore it.
+                                is DispatchResult.Unavailable ->
+                                    react(BitStateMachine.Reaction.Unavailable(outcome.message(context)))
+                                is DispatchResult.Failed ->
                                     react(BitStateMachine.Reaction.Failed(outcome.message(context)))
-                                is CommandOutcome.Failed ->
-                                    react(BitStateMachine.Reaction.Failed(outcome.message(context)))
-                                CommandOutcome.NotACommand ->
+                                // Not a reaction: the echo goes into the
+                                // prompt and the instruction into the hint
+                                // line, so the thing being confirmed stays on
+                                // screen instead of expiring after two
+                                // seconds like a face would.
+                                is DispatchResult.NeedsConfirmation -> {
+                                    pending = ConfirmPrompt.arm(outcome.command, outcome.echo)
+                                    query = outcome.echo
+                                    lastKeystrokeMs = SystemClock.elapsedRealtime()
+                                }
+                                DispatchResult.NotACommand ->
                                     if (filteredApps.isNotEmpty()) {
                                         onLaunchPackage(filteredApps.first().packageName)
                                         query = ""
@@ -750,7 +788,18 @@ fun TerminalHomeView(
             }
         }
 
-        if (commandHint != null) {
+        // One line, two jobs. A pending confirmation outranks the usage hint:
+        // the hint is something to glance at, and this is a question.
+        val armed = pending
+        if (armed != null) {
+            Text(
+                text = stringResource(R.string.cmd_confirm_line, armed.line),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = PhosphorGreen,
+                modifier = Modifier.padding(top = 4.dp, start = 2.dp),
+            )
+        } else if (commandHint != null) {
             Text(
                 text = stringResource(R.string.cmd_hint_fmt, commandHint),
                 fontFamily = FontFamily.Monospace,
