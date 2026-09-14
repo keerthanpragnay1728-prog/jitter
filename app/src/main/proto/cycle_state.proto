@@ -73,6 +73,11 @@ message CycleState {
   // Set when a pause has ever been armed. Needed because elapsed 0 is a real
   // reading a few milliseconds after boot, so it cannot double as "unset".
   bool pause_armed = 24;
+
+  // FontScale ordinal. Stored as an int rather than a proto enum so an
+  // unknown value resolves to the default in one place, FontScale.fromOrdinal,
+  // rather than needing a proto enum default that duplicates the same choice.
+  int32 font_scale_ordinal = 25;
 }
 
 message AppState {

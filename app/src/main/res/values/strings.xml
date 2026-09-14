@@ -186,8 +186,6 @@
     <string name="launcher_filter_active">MUTED</string>
     <string name="launcher_filter_dormant">OPEN</string>
     <string name="launcher_cfg">[CFG]</string>
-    <string name="launcher_bit_label">BIT // COMPANION</string>
-    <string name="launcher_bit_hint">DRAG TO MOVE  |  TAP TO POKE</string>
     <string name="launcher_filter_row_title">Notification filter</string>
     <!-- Decorative glyphs. Shown on screen, never reworded or translated. -->
     <string name="launcher_prompt_symbol" translatable="false">$ </string>
@@ -220,6 +218,42 @@
     <string name="filter_status_active">FILTER ACTIVE: %1$s CLEARED</string>
     <string name="filter_status_idle">FILTER DORMANT</string>
     <string name="filter_allowlist_header">ALLOWED APPS (BYPASS FILTER)</string>
+    <!-- Command REPL feedback. Every message names the offending token or
+         the usage shape, because "block <app> <duration>" alone does not tell
+         someone that 30mins is the wrong spelling. -->
+    <string name="cmd_ack_status">ACK: LEDGER</string>
+    <string name="cmd_ack_wifi_panel">ACK: WIFI PANEL</string>
+    <string name="cmd_ack_dnd_panel">ACK: DND SETTINGS</string>
+    <string name="cmd_err_empty">Type a command or an app name.</string>
+    <string name="cmd_err_unknown">Unknown command: %1$s</string>
+    <string name="cmd_err_missing">Missing argument. Usage: %1$s</string>
+    <string name="cmd_err_surplus">Too many arguments. Usage: %1$s</string>
+    <string name="cmd_err_duration">Bad duration: %1$s. Try 30m, 2h, 1h30m, 3d.</string>
+    <string name="cmd_err_time">Bad time: %1$s. Try 6am, 18:30, 6:30pm.</string>
+    <string name="cmd_err_toggle">Expected on or off, got %1$s</string>
+    <string name="cmd_err_no_lock">Parsed %1$s. Locks are not enforced yet.</string>
+    <string name="cmd_err_no_alarm">Parsed %1$s. Scheduling is not wired yet.</string>
+    <string name="cmd_err_no_log">No system log page yet.</string>
+    <!-- Not "not yet". A sideloaded app cannot reboot or power off a device
+         at all, so this must not imply the feature is coming. -->
+    <string name="cmd_err_privileged">Android does not let an app do that. Use the power button.</string>
+    <string name="cmd_err_no_panel">This device has no settings panel for that.</string>
+    <string name="cmd_err_wifi_toggle">Android does not let an app switch wifi. Try $ wifi to open the panel.</string>
+    <string name="cmd_err_dnd_toggle">Setting DND needs a permission Jitter does not request. Try $ dnd to open settings.</string>
+    <string name="cmd_hint_fmt">%1$s</string>
+    <!-- App drawer -->
+    <string name="drawer_title">ALL APPS</string>
+    <string name="drawer_search_placeholder">filter...</string>
+    <string name="drawer_empty">No apps match.</string>
+    <!-- Appearance -->
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_font_scale_title">Text size</string>
+    <string name="settings_font_scale_body">Multiplies the system text size rather than replacing it. If you have already enlarged text system wide, that still applies.</string>
+    <string name="settings_font_very_small">Very small</string>
+    <string name="settings_font_small">Small</string>
+    <string name="settings_font_medium">Default</string>
+    <string name="settings_font_large">Large</string>
+    <string name="settings_font_very_large">Very large</string>
     <!-- Notification Shade & Inbox -->
     <string name="notif_shade_title">Notifications</string>
     <string name="notif_tab_filtered">FILTERED NOTIFICATIONS</string>

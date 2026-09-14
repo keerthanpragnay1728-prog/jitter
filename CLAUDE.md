@@ -58,8 +58,9 @@ Check before committing:
 tools/check-all.sh
 ```
 
-That runs the dash check, the encoding check, the format-string check and the
-pure suite. The individual scripts still work on their own.
+That runs the dash check, the encoding check, the format-string check, the
+colour check and the pure suite. The individual scripts still work on their
+own.
 
 The script runs `grep -rn` for the two characters literally, with no `-P`, no
 code points and no `(*UTF)`, so it works on GNU and BSD grep. It covers `*.md`,
@@ -111,6 +112,22 @@ two of them were silently reverted once inside a commit about something else.
 Neither revert broke a visible feature, which is why neither was noticed:
 dropping `dev.molasses` from `packageNames` stops the session ever closing, and
 the ladder just goes quietly wrong.
+
+## Colours live in one file
+
+`ui/theme/Color.kt` is the only place a colour is defined. Everything else
+names a token, and `tools/check-colors.sh` fails on a hex literal or a named
+`Color` constant anywhere else under `ui/`.
+
+The rule exists because the palette has an actual constraint: `TerminalAlert`
+(`#FF5555`) is reserved for the terminal tier and appears nowhere else. That
+is unenforceable the moment a one-off `Color(0xFF...)` can appear in a modifier
+chain, which is how the launcher arrived with six private colour constants and
+two buried literals.
+
+`Color.Red` is checked as well as hex. It is the same literal wearing a
+different spelling, and it would defeat the terminal-tier rule while passing a
+hex-only grep.
 
 ## Service model
 
