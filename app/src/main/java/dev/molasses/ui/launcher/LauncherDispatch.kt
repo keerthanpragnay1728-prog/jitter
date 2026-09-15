@@ -13,6 +13,7 @@ import dev.molasses.core.command.CommandDispatch
 import dev.molasses.core.command.CommandParser
 import dev.molasses.core.command.CommandRegistry
 import dev.molasses.core.command.CommandRender
+import dev.molasses.core.command.AppTokenResolver
 import dev.molasses.core.command.CommandSpec
 import dev.molasses.core.command.DispatchResult
 import dev.molasses.core.command.EffectSurface
@@ -20,6 +21,8 @@ import dev.molasses.core.command.ParseError
 import dev.molasses.core.command.ReliefPolicy
 import dev.molasses.core.command.Surface
 import dev.molasses.core.diag.ServiceHealth
+import dev.molasses.core.lock.BedtimeWindow
+import dev.molasses.core.lock.LockReason
 import dev.molasses.monitor.ServiceDiagnostics
 
 /*
@@ -59,6 +62,27 @@ class LauncherActions(
     val startIntent: (Intent) -> Boolean,
     /** Whether anything on this device handles the Intent. */
     val canResolve: (Intent) -> Boolean,
+    /** Milliseconds left on [pkg]'s lock, or 0 when it is not locked. */
+    val lockRemainingMs: (String) -> Long,
+    /** True while any lock is armed. The relief policy reads this. */
+    val anyLockArmed: () -> Boolean,
+    /** The tracked packages, for `$ focus`. */
+    val targets: () -> List<String>,
+    /** An app token to a package. See [AppTokenResolver]. */
+    val resolveApp: (String) -> AppTokenResolver.Result,
+    /**
+     * Arm or extend a lock, off the main thread.
+     *
+     * Fire and forget, because the store is authoritative: the extend-only
+     * compare happens inside its transform, so this cannot be the thing that
+     * decides whether a lock shortens. What the prompt reports is predicted
+     * from the collected registry before this is called, and the only way that
+     * prediction can be wrong is a second arm landing in between, which can
+     * only make the lock longer.
+     */
+    val armLock: (List<String>, Long, LockReason) -> Unit,
+    /** Minutes since local midnight, for `$ bedtime`. */
+    val minuteOfDay: () -> Int,
     val health: () -> ServiceHealth = { ServiceDiagnostics.health() },
 )
 
@@ -112,14 +136,21 @@ private object ServiceSurface : EffectSurface {
  */
 private object SubsystemSurface : EffectSurface {
     override val surface = Surface.SUBSYSTEM
-    override fun availability(spec: CommandSpec) = Availability.Unavailable(
-        when (spec.verb) {
-            "log" -> R.string.cmd_na_no_log
-            "rem" -> R.string.cmd_na_no_scheduling
-            // block, focus, allow, bedtime. One registry, one absence.
-            else -> R.string.cmd_na_no_lock
-        },
-    )
+    override fun availability(spec: CommandSpec): Availability = when (spec.verb) {
+        // Locks are persisted and enforced. Three commands became available
+        // in one edit here, which is the whole economy of surfacing.
+        "block", "focus", "bedtime" -> Availability.Available
+
+        // Relief, not restriction, and it does not run on LockRegistry. An
+        // allowance suspends checkpoints, which means parking the penalty
+        // ratchet as well as hiding the gate, and the ratchet lives in
+        // FrictionEngine.
+        "allow" -> Availability.Unavailable(R.string.cmd_na_no_allowance)
+
+        "log" -> Availability.Unavailable(R.string.cmd_na_no_log)
+        "rem" -> Availability.Unavailable(R.string.cmd_na_no_scheduling)
+        else -> Availability.Unavailable(R.string.cmd_na_wiring)
+    }
 }
 
 /**
@@ -132,9 +163,22 @@ private object SubsystemSurface : EffectSurface {
  * relief command inherits it.
  */
 private class MonitorReliefPolicy(private val actions: LauncherActions) : ReliefPolicy {
-    override fun allows(): Availability =
-        if (actions.health().acceptingEvents) Availability.Available
-        else Availability.Unavailable(R.string.cmd_na_relief_needs_monitor)
+    override fun allows(): Availability = when {
+        // A suspension nothing reads is not relief, it is a confirmation that
+        // teaches the user that typing a command makes friction go away.
+        !actions.health().acceptingEvents ->
+            Availability.Unavailable(R.string.cmd_na_relief_needs_monitor)
+
+        // Locks beat relief, in one direction only. A lock is the strongest
+        // commitment this app offers and the only one that passes a
+        // confirmation step. Leasing your way out of checkpoints on a
+        // different app while a focus session stands would make the lock a
+        // suggestion.
+        actions.anyLockArmed() ->
+            Availability.Unavailable(R.string.cmd_na_relief_while_locked)
+
+        else -> Availability.Available
+    }
 }
 
 // ----------------------------------------------------------------- dispatch
@@ -264,9 +308,79 @@ private fun execute(
         else -> DispatchResult.Unavailable(R.string.cmd_na_dnd_toggle)
     }
 
-    is Command.Block, is Command.Focus, is Command.Allow, Command.Bedtime,
-    is Command.Log, is Command.Remind, Command.Reboot, Command.PowerOff ->
+    is Command.Block -> when (val resolved = actions.resolveApp(command.appToken)) {
+        is AppTokenResolver.Result.One ->
+            armOne(actions, resolved.pkg, command.durationMs, LockReason.BLOCK)
+        AppTokenResolver.Result.None ->
+            DispatchResult.Failed(R.string.cmd_err_unknown_app, listOf(command.appToken))
+        is AppTokenResolver.Result.Ambiguous ->
+            DispatchResult.Failed(
+                R.string.cmd_err_ambiguous_app,
+                listOf(command.appToken, resolved.packages.size.toString()),
+            )
+    }
+
+    is Command.Focus -> {
+        val targets = actions.targets()
+        if (targets.isEmpty()) {
+            DispatchResult.Failed(R.string.cmd_err_no_targets)
+        } else {
+            actions.armLock(targets, command.durationMs, LockReason.FOCUS)
+            DispatchResult.Confirmed(
+                R.string.cmd_ack_focus,
+                listOf(CommandRender.duration(command.durationMs), targets.size.toString()),
+            )
+        }
+    }
+
+    Command.Bedtime -> {
+        val targets = actions.targets()
+        val durationMs = BedtimeWindow.durationMs(actions.minuteOfDay())
+        if (targets.isEmpty()) {
+            DispatchResult.Failed(R.string.cmd_err_no_targets)
+        } else {
+            actions.armLock(targets, durationMs, LockReason.BEDTIME)
+            DispatchResult.Confirmed(
+                R.string.cmd_ack_bedtime,
+                listOf(CommandRender.duration(durationMs)),
+            )
+        }
+    }
+
+    is Command.Allow, is Command.Log, is Command.Remind,
+    Command.Reboot, Command.PowerOff ->
         DispatchResult.Unavailable(R.string.cmd_na_wiring)
+}
+
+/**
+ * Arm one lock, reporting what the registry will do rather than what was
+ * asked for.
+ *
+ * The extend-only refusal is a [DispatchResult.Failed] rather than an
+ * [DispatchResult.Unavailable] because the user can fix it by typing a longer
+ * duration, which is the only thing that distinguishes the two outcomes.
+ * Reporting a plain confirmation here would be the worst answer available:
+ * `$ block instagram 1m` against a thirty day lock changes nothing, and
+ * saying ACK would teach the user that it had.
+ */
+private fun armOne(
+    actions: LauncherActions,
+    pkg: String,
+    durationMs: Long,
+    reason: LockReason,
+): DispatchResult {
+    val standing = actions.lockRemainingMs(pkg)
+    if (standing >= durationMs) {
+        return DispatchResult.Failed(
+            R.string.cmd_err_lock_not_shortened,
+            listOf(CommandRender.duration(standing)),
+        )
+    }
+    actions.armLock(listOf(pkg), durationMs, reason)
+    return DispatchResult.Confirmed(
+        R.string.cmd_ack_lock,
+        listOf(CommandRender.duration(durationMs)),
+    )
 }
 
 // -------------------------------------------------------------------- intents

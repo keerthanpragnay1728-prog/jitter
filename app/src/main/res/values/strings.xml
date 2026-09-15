@@ -281,6 +281,9 @@
          someone that 30mins is the wrong spelling. -->
     <string name="cmd_ack_status">ACK: LEDGER</string>
     <string name="cmd_ack_help">ACK: MANUAL</string>
+    <string name="cmd_ack_lock">ACK: LOCKED %1$s. There is no unlock.</string>
+    <string name="cmd_ack_focus">ACK: FOCUS %1$s across %2$s apps.</string>
+    <string name="cmd_ack_bedtime">ACK: BEDTIME. Locked for %1$s.</string>
     <string name="cmd_ack_wifi_panel">ACK: WIFI PANEL</string>
     <string name="cmd_ack_dnd_panel">ACK: DND SETTINGS</string>
     <string name="cmd_ack_alarm">ACK: ALARM %1$s</string>
@@ -292,6 +295,10 @@
     <string name="cmd_err_duration">Bad duration: %1$s. Try 30m, 2h, 1h30m, 3d.</string>
     <string name="cmd_err_time">Bad time: %1$s. Try 6am, 18:30, 6:30pm.</string>
     <string name="cmd_err_toggle">Expected on or off, got %1$s</string>
+    <string name="cmd_err_unknown_app">No app matches %1$s</string>
+    <string name="cmd_err_ambiguous_app">%1$s matches %2$s apps. Be more specific: a wrong lock has no unlock.</string>
+    <string name="cmd_err_no_targets">No tracked apps. Add some in settings first.</string>
+    <string name="cmd_err_lock_not_shortened">Already locked for %1$s. A lock can only be extended.</string>
     <!--
       Unavailable, not failed. The user cannot fix any of these by retyping,
       which is why Bit shows a different face for them: a dry face the user
@@ -303,7 +310,8 @@
       on "no wifi panel" would be noise. The commands where seeing the parse
       matters are the long locks, and those echo it in the confirmation.
     -->
-    <string name="cmd_na_no_lock">Locks are not enforced yet. The grammar is real; the subsystem is not.</string>
+    <string name="cmd_na_no_allowance">Allowances are not built yet. A lease has to park the penalty ratchet, not just hide the gate.</string>
+    <string name="cmd_na_relief_while_locked">A lock is armed. Relief does not outrank a lock.</string>
     <string name="cmd_na_no_log">No system log page yet.</string>
     <string name="cmd_na_no_scheduling">Reminder scheduling is not wired yet.</string>
     <!-- Not "not yet". A sideloaded app cannot reboot or power off a device

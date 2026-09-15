@@ -98,7 +98,8 @@ class CommandResourcesTest {
         // Named individually rather than by prefix, so deleting one is a
         // failure here rather than a vacuous pass.
         val reasons = listOf(
-            "cmd_na_no_lock",
+            "cmd_na_no_allowance",
+            "cmd_na_relief_while_locked",
             "cmd_na_no_log",
             "cmd_na_no_scheduling",
             "cmd_na_privileged",
