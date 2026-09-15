@@ -23,6 +23,7 @@ import dev.molasses.core.command.Surface
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.BedtimeWindow
 import dev.molasses.core.lock.LockReason
+import dev.molasses.core.lock.LockRequest
 import dev.molasses.monitor.ServiceDiagnostics
 
 /*
@@ -369,18 +370,35 @@ private fun armOne(
     durationMs: Long,
     reason: LockReason,
 ): DispatchResult {
-    val standing = actions.lockRemainingMs(pkg)
-    if (standing >= durationMs) {
-        return DispatchResult.Failed(
-            R.string.cmd_err_lock_not_shortened,
-            listOf(CommandRender.duration(standing)),
-        )
-    }
-    actions.armLock(listOf(pkg), durationMs, reason)
-    return DispatchResult.Confirmed(
-        R.string.cmd_ack_lock,
-        listOf(CommandRender.duration(durationMs)),
+    // Evaluated through LockRequest rather than inline, because the settings
+    // scrubber arms locks too and the two must not be able to disagree about
+    // what a duration means. The confirmation threshold is already handled by
+    // the dispatcher for this path, so it passes confirmed.
+    val verdict = LockRequest.evaluate(
+        durationMs = durationMs,
+        standingMs = actions.lockRemainingMs(pkg),
+        confirmAboveMs = CommandRegistry.CONFIRM_ABOVE_MS,
+        confirmed = true,
     )
+    return when (verdict) {
+        is LockRequest.Verdict.TooShort -> DispatchResult.Failed(
+            R.string.cmd_err_lock_not_shortened,
+            listOf(CommandRender.duration(verdict.standingMs)),
+        )
+        // Unreachable: the parser rejects a zero duration, so this is the
+        // branch that would fire if it ever stopped.
+        LockRequest.Verdict.Invalid -> DispatchResult.Failed(
+            R.string.cmd_err_duration,
+            listOf(CommandRender.duration(durationMs)),
+        )
+        is LockRequest.Verdict.Confirm, is LockRequest.Verdict.Arm -> {
+            actions.armLock(listOf(pkg), durationMs, reason)
+            DispatchResult.Confirmed(
+                R.string.cmd_ack_lock,
+                listOf(CommandRender.duration(durationMs)),
+            )
+        }
+    }
 }
 
 // -------------------------------------------------------------------- intents

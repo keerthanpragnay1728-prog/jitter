@@ -60,6 +60,16 @@
     <string name="settings_section_ladder">The ladder</string>
     <string name="settings_section_targets">Target apps</string>
     <string name="settings_section_policy">Cycle reset policy</string>
+    <!--
+      The lock scrubber, in the target list. The same 1h to 30d ladder the
+      grammar accepts, and the same confirmation step above a day, because a
+      second way to arm a lock that skipped it would make the step decorative.
+    -->
+    <string name="settings_lock_remaining_fmt">LOCKED %1$s</string>
+    <string name="settings_lock_scrub_fmt">Lock for %1$s</string>
+    <string name="settings_lock_arm">Lock</string>
+    <string name="settings_lock_confirm_fmt">Confirm %1$s</string>
+    <string name="settings_lock_no_unlock">A lock can only be extended. There is no unlock, and nothing here will cancel one.</string>
     <string name="settings_gate_unavoidable_title">Checkpoints cannot be skipped</string>
     <string name="settings_gate_unavoidable_body">Walking away from a checkpoint used to switch friction off until you cleared it. It no longer does. Scroll delays run continuously from six minutes onward, and an unpaid checkpoint makes them arrive sooner rather than stopping them. Clearing one buys time before the next; ignoring one costs you. There is no setting that turns friction off, and the typing task is the lightest way to pay.</string>
     <string name="settings_section_gate">Movement gate</string>

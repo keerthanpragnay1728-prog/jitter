@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.molasses.core.diag.RouteTally
 import dev.molasses.core.diag.ServiceHealth
+import dev.molasses.core.lock.LockReason
+import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
@@ -110,6 +112,33 @@ class SettingsViewModel @Inject constructor(
 
     val pauseRemainingMs: StateFlow<Long> = repo.pauseRemainingMs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
+
+    /**
+     * The armed locks.
+     *
+     * The target list renders locked apps from this. There is deliberately no
+     * unlock on the view model either: a lock that can be cleared from the
+     * screen that arms it is a lock that will be cleared, at the exact moment
+     * it is working.
+     */
+    val locks: StateFlow<LockRegistry> = repo.locks
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LockRegistry())
+
+    /** Milliseconds left on [pkg], evaluated against a fresh stamp. */
+    fun lockRemainingMs(pkg: String): Long =
+        locks.value.remainingMs(pkg, repo.nowStamped())
+
+    /**
+     * Arm or extend a lock from the scrubber.
+     *
+     * The caller has already run [dev.molasses.core.lock.LockRequest], which
+     * is the same evaluation the typed path uses, so the confirmation step
+     * cannot be skipped by coming through here. The store is still
+     * authoritative: its extend-only compare runs inside the transform.
+     */
+    fun armLock(pkg: String, durationMs: Long) {
+        viewModelScope.launch { repo.armLock(pkg, durationMs, LockReason.BLOCK) }
+    }
 
     /**
      * Polled rather than pushed. ServiceDiagnostics is a plain object written
