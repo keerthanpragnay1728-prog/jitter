@@ -124,6 +124,7 @@ import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.BezelSnap
+import dev.molasses.core.ui.CycleLine
 import dev.molasses.core.ui.FontScale
 import dev.molasses.core.ui.PowerBar
 import dev.molasses.data.datastore.DEFAULT_TARGETS
@@ -516,6 +517,8 @@ fun MainLauncherWorkspace(
                     onLaunchIntent = onLaunchIntent,
                 )
                 PAGE_LEDGER -> TextualWellbeingView(
+                    cycle = cycle,
+                    nowStamped = nowStamped,
                     onOpenWellbeing = onOpenWellbeingSettings,
                 )
             }
@@ -1447,7 +1450,11 @@ fun NotificationInboxOverlay(onClose: () -> Unit) {
 }
 
 @Composable
-fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
+fun TextualWellbeingView(
+    cycle: CycleReadout,
+    nowStamped: () -> StampedInstant,
+    onOpenWellbeing: () -> Unit,
+) {
     val context = LocalContext.current
     // Null means "not known", never zero. A device without usage access, or
     // one queried before the first event of the day, must render -- rather
@@ -1567,6 +1574,39 @@ fun TextualWellbeingView(onOpenWellbeing: () -> Unit) {
                 )
             }
         }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Jitter's own numbers, on a page that until now showed only the
+        // system's. Every other figure here comes from UsageStatsManager, so
+        // without this line the engine's state was reachable only through a
+        // debug screen and one step of a readout behind a retreated Bit.
+        val fields = remember(cycle) {
+            CycleLine.fields(cycle.deepest, cycle.remainingMs(nowStamped()))
+        }
+        val penalty = fields.penalty
+        Text(
+            text = if (penalty == null) {
+                stringResource(
+                    R.string.ledger_cycle_fmt,
+                    fields.cycle,
+                    fields.tier,
+                    fields.resets,
+                )
+            } else {
+                stringResource(
+                    R.string.ledger_cycle_penalty_fmt,
+                    fields.cycle,
+                    penalty,
+                    fields.tier,
+                    fields.resets,
+                )
+            },
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            color = PhosphorGreen,
+        )
 
         Spacer(Modifier.height(16.dp))
 

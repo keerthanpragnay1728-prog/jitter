@@ -241,6 +241,17 @@
          is indistinguishable from a real idle day. -->
     <string name="ledger_value_unknown" translatable="false">--</string>
     <string name="ledger_distribution_empty">No app usage recorded today. Usage access may not be granted.</string>
+    <!--
+      Engine state, on the page that until now showed only the system's own
+      numbers. Not translatable: a fixed-width data line, and the labels are
+      the field names rather than prose. The double spaces are the column
+      gaps and aapt would collapse them in an unquoted value, so the
+      alignment is assembled in Kotlin and these carry only the shape.
+    -->
+    <string name="ledger_cycle_fmt" translatable="false">CYCLE %1$s  TIER %2$s  RESETS %3$s</string>
+    <!-- The ratchet, shown only when it has run. It modifies the cycle
+         figure, so it sits against it rather than in a column of its own. -->
+    <string name="ledger_cycle_penalty_fmt" translatable="false">CYCLE %1$s +%2$s  TIER %3$s  RESETS %4$s</string>
     <string name="ledger_distribution">DISTRIBUTION METRICS</string>
     <string name="ledger_app_minutes_fmt">%1$s min</string>
     <string name="filter_allowlist_body">Apps marked [ALLOWED] bypass the filter and deliver heads-up banners immediately. All other apps stay silently in this inbox.</string>

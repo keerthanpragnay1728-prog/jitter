@@ -10,11 +10,13 @@ import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import dev.molasses.CycleState
+import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.safety.PauseWindow
+import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.CycleStateStore
@@ -46,17 +48,32 @@ data class CycleReadout(
      */
     val cumulativeMs: Long,
     /**
-     * The deepest single app. What Bit's mood reads.
+     * The deepest single app, or null when nothing has accumulated.
      *
      * Separate from [cumulativeMs] because the friction curve is per package:
      * two apps at ten minutes each are not twenty minutes deep in anything,
      * and feeding the sum to `moodFor` put Bit in a mood no app's friction
-     * justified.
+     * justified. The whole snapshot rather than just its time, because the
+     * ledger line reports this app's tier and penalty alongside it and the
+     * three have to describe the same app.
      */
-    val deepestAppMs: Long = 0L,
+    val deepest: AppSnapshot? = null,
     /** A checkpoint is overdue right now. Drives the docked slit's alert. */
     val penaltyAccruing: Boolean = false,
-)
+) {
+    /** Zero when nothing has accumulated, which `moodFor` reads as idle. */
+    val deepestAppMs: Long get() = deepest?.accumulatedMs ?: 0L
+
+    /**
+     * Milliseconds until the cycle resets, or null when none is anchored.
+     *
+     * Null rather than the full window, because an unanchored cycle has not
+     * started and a ledger that reported six hours left would be describing a
+     * cycle that does not exist yet.
+     */
+    fun remainingMs(now: StampedInstant): Long? =
+        if (!anchor.isSet) null else CycleWindow.remainingMs(anchor, now)
+}
 
 /** Live state of one onboarding requirement. */
 data class PermissionState(
@@ -120,7 +137,7 @@ class SettingsRepository(
                 bootId = state.cycleAnchorBootId,
             ),
             cumulativeMs = snapshot.perApp.values.sumOf { it.accumulatedMs },
-            deepestAppMs = BitStatus.deepestMs(snapshot.perApp.values),
+            deepest = BitStatus.deepest(snapshot.perApp.values),
             penaltyAccruing = BitStatus.penaltyAccruing(snapshot.perApp.values),
         )
     }
