@@ -49,6 +49,16 @@ object BitStateMachine {
 
         /** A bedtime lock is standing. Asleep, because it is. */
         DORMANT,
+
+        /**
+         * The battery is about to go.
+         *
+         * A condition rather than a reaction, for the same reason as [ARMED]:
+         * it lasts as long as the battery does, and a reaction that never
+         * expires would block every other reaction behind it. Modelled as a
+         * reaction once, which is why nothing ever constructed it.
+         */
+        BATTERY_CRITICAL,
     }
 
     /** A transient overlay on the mood, started by an event. */
@@ -109,9 +119,6 @@ object BitStateMachine {
 
         /** Five rapid taps: turns away and ignores input. */
         data object TurnedAway : Reaction
-
-        /** Battery under the critical threshold. Not transient; outlasts a tick. */
-        data object BatteryCritical : Reaction
     }
 
     /** What the host renders this tick. */
@@ -350,12 +357,6 @@ object BitStateMachine {
             ignoresInput = true,
             expired = { idleFrame(mood, tickMs).copy(reactionActive = false) },
         ) { TURNED_AWAY }
-
-        // Not transient: it lasts as long as the battery does. The face
-        // carries it, and the colour deliberately does not change. A red
-        // battery reading in a green terminal is the one hue break this app
-        // reserves for the terminal tier.
-        Reaction.BatteryCritical -> BitFrame(face = BATTERY_CRITICAL, line = BAT_CRIT)
     }
 
     /**
@@ -363,7 +364,7 @@ object BitStateMachine {
      * rendering a frame first.
      */
     fun isExpired(reaction: Reaction, reactionAgeMs: Long): Boolean = when (reaction) {
-        Reaction.None, Reaction.BatteryCritical -> false
+        Reaction.None -> false
         is Reaction.Confirm -> reactionAgeMs >= CONFIRM_TOTAL_MS
         is Reaction.Failed -> reactionAgeMs >= FAILED_TOTAL_MS
         is Reaction.Unavailable -> reactionAgeMs >= UNAVAILABLE_TOTAL_MS
@@ -401,6 +402,11 @@ object BitStateMachine {
         // are states: one says the sink is live right now, the other says the
         // phone is meant to be asleep.
         if (mood == Mood.ARMED) return BitFrame(FLAT)
+        // The colour deliberately does not change. A red battery reading in a
+        // green terminal is the one hue break this app reserves for the
+        // terminal tier, and teaching the user to read red as "the phone is
+        // broken" is the confusion the stall marker exists to prevent.
+        if (mood == Mood.BATTERY_CRITICAL) return BitFrame(BATTERY_CRITICAL, BAT_CRIT)
         if (mood == Mood.DORMANT) return BitFrame(DORMANT)
 
         if (mood == Mood.GLITCHED) {

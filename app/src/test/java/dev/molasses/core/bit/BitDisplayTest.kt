@@ -27,7 +27,10 @@ class BitDisplayTest {
         curfew: Boolean = false,
         docked: Boolean = false,
         penaltyAccruing: Boolean = false,
-    ) = BitDisplay.resolve(mood, reaction, hud, shutterArmed, curfew, docked, penaltyAccruing)
+        batteryCritical: Boolean = false,
+    ) = BitDisplay.resolve(
+        mood, reaction, hud, shutterArmed, curfew, docked, penaltyAccruing, batteryCritical,
+    )
 
     // ------------------------------------------------- glitch beats all
 
@@ -310,6 +313,74 @@ class BitDisplayTest {
         }
     }
 
+    // ------------------------------------------------------- a dying battery
+
+    @Test
+    fun `a critical battery shows on the face`() {
+        assertEquals(
+            BitDisplay.Face(Mood.BATTERY_CRITICAL, Reaction.None),
+            resolve(batteryCritical = true),
+        )
+    }
+
+    @Test
+    fun `the battery face carries its label`() {
+        val f = BitStateMachine.frame(resolve(batteryCritical = true), 0, 0)
+        assertEquals(BitStateMachine.BATTERY_CRITICAL, f.face)
+        assertEquals(BitStateMachine.BAT_CRIT, f.line)
+    }
+
+    @Test
+    fun `a dying battery comes out of the bezel`() {
+        // No slit glyph carries it, so hiding it behind a retreat would lose
+        // it entirely. That is the rule: a condition the slit can express
+        // stays below it, one it cannot rises above it.
+        assertEquals(
+            BitDisplay.Face(Mood.BATTERY_CRITICAL, Reaction.None),
+            resolve(docked = true, batteryCritical = true),
+        )
+    }
+
+    @Test
+    fun `a curfew stays behind the slit, because the slit says it`() {
+        // The other half of the same rule, so the two cannot drift apart.
+        assertEquals(BitDisplay.Slit(BitGlyph.SLIT_CURFEW), resolve(docked = true, curfew = true))
+    }
+
+    @Test
+    fun `the battery beats a curfew`() {
+        assertEquals(
+            BitDisplay.Face(Mood.BATTERY_CRITICAL, Reaction.None),
+            resolve(batteryCritical = true, curfew = true),
+        )
+    }
+
+    @Test
+    fun `the armed tell beats the battery`() {
+        // Armed lasts seconds and is the friction readout. The battery will
+        // still be dying afterwards.
+        assertEquals(
+            BitDisplay.Face(Mood.ARMED, Reaction.None),
+            resolve(shutterArmed = true, batteryCritical = true),
+        )
+    }
+
+    @Test
+    fun `a reaction still plays over a dying battery`() {
+        // It is a condition, not a reaction. As a reaction that never expired
+        // it blocked everything behind it, which is why nothing constructed
+        // it for the whole life of the feature.
+        assertEquals(
+            BitDisplay.Face(Mood.BATTERY_CRITICAL, confirm),
+            resolve(reaction = confirm, batteryCritical = true),
+        )
+    }
+
+    @Test
+    fun `the HUD beats a dying battery`() {
+        assertEquals(hud, resolve(hud = hud, batteryCritical = true))
+    }
+
     // ---------------------------------------------- the absorbed touch tell
 
     @Test
@@ -401,13 +472,17 @@ class BitDisplayTest {
                         for (curfew in listOf(false, true)) {
                             for (docked in listOf(false, true)) {
                                 for (pen in listOf(false, true)) {
-                                    val d = BitDisplay.resolve(m, r, h, armed, curfew, docked, pen)
-                                    assertTrue(
-                                        "$m $r $h $armed $curfew $docked $pen",
-                                        d is BitDisplay.Face ||
-                                            d is BitDisplay.Hud ||
-                                            d is BitDisplay.Slit,
-                                    )
+                                    for (bat in listOf(false, true)) {
+                                        val d = BitDisplay.resolve(
+                                            m, r, h, armed, curfew, docked, pen, bat,
+                                        )
+                                        assertTrue(
+                                            "$m $r $h $armed $curfew $docked $pen $bat",
+                                            d is BitDisplay.Face ||
+                                                d is BitDisplay.Hud ||
+                                                d is BitDisplay.Slit,
+                                        )
+                                    }
                                 }
                             }
                         }

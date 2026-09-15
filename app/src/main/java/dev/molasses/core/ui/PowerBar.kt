@@ -30,6 +30,18 @@ object PowerBar {
     /** Below this the bar dims. Never red: red is the terminal tier alone. */
     const val LOW_PERCENT = 15
 
+    /**
+     * Below this Bit's face changes as well.
+     *
+     * Two thresholds, two magnitudes, and they are not the same signal twice.
+     * At [LOW_PERCENT] one element dims a step, which says charge soon. At
+     * five percent the companion changes identity, which says the phone is
+     * about to go. Five also sits below the platform's own low-battery
+     * warning, so it is an escalation rather than a third copy of a nag the
+     * user has already dismissed.
+     */
+    const val CRITICAL_PERCENT = 5
+
     /** One full traverse of the filled region. */
     const val CHARGE_CYCLE_MS = 900L
 
@@ -79,6 +91,8 @@ object PowerBar {
         percent.coerceIn(0, 100).toString(16).uppercase().padStart(2, '0')
 
     fun isLow(percent: Int): Boolean = percent.coerceIn(0, 100) < LOW_PERCENT
+
+    fun isCritical(percent: Int): Boolean = percent.coerceIn(0, 100) < CRITICAL_PERCENT
 
     /**
      * Which filled cell is bright this frame, or null when nothing should be.

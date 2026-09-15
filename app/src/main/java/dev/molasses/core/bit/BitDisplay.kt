@@ -48,7 +48,7 @@ package dev.molasses.core.bit
  * Below the armed tell, above the resting face:
  *
  * ```
- * glitch  >  HUD  >  reaction  >  armed  >  slit  >  mood
+ * glitch  >  HUD  >  reaction  >  armed  >  battery  >  slit  >  mood
  * ```
  *
  * Above the mood because a retreated Bit is meant to be a glyph rather than a
@@ -57,6 +57,14 @@ package dev.molasses.core.bit
  * lose it in exactly the moment it means something. Nothing moves either way:
  * every glyph occupies the same padded slot, so swapping between a slit and a
  * face cannot touch the snap target.
+ *
+ * ## Which conditions rise above the slit and which do not
+ * One rule: a condition the slit can express stays below it, and one it
+ * cannot rises above it. The curfew has a glyph, `[z]`, so a retreated Bit
+ * already says it. A dying battery has none, so it comes out of the bezel to
+ * say it. That also keeps the slit at three states rather than growing one
+ * per condition, which is the difference between a mode indicator and a
+ * status bar.
  *
  * Pure; no Android imports. Unit-tested in `BitDisplayTest`.
  */
@@ -90,6 +98,8 @@ sealed interface BitDisplay {
          *   [BitStateMachine.Mood.DORMANT]; those are produced here.
          * @param hud the readout, or null when no HUD step is showing.
          * @param shutterArmed the sink is armed right now.
+         * @param batteryCritical the battery is about to go. See
+         *   `PowerBar.isCritical`.
          * @param curfew a bedtime lock is standing.
          * @param docked Bit has retreated to the bezel. See [BitDock].
          * @param penaltyAccruing a checkpoint is overdue. See [BitStatus].
@@ -102,6 +112,7 @@ sealed interface BitDisplay {
             curfew: Boolean,
             docked: Boolean = false,
             penaltyAccruing: Boolean = false,
+            batteryCritical: Boolean = false,
         ): BitDisplay {
             // 1. The glitch burst. Nothing displaces it, not even a tap the
             //    user just made, because a readout that survived the glitch
@@ -117,6 +128,7 @@ sealed interface BitDisplay {
             //    left falls back to the right face.
             val resting = when {
                 shutterArmed -> BitStateMachine.Mood.ARMED
+                batteryCritical -> BitStateMachine.Mood.BATTERY_CRITICAL
                 curfew -> BitStateMachine.Mood.DORMANT
                 else -> mood
             }
@@ -128,7 +140,12 @@ sealed interface BitDisplay {
             if (reaction != BitStateMachine.Reaction.None) return Face(resting, reaction)
             if (shutterArmed) return Face(resting, reaction)
 
-            // 5. Retreated. One glyph, no text, nothing to tap.
+            // 5. A dying battery comes out of the bezel, because no slit
+            //    glyph carries it. A curfew stays behind it, because `[z]`
+            //    does.
+            if (batteryCritical) return Face(resting, reaction)
+
+            // 6. Retreated. One glyph, no text, nothing to tap.
             if (docked) return Slit(BitGlyph.slitFor(curfew, penaltyAccruing))
 
             return Face(resting, reaction)

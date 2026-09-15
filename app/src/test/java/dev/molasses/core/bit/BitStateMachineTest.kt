@@ -171,10 +171,13 @@ class BitStateMachineTest {
 
     @Test
     fun `battery critical is not transient and keeps its readout`() {
-        val f = frame(reaction = Reaction.BatteryCritical, ageMs = 999_999)
+        val f = frame(mood = Mood.BATTERY_CRITICAL, reaction = Reaction.None, ageMs = 999_999)
         assertEquals(BitStateMachine.BATTERY_CRITICAL, f.face)
         assertEquals(BitStateMachine.BAT_CRIT, f.line)
-        assertFalse(BitStateMachine.isExpired(Reaction.BatteryCritical, 999_999))
+        // A condition, not a reaction: there is nothing to expire, and as a
+        // reaction that never expired it would have blocked every other
+        // reaction behind it. That is why nothing ever constructed it.
+        assertFalse(BitStateMachine.isExpired(Reaction.None, 999_999))
     }
 
     @Test
