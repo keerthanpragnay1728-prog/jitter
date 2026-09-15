@@ -29,4 +29,13 @@ enum class EventType {
      * never be read back as a cleared one when reviewing a capture.
      */
     GATE_BYPASSED_DEBUG,
+
+    /**
+     * A locked target was opened and the user was sent home.
+     *
+     * Distinct from RESUMED, which is still written for the same moment: the
+     * session did open, time did start accruing, and the ledger has to show
+     * both or an enforced bounce reads as the user never having tried.
+     */
+    LOCK_ENFORCED,
 }

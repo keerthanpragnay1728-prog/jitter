@@ -72,7 +72,7 @@
          the whole file uses %n$s without exception. -->
     <string name="settings_pause_active">Paused. %1$s:%2$s left.</string>
     <string name="settings_pause_resume">Resume now</string>
-    <string name="settings_pause_hint">Stalls and gates stop appearing. Your accumulated time keeps counting, so this does not buy you a clean slate.</string>
+    <string name="settings_pause_hint">Stalls and gates stop appearing. Your accumulated time keeps counting, so this does not buy you a clean slate. Locked apps stay locked: a lock is something you chose, and a fifteen minute button that cancelled it would make every lock in this app decorative.</string>
     <string name="settings_safety_defaults_title">Always excluded</string>
     <string name="settings_safety_extra_title">Your additions</string>
     <string name="settings_safety_extra_body">One package name per line. A partial name matches everything below it, so com.icicibank covers every app that bank ships. This list cannot cover every Indian bank, so add yours if you see a warning.</string>
@@ -357,6 +357,17 @@
     <string name="cmd_desc_poweroff">Power the device off.</string>
     <string name="cmd_desc_wifi">Open the wifi panel.</string>
     <string name="cmd_desc_dnd">Open do not disturb settings.</string>
+    <!--
+      The lock flash. Four lines, shown for about a second and a half before
+      the user is sent home. The remaining time is the load-bearing one: it is
+      the difference between "something went wrong" and "I did this to myself
+      on purpose, for four more hours".
+    -->
+    <string name="lock_flash_title">LOCKED</string>
+    <string name="lock_reason_block">You blocked this app. There is no unlock.</string>
+    <string name="lock_reason_focus">Focus session. Every tracked app is locked.</string>
+    <string name="lock_reason_bedtime">Bedtime. Locked until morning.</string>
+    <string name="lock_reason_checkpoint">A checkpoint went unpaid.</string>
     <!-- App drawer -->
     <string name="drawer_title">ALL APPS</string>
     <string name="drawer_search_placeholder">filter...</string>
