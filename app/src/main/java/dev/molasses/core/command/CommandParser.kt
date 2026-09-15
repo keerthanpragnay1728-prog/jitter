@@ -216,11 +216,65 @@ object CommandParser {
      */
     fun ghostFor(partial: String): String? {
         val typed = partial.removePrefix("$").trimStart()
-        if (typed.isEmpty() || typed != typed.lowercase()) return null
-        if (typed.any { it.isWhitespace() }) return null
+        if (typed.isEmpty()) return null
+        return if (typed.any { it.isWhitespace() }) argumentGhost(typed) else verbGhost(typed)
+    }
+
+    /**
+     * The remainder of a unique verb prefix.
+     *
+     * Null for anything but a plain lower-case prefix. This branch *replaces*
+     * characters conceptually, and the ghost is drawn by overlaying the typed
+     * text exactly, so it is only correct when the completion extends what
+     * was typed: `BL` completes to `block`, and drawing "ock" after "BL"
+     * would read as `BLock`.
+     */
+    private fun verbGhost(typed: String): String? {
+        if (typed != typed.lowercase()) return null
         val completion = completionFor(typed) ?: return null
-        val remainder = completion.removePrefix(typed)
-        return remainder.ifEmpty { null }
+        return completion.removePrefix(typed).ifEmpty { null }
+    }
+
+    /**
+     * The argument shapes still owed, after a complete verb.
+     *
+     * ## It never expands what is being typed
+     * `block insta` ghosts ` <duration>`, never `gram <duration>`. Expanding
+     * a partial argument would have to replace characters the user has
+     * already typed, and the ghost is an overlay with the typed prefix drawn
+     * transparent: anything that does not purely extend the line renders as
+     * garbage. That constraint is also the safe one, because a completion
+     * that can rewrite an argument is a completion that can put a value the
+     * user did not choose one keystroke from being armed.
+     *
+     * ## The shapes come from the registry and nowhere else
+     * [USAGE] is the single source. A second list of argument hints would be
+     * a second thing to keep in step with the grammar, and the usage strings
+     * are already required by test to contain no digits, so a ghost
+     * structurally cannot propose a concrete value.
+     */
+    private fun argumentGhost(typed: String): String? {
+        val verb = typed.substringBefore(' ').lowercase()
+        // A complete, known verb only. A prefix followed by a space is not
+        // one, and offering arguments for a command the user has not finished
+        // naming would be guessing at which command they meant.
+        val usage = USAGE[verb] ?: return null
+
+        val shapes = usage.split(' ').drop(1)
+        if (shapes.isEmpty()) return null
+
+        val rest = typed.substringAfter(' ')
+        // A trailing space means the next argument has not been started; any
+        // other text means one is part typed and this one is spoken for.
+        val started = rest.split(Regex("\\s+")).count { it.isNotEmpty() }
+        val owed = shapes.drop(started)
+        if (owed.isEmpty()) return null
+
+        // Prefixed with a space only when the caret is against a token, so
+        // the ghost always reads as the next word rather than joining the one
+        // being typed.
+        val prefix = if (typed.endsWith(' ')) "" else " "
+        return prefix + owed.joinToString(" ")
     }
 
     private fun ok(c: Command): ParseResult = ParseResult.Ok(c)
