@@ -112,7 +112,12 @@ class SettingsRepository(
     fun pauseRemainingNowMs(state: CycleState): Long =
         PauseWindow.remainingMs(state.pauseInstant(), nowStamped())
 
-    private fun nowStamped() = StampedInstant(
+    /**
+     * Public because the command bar has to evaluate a lock against the same
+     * stamp the store will write with. Two clocks would mean the prompt could
+     * report a refusal the store then allowed, or the reverse.
+     */
+    fun nowStamped() = StampedInstant(
         wallMs = System.currentTimeMillis(),
         elapsedMs = SystemClock.elapsedRealtime(),
         bootId = readBootCount(),

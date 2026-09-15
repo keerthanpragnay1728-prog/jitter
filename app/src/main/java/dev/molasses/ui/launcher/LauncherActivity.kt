@@ -104,12 +104,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.R
 import dev.molasses.core.bit.BitStateMachine
+import dev.molasses.core.command.AppTokenResolver
 import dev.molasses.core.command.CommandParser
 import dev.molasses.core.command.Manual
 import dev.molasses.core.command.ConfirmPrompt
 import dev.molasses.core.command.DispatchResult
 import dev.molasses.core.command.ParseError
 import dev.molasses.core.command.ParseResult
+import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.ui.BezelSnap
 import dev.molasses.core.ui.FontScale
 import dev.molasses.core.ui.PowerBar
@@ -177,6 +179,16 @@ class LauncherActivity : ComponentActivity() {
             val commandHistory by settingsRepository.commandHistory
                 .collectAsState(initial = emptyList())
 
+            // The armed locks. Read by the prompt to predict what a lock
+            // command will do, and by the target list to dim what is locked.
+            // The store stays authoritative: the extend-only compare happens
+            // inside its transform, not against this copy.
+            val locks by settingsRepository.locks
+                .collectAsState(initial = LockRegistry())
+
+            val targets by settingsRepository.targets
+                .collectAsState(initial = emptyList())
+
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showNotifInbox by remember { mutableStateOf(false) }
                 var showDrawer by remember { mutableStateOf(false) }
@@ -228,6 +240,31 @@ class LauncherActivity : ComponentActivity() {
                                     },
                                     startIntent = ::startIfHandled,
                                     canResolve = ::canResolve,
+                                    lockRemainingMs = { pkg ->
+                                        locks.remainingMs(pkg, settingsRepository.nowStamped())
+                                    },
+                                    anyLockArmed = {
+                                        locks.active(settingsRepository.nowStamped()).isNotEmpty()
+                                    },
+                                    targets = { targets },
+                                    resolveApp = { token ->
+                                        AppTokenResolver.resolve(
+                                            token = token,
+                                            candidates = installedApps.map {
+                                                AppTokenResolver.Candidate(it.packageName, it.label)
+                                            },
+                                            preferred = targets.toSet(),
+                                        )
+                                    },
+                                    armLock = { packages, durationMs, reason ->
+                                        scope.launch {
+                                            settingsRepository.armLocks(packages, durationMs, reason)
+                                        }
+                                    },
+                                    minuteOfDay = {
+                                        val c = Calendar.getInstance()
+                                        c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
+                                    },
                                 )
                             },
                             onDialer = {
