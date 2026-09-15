@@ -103,7 +103,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.R
+import dev.molasses.core.bit.BitDisplay
+import dev.molasses.core.bit.BitDock
+import dev.molasses.core.bit.BitGlyph
+import dev.molasses.core.bit.BitHud
 import dev.molasses.core.bit.BitStateMachine
+import dev.molasses.core.bit.HudStep
 import dev.molasses.core.command.AppTokenResolver
 import dev.molasses.core.command.CommandParser
 import dev.molasses.core.command.Manual
@@ -111,11 +116,16 @@ import dev.molasses.core.command.ConfirmPrompt
 import dev.molasses.core.command.DispatchResult
 import dev.molasses.core.command.ParseError
 import dev.molasses.core.command.ParseResult
+import dev.molasses.core.lock.BedtimeWindow
+import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
+import dev.molasses.core.time.CycleWindow
+import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.BezelSnap
 import dev.molasses.core.ui.FontScale
 import dev.molasses.core.ui.PowerBar
 import dev.molasses.data.datastore.DEFAULT_TARGETS
+import dev.molasses.data.repo.CycleReadout
 import dev.molasses.data.repo.SettingsRepository
 import dev.molasses.ui.settings.SettingsActivity
 import dev.molasses.ui.theme.JitterBackground
@@ -189,6 +199,13 @@ class LauncherActivity : ComponentActivity() {
             val targets by settingsRepository.targets
                 .collectAsState(initial = emptyList())
 
+            // What Bit's readout reads. The anchor rather than a remaining
+            // figure, so the HUD subtracts against a fresh stamp when it
+            // renders instead of needing a per-second ticker for something
+            // that is on screen five seconds at a time.
+            val cycle by settingsRepository.cycleReadout
+                .collectAsState(initial = CycleReadout(StampedInstant.UNSET, 0L))
+
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showNotifInbox by remember { mutableStateOf(false) }
                 var showDrawer by remember { mutableStateOf(false) }
@@ -226,6 +243,20 @@ class LauncherActivity : ComponentActivity() {
                             },
                             onLaunchPackage = ::launchPackage,
                             history = commandHistory,
+                            cycle = cycle,
+                            // A standing bedtime lock is the curfew. Read from
+                            // BedtimeWindow rather than a second copy of the
+                            // hour, so a real setting behind that constant is
+                            // picked up here for free.
+                            curfewEndMinuteOfDay = remember(locks) {
+                                val active = locks.active(settingsRepository.nowStamped())
+                                if (active.any { it.reason == LockReason.BEDTIME }) {
+                                    BedtimeWindow.WAKE_MINUTE_OF_DAY
+                                } else {
+                                    null
+                                }
+                            },
+                            nowStamped = settingsRepository::nowStamped,
                             onRecordCommand = { line, confirmation ->
                                 scope.launch {
                                     settingsRepository.recordCommand(line, confirmation)
@@ -400,6 +431,9 @@ fun MainLauncherWorkspace(
     actions: LauncherActions,
     history: List<String>,
     onRecordCommand: (String, Boolean) -> Unit,
+    cycle: CycleReadout,
+    curfewEndMinuteOfDay: Int?,
+    nowStamped: () -> StampedInstant,
     onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -468,6 +502,9 @@ fun MainLauncherWorkspace(
                     actions = actions,
                     history = history,
                     onRecordCommand = onRecordCommand,
+                    cycle = cycle,
+                    curfewEndMinuteOfDay = curfewEndMinuteOfDay,
+                    nowStamped = nowStamped,
                     onOpenNotifInbox = onOpenNotifInbox,
                     onOpenDrawer = onOpenDrawer,
                     onLaunchPackage = onLaunchPackage,
@@ -490,6 +527,10 @@ fun TerminalHomeView(
     history: List<String>,
     /** @param confirmation true for the second Enter on a long lock. */
     onRecordCommand: (String, Boolean) -> Unit,
+    cycle: CycleReadout,
+    /** Minute of day a bedtime lock lifts, or null when none stands. */
+    curfewEndMinuteOfDay: Int?,
+    nowStamped: () -> StampedInstant,
     onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onLaunchPackage: (String) -> Unit,
@@ -621,6 +662,27 @@ fun TerminalHomeView(
         reactionAgeMs = 0L
     }
 
+    // Bit's readout. The step advances on a tap and never on a timer: a
+    // rotation that moved by itself would mean a user glancing up mid-cycle
+    // reads a number with no label and no way to know which one it is.
+    var hudStep by remember { mutableStateOf(HudStep.NONE) }
+    // Held on the same tick that already drives the blink and the placeholder,
+    // so the readout costs no timer of its own.
+    var hudStartedTick by remember { mutableLongStateOf(0L) }
+    var lastBitTouchMs by remember { mutableLongStateOf(0L) }
+
+    // Section 05: retreat while typing or idle. Docked Bit answers a question
+    // on tap; undocked Bit keeps the startle reaction. One state, two
+    // behaviours, and no new gesture to learn.
+    val docked = BitDock.isDocked(
+        typing = query.isNotEmpty(),
+        msSinceInteraction = SystemClock.elapsedRealtime() - lastBitTouchMs,
+    )
+
+    if (hudStep != HudStep.NONE && BitHud.isExpired(bitTickMs - hudStartedTick)) {
+        hudStep = HudStep.NONE
+    }
+
     // Drives the reaction clock, and only while a reaction is running. An
     // always-on ticker would recompose the console forever for nothing.
     LaunchedEffect(reaction, reactionStartedMs) {
@@ -711,21 +773,50 @@ fun TerminalHomeView(
 
         Spacer(Modifier.height(14.dp))
 
-        BitCompanion(
-            frame = BitStateMachine.frame(
-                mood = BitStateMachine.Mood.IDLE,
-                reaction = reaction,
-                reactionAgeMs = reactionAgeMs,
-                tickMs = bitTickMs,
-            ),
-            onTap = { taps ->
-                react(
-                    when {
-                        taps >= 5 -> BitStateMachine.Reaction.TurnedAway
-                        taps >= 2 -> BitStateMachine.Reaction.Irritated
-                        else -> BitStateMachine.Reaction.Poked
-                    },
+        // Resolved once, here, through the one precedence table:
+        // glitch > HUD > reaction > mood.
+        val display = BitDisplay.resolve(
+            mood = BitStateMachine.moodFor(cycle.cumulativeMs),
+            reaction = reaction,
+            hud = if (hudStep == HudStep.NONE) {
+                null
+            } else {
+                BitDisplay.Hud(
+                    step = hudStep,
+                    text = BitHud.textFor(
+                        step = hudStep,
+                        cycleRemainingMs = CycleWindow.remainingMs(cycle.anchor, nowStamped()),
+                        cumulativeMs = cycle.cumulativeMs,
+                        curfewEndMinuteOfDay = curfewEndMinuteOfDay,
+                    ),
                 )
+            },
+            shutterArmed = false,
+            curfew = curfewEndMinuteOfDay != null,
+        )
+
+        BitCompanion(
+            frame = BitStateMachine.frame(display, reactionAgeMs, bitTickMs),
+            onInteract = { lastBitTouchMs = SystemClock.elapsedRealtime() },
+            onTap = { taps ->
+                lastBitTouchMs = SystemClock.elapsedRealtime()
+                if (docked) {
+                    // Docked Bit is a readout, not a pet. Stepping the HUD
+                    // instead of startling resolves the collision rather than
+                    // adding a second gesture beside it.
+                    hudStep = BitHud.next(hudStep)
+                    hudStartedTick = bitTickMs
+                    reaction = BitStateMachine.Reaction.None
+                } else {
+                    hudStep = HudStep.NONE
+                    react(
+                        when {
+                            taps >= 5 -> BitStateMachine.Reaction.TurnedAway
+                            taps >= 2 -> BitStateMachine.Reaction.Irritated
+                            else -> BitStateMachine.Reaction.Poked
+                        },
+                    )
+                }
             },
         )
 
@@ -1559,6 +1650,8 @@ private fun countUnlocks(usm: UsageStatsManager, startMs: Long, endMs: Long): In
 private fun BitCompanion(
     frame: BitStateMachine.BitFrame,
     onTap: (taps: Int) -> Unit,
+    /** Any touch at all, so the host can tell idle from in-use. */
+    onInteract: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val offsetX = remember { Animatable(0f) }
@@ -1599,7 +1692,12 @@ private fun BitCompanion(
             },
     ) {
         Text(
-            text = frame.face,
+            // Padded into a fixed slot. Bit's snap target is computed from its
+            // measured width, so a glyph two characters narrower than the last
+            // one would move the target, which moves Bit while nobody touched
+            // it. BezelSnap already carries the scar tissue from that
+            // arithmetic going wrong once.
+            text = BitGlyph.pad(frame.face),
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = 17.sp,
@@ -1627,7 +1725,10 @@ private fun BitCompanion(
                 .pointerInput(frame.ignoresInput, containerWidth, bitWidth) {
                     if (frame.ignoresInput) return@pointerInput
                     detectDragGestures(
-                        onDragStart = { velocityTracker.resetTracking() },
+                        onDragStart = {
+                            onInteract()
+                            velocityTracker.resetTracking()
+                        },
                         onDragEnd = {
                             // Never snap from a measurement that has not
                             // arrived. A zero width makes the right target
