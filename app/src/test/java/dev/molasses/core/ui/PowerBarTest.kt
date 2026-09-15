@@ -154,4 +154,43 @@ class PowerBarTest {
     fun `the cycle is nine hundred milliseconds as specified`() {
         assertEquals(900L, PowerBar.CHARGE_CYCLE_MS)
     }
+
+    // --------------------------------------------------- the two thresholds
+
+    @Test
+    fun `the critical threshold is below the dim threshold`() {
+        // Two signals, two magnitudes, not the same thing twice. One element
+        // dims a step at fifteen; the companion changes identity at five.
+        assertTrue(PowerBar.CRITICAL_PERCENT < PowerBar.LOW_PERCENT)
+    }
+
+    @Test
+    fun `critical implies low, so the bar is already dim when Bit changes`() {
+        for (p in 0 until PowerBar.CRITICAL_PERCENT) {
+            assertTrue("$p", PowerBar.isCritical(p))
+            assertTrue("$p", PowerBar.isLow(p))
+        }
+    }
+
+    @Test
+    fun `the band between the two is dim but not critical`() {
+        for (p in PowerBar.CRITICAL_PERCENT until PowerBar.LOW_PERCENT) {
+            assertTrue("$p", PowerBar.isLow(p))
+            assertFalse("$p", PowerBar.isCritical(p))
+        }
+    }
+
+    @Test
+    fun `a healthy battery is neither`() {
+        for (p in PowerBar.LOW_PERCENT..100) {
+            assertFalse("$p", PowerBar.isLow(p))
+            assertFalse("$p", PowerBar.isCritical(p))
+        }
+    }
+
+    @Test
+    fun `an out of range reading is clamped rather than trusted`() {
+        assertTrue(PowerBar.isCritical(-5))
+        assertFalse(PowerBar.isCritical(200))
+    }
 }

@@ -852,6 +852,11 @@ fun TerminalHomeView(
             curfew = curfewEndMinuteOfDay != null,
             docked = docked,
             penaltyAccruing = cycle.penaltyAccruing,
+            // The battery reading the power bar is already showing. Below
+            // five percent Bit changes identity; at fifteen the bar has
+            // already dimmed a step. An escalation, not the same signal
+            // twice.
+            batteryCritical = PowerBar.isCritical(batteryPercent),
         )
 
         BitCompanion(
