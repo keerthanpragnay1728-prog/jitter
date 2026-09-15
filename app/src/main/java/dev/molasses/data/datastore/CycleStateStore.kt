@@ -10,6 +10,8 @@ import dev.molasses.AppState
 import dev.molasses.CycleResetPolicyProto
 import dev.molasses.CycleState
 import dev.molasses.core.command.CommandHistory
+import dev.molasses.core.console.ConsoleLine
+import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.model.AppSnapshot
@@ -188,6 +190,51 @@ class CycleStateStore(context: Context) {
             val next = CommandHistory.record(it.commandHistoryList, line, confirmation)
             it.toBuilder().clearCommandHistory().addAllCommandHistory(next).build()
         }
+    }
+
+    // ---------------------------------------------------------------- console
+
+    /** The queue, the live prompt and the budget, in one emission. */
+    val console: Flow<ConsoleState> = store.data.map { it.toConsoleState() }
+
+    /**
+     * Queue one line for the next time the console is foregrounded.
+     *
+     * Depth one, most recent wins. A backlog delivered all at once is a
+     * lecture, and an observation from two sessions ago is not worth the slot
+     * the current one wants.
+     *
+     * Nothing is counted here. The caps count renders, so a line that is
+     * queued and never delivered has cost nothing.
+     */
+    suspend fun enqueueConsoleLine(line: ConsoleLine) {
+        store.updateData { it.toBuilder().setConsoleQueued(line.toProto()).build() }
+    }
+
+    /**
+     * Mark a line as actually drawn.
+     *
+     * One transform, because the budget and the queue have to move together:
+     * counting without clearing would deliver twice, and clearing without
+     * counting would make the caps decorative.
+     *
+     * A prompt moves to the live slot and stays until answered. A notice has
+     * no further state; its eight seconds live in the host, which is the only
+     * place that knows when it was first drawn.
+     */
+    suspend fun deliverConsoleLine(line: ConsoleLine, budget: ConsoleSpeech.Budget) {
+        store.updateData { state ->
+            val b = state.toBuilder()
+                .clearConsoleQueued()
+                .setConsoleBudget(budget.toProto())
+            if (line is ConsoleLine.Prompt) b.setConsoleLive(line.toProto()) else b.clearConsoleLive()
+            b.build()
+        }
+    }
+
+    /** The question was answered or dismissed. There is nothing to undo. */
+    suspend fun clearConsolePrompt() {
+        store.updateData { it.toBuilder().clearConsoleLive().build() }
     }
 
     // ------------------------------------------------------------------ locks

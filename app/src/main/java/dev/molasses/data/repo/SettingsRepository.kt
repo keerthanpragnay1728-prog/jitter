@@ -13,12 +13,15 @@ import dev.molasses.CycleState
 import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.bit.BitStatus
+import dev.molasses.core.console.ConsoleLine
+import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.FontScale
+import dev.molasses.data.datastore.ConsoleState
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.pauseInstant
 import dev.molasses.data.datastore.toEngineSnapshot
@@ -141,6 +144,14 @@ class SettingsRepository(
             penaltyAccruing = BitStatus.penaltyAccruing(snapshot.perApp.values),
         )
     }
+
+    /** Bit's queue, its live prompt and what it has already spent. */
+    val console: Flow<ConsoleState> = store.console
+
+    suspend fun deliverConsoleLine(line: ConsoleLine, budget: ConsoleSpeech.Budget) =
+        store.deliverConsoleLine(line, budget)
+
+    suspend fun clearConsolePrompt() = store.clearConsolePrompt()
 
     /** The last twenty submitted command lines, newest first. */
     val commandHistory: Flow<List<String>> =

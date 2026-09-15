@@ -307,6 +307,10 @@ object BitStateMachine {
             // HUD owns its own timeout.
             is BitDisplay.Hud -> BitFrame(face = display.text, reactionActive = false)
             is BitDisplay.Slit -> BitFrame(face = display.glyph, reactionActive = false)
+            // The speech row draws the line itself; this is the face beside
+            // it, so Bit is in one place rather than two.
+            is BitDisplay.Speech ->
+                frame(BitDisplay.Face(display.mood, Reaction.None), 0L, tickMs)
             is BitDisplay.Face -> frame(display.mood, display.reaction, reactionAgeMs, tickMs)
         }
 

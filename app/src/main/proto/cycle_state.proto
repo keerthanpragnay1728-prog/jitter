@@ -102,6 +102,44 @@ message CycleState {
   // THIS list inside updateData, not against a copy read earlier, so a
   // shorter lock armed after a restart is still a no-op.
   repeated LockEntry locks = 28;
+
+  // Bit's one queued unprompted line, awaiting delivery. Depth one: only the
+  // most recent survives, because a backlog delivered at once is a lecture.
+  ConsoleQueued console_queued = 29;
+
+  // A delivered prompt, still awaiting an answer. Separate from the queue so
+  // a newer notice cannot evict a question the user has not answered.
+  ConsoleQueued console_live = 30;
+
+  ConsoleBudget console_budget = 31;
+}
+
+// One line of Bit's speech, in the form that survives a process death.
+//
+// The id is a string rather than a resource id on purpose: R ids are
+// regenerated every build, so a stored one would point at unrelated copy
+// after an upgrade and the "never the same line twice in a cycle" rule would
+// be keyed on a number that silently changed meaning.
+message ConsoleQueued {
+  string id = 1;
+  repeated string args = 2;
+  bool is_prompt = 3;
+  // Opaque to everything but the launcher, which maps it to an effect.
+  string action = 4;
+}
+
+// What Bit has already spent. Counts renders, never attempts: a line counted
+// but never seen costs the user one of three an hour and gives them nothing.
+message ConsoleBudget {
+  // Wall times. These are rate limits on how often a person is spoken to, so
+  // they are measured in the clock a person lives in. elapsedRealtime would
+  // restart at zero on reboot and hand out a fresh budget with the power
+  // button.
+  repeated int64 delivered_at_wall_ms = 1;
+  repeated string seen_ids = 2;
+  // The cycle seen_ids belongs to, so the set expires itself on a rollover
+  // rather than needing something to remember to clear it.
+  int64 cycle_anchor_wall_ms = 3;
 }
 
 // One armed lock. The three stamp fields are a StampedInstant; splitting them
