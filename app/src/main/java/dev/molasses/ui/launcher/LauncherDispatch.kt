@@ -139,8 +139,18 @@ private class MonitorReliefPolicy(private val actions: LauncherActions) : Relief
 
 // ----------------------------------------------------------------- dispatch
 
-/** The launcher's dispatcher. Built once and held; surfaces read live state. */
-fun launcherDispatch(actions: LauncherActions): CommandDispatch = CommandDispatch(
+/**
+ * The launcher's dispatcher. Built once and held; surfaces read live state.
+ *
+ * [showManual] is separate from [actions] because the manual is drawn inline
+ * in the prompt's own composable and its visibility is that composable's
+ * state. Hoisting it to the Activity would thread a boolean through two
+ * layers to reach the place that already owns it.
+ */
+fun launcherDispatch(
+    actions: LauncherActions,
+    showManual: () -> Unit,
+): CommandDispatch = CommandDispatch(
     registry = launcherRegistry(),
     surfaces = mapOf(
         Surface.STATE to StateSurface,
@@ -150,7 +160,7 @@ fun launcherDispatch(actions: LauncherActions): CommandDispatch = CommandDispatc
     ),
     reliefPolicy = MonitorReliefPolicy(actions),
     missingSurfaceKey = R.string.cmd_na_wiring,
-    execute = { execute(it, actions) },
+    execute = { execute(it, actions, showManual) },
 )
 
 /** Resource ids for the registry, which is Android-free and cannot see `R`. */
@@ -161,6 +171,7 @@ fun launcherRegistry(): CommandRegistry = CommandRegistry(
         allowUsage = R.string.cmd_usage_allow, allowDesc = R.string.cmd_desc_allow,
         bedtimeUsage = R.string.cmd_usage_bedtime, bedtimeDesc = R.string.cmd_desc_bedtime,
         statusUsage = R.string.cmd_usage_status, statusDesc = R.string.cmd_desc_status,
+        helpUsage = R.string.cmd_usage_help, helpDesc = R.string.cmd_desc_help,
         logUsage = R.string.cmd_usage_log, logDesc = R.string.cmd_desc_log,
         alarmUsage = R.string.cmd_usage_alarm, alarmDesc = R.string.cmd_desc_alarm,
         timerUsage = R.string.cmd_usage_timer, timerDesc = R.string.cmd_desc_timer,
@@ -181,10 +192,19 @@ fun launcherRegistry(): CommandRegistry = CommandRegistry(
  * while those surfaces refuse everything, and says so as a wiring bug rather
  * than as a user-facing condition.
  */
-private fun execute(command: Command, actions: LauncherActions): DispatchResult = when (command) {
+private fun execute(
+    command: Command,
+    actions: LauncherActions,
+    showManual: () -> Unit,
+): DispatchResult = when (command) {
     Command.Status -> {
         actions.showLedger()
         DispatchResult.Confirmed(R.string.cmd_ack_status)
+    }
+
+    Command.Help -> {
+        showManual()
+        DispatchResult.Confirmed(R.string.cmd_ack_help)
     }
 
     is Command.Alarm -> {

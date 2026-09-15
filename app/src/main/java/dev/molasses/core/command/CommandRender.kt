@@ -28,6 +28,7 @@ object CommandRender {
         is Command.Timer -> "timer ${duration(command.durationMs)}"
         Command.Bedtime -> "bedtime"
         Command.Status -> "status"
+        Command.Help -> "help"
         Command.Reboot -> "reboot"
         Command.PowerOff -> "poweroff"
         is Command.Log -> if (command.appToken == null) "log" else "log ${command.appToken}"

@@ -50,6 +50,13 @@ class SettingsRepository(
     val resetPolicy: Flow<CycleResetPolicy> = store.data.map { it.resetPolicy.toModel() }
     val alternativeChallenge: Flow<Boolean> = store.data.map { it.alternativeChallenge }
 
+    /** The last twenty submitted command lines, newest first. */
+    val commandHistory: Flow<List<String>> =
+        store.data.map { it.commandHistoryList.toList() }
+
+    suspend fun recordCommand(line: String, confirmation: Boolean) =
+        store.recordCommand(line, confirmation)
+
     /** Only the user's additions. The shipped defaults are not editable. */
     val sensitivePrefixes: Flow<List<String>> =
         store.data.map { it.sensitivePackagePrefixesList.toList() }

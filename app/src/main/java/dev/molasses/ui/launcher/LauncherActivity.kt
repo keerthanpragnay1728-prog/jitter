@@ -80,16 +80,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -101,6 +105,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.R
 import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.command.CommandParser
+import dev.molasses.core.command.Manual
 import dev.molasses.core.command.ConfirmPrompt
 import dev.molasses.core.command.DispatchResult
 import dev.molasses.core.command.ParseError
@@ -167,6 +172,11 @@ class LauncherActivity : ComponentActivity() {
             val fontScale by settingsRepository.fontScale
                 .collectAsState(initial = FontScale.DEFAULT)
 
+            // Newest first and already capped, so the prompt renders it in
+            // stored order without sorting or truncating.
+            val commandHistory by settingsRepository.commandHistory
+                .collectAsState(initial = emptyList())
+
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showNotifInbox by remember { mutableStateOf(false) }
                 var showDrawer by remember { mutableStateOf(false) }
@@ -203,6 +213,12 @@ class LauncherActivity : ComponentActivity() {
                                 startActivity(Intent(this@LauncherActivity, SettingsActivity::class.java))
                             },
                             onLaunchPackage = ::launchPackage,
+                            history = commandHistory,
+                            onRecordCommand = { line, confirmation ->
+                                scope.launch {
+                                    settingsRepository.recordCommand(line, confirmation)
+                                }
+                            },
                             // Remembered so the prompt can build its
                             // dispatcher once rather than on every keystroke.
                             actions = remember(pagerState) {
@@ -345,6 +361,8 @@ fun MainLauncherWorkspace(
     appList: List<LaunchableApp>,
     pagerState: androidx.compose.foundation.pager.PagerState,
     actions: LauncherActions,
+    history: List<String>,
+    onRecordCommand: (String, Boolean) -> Unit,
     onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -411,6 +429,8 @@ fun MainLauncherWorkspace(
                 PAGE_CONSOLE -> TerminalHomeView(
                     apps = apps,
                     actions = actions,
+                    history = history,
+                    onRecordCommand = onRecordCommand,
                     onOpenNotifInbox = onOpenNotifInbox,
                     onOpenDrawer = onOpenDrawer,
                     onLaunchPackage = onLaunchPackage,
@@ -430,6 +450,9 @@ fun MainLauncherWorkspace(
 fun TerminalHomeView(
     apps: List<LaunchableApp>,
     actions: LauncherActions,
+    history: List<String>,
+    /** @param confirmation true for the second Enter on a long lock. */
+    onRecordCommand: (String, Boolean) -> Unit,
     onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onLaunchPackage: (String) -> Unit,
@@ -524,13 +547,30 @@ fun TerminalHomeView(
     // hint is drawn in the divider step, dim enough to ignore.
     val commandHint = remember(query) { CommandParser.hintFor(query) }
 
+    // The inline manual. Not an overlay: a popup over a terminal is a
+    // different interface wearing the terminal's clothes, and the app list is
+    // exactly the space a list of commands wants.
+    var showManual by remember { mutableStateOf(false) }
+
     // The dispatcher, rebuilt only when the action table changes. Surfaces
     // read live state when asked, so nothing here needs to recompose for the
     // service binding or an app being installed.
-    val dispatch = remember(actions) { launcherDispatch(actions) }
+    val dispatch = remember(actions) { launcherDispatch(actions) { showManual = true } }
 
     // A long lock held for a second Enter. Null except in that window.
     var pending by remember { mutableStateOf<ConfirmPrompt.Pending?>(null) }
+
+    // The dim remainder of a unique verb prefix, drawn under the caret.
+    val ghost = remember(query) { CommandParser.ghostFor(query) }
+
+    // Availability costs a few binder calls (resolveActivity), so the rows
+    // are built once and rebuilt when the manual opens rather than on every
+    // keystroke. The manual is the only place staleness would show, and it is
+    // fresh every time it is opened.
+    val manualRows = remember(dispatch, showManual) {
+        Manual.rows(dispatch.registry, dispatch::availabilityOf)
+    }
+    val suggestable = remember(manualRows) { Manual.suggestable(manualRows) }
 
     // Bit's transient reaction and when it started. The monotonic clock, so a
     // clock change cannot leave a face stuck on screen.
@@ -575,13 +615,22 @@ fun TerminalHomeView(
         when (val decision = ConfirmPrompt.onSubmit(pending, text)) {
             is ConfirmPrompt.Decision.Confirm -> {
                 pending = null
+                // Passed through rather than skipped, so the rule is visible
+                // here and exercised: CommandHistory drops it. Recording the
+                // echo would put an armed 30d line in a list the user taps.
+                onRecordCommand(text, true)
                 return dispatch.dispatch(decision.command, confirmed = true)
             }
             ConfirmPrompt.Decision.Dispatch -> pending = null
         }
 
         return when (val parsed = CommandParser.parse(text)) {
-            is ParseResult.Ok -> dispatch.dispatch(parsed.command)
+            is ParseResult.Ok -> {
+                // What the user typed, not the canonical form. It comes back
+                // out of history the way they wrote it.
+                onRecordCommand(text, false)
+                dispatch.dispatch(parsed.command)
+            }
             is ParseResult.Err -> when (parsed.error) {
                 // Not a command at all: fall back to app filtering, which is
                 // what a bare app name is.
@@ -724,22 +773,61 @@ fun TerminalHomeView(
 
             Box(modifier = Modifier.weight(1f)) {
                 if (query.isEmpty()) {
+                    // The placeholder rotates through commands that actually
+                    // work on this device, driven off Bit's existing tick so
+                    // discovery costs no timer of its own.
+                    val suggestion = Manual.at(
+                        suggestable,
+                        (bitTickMs / PLACEHOLDER_CYCLE_MS).toInt(),
+                    )
                     Text(
-                        text = stringResource(R.string.launcher_search_placeholder),
+                        text = if (suggestion == null) {
+                            stringResource(R.string.launcher_search_placeholder)
+                        } else {
+                            stringResource(
+                                R.string.launcher_placeholder_try,
+                                stringResource(suggestion.usageKey),
+                            )
+                        },
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         color = PhosphorDim,
+                        maxLines = 1,
+                    )
+                }
+
+                // Ghost completion. Drawn under the field, with the typed
+                // characters transparent so the green text on top lands on
+                // them exactly. Monospace at the same size is what makes that
+                // alignment hold rather than approximately hold.
+                if (ghost != null) {
+                    Text(
+                        text = buildAnnotatedString {
+                            withStyle(SpanStyle(color = Color.Transparent)) { append(query) }
+                            withStyle(SpanStyle(color = PhosphorDivider)) { append(ghost) }
+                        },
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        maxLines = 1,
                     )
                 }
 
                 BasicTextField(
                     value = query,
-                    onValueChange = {
-                        query = it
+                    onValueChange = { raw ->
+                        // Space completes a unique verb prefix. A soft
+                        // keyboard has no Tab, and Space is the key a
+                        // terminal user reaches for anyway.
+                        val next = CommandParser.completeOnSpace(query, raw)
+                        query = next
+                        // Typing dismisses the manual. It is a reference, not
+                        // a mode, and leaving it up while the user works
+                        // would hide the app list they are filtering.
+                        showManual = false
                         // Any edit cancels a pending confirmation. Leaving it
                         // armed would mean an Enter on a half-typed line runs
                         // something that was confirmed in a different form.
-                        pending = ConfirmPrompt.onTextChanged(pending, it)
+                        pending = ConfirmPrompt.onTextChanged(pending, next)
                         lastKeystrokeMs = SystemClock.elapsedRealtime()
                     },
                     textStyle = TextStyle(
@@ -811,37 +899,160 @@ fun TerminalHomeView(
 
         Spacer(Modifier.height(10.dp))
 
+        // One list, three jobs, in priority order. The manual is what the
+        // user just asked for; a filter is what they are typing; and an empty
+        // prompt is the only moment there is room to show them what they have
+        // typed before.
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(filteredApps, key = { it.packageName }) { app ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onLaunchPackage(app.packageName) }
-                        .padding(vertical = 7.dp, horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = app.label,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = PhosphorGreen,
-                    )
-
-                    if (app.isTarget) {
-                        Text(
-                            text = stringResource(R.string.launcher_target_badge),
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp,
-                            color = PhosphorGreen,
+            when {
+                showManual -> {
+                    item {
+                        SectionHeader(
+                            title = stringResource(R.string.launcher_manual_title),
+                            hint = stringResource(R.string.launcher_manual_hint),
+                        )
+                    }
+                    items(manualRows, key = { it.verb }) { row ->
+                        ManualRow(
+                            row = row,
+                            onPick = { verb ->
+                                // Fills the prompt, never runs. The usage
+                                // shape carries argument placeholders, so
+                                // only the verb goes in.
+                                query = "$verb "
+                                showManual = false
+                                lastKeystrokeMs = SystemClock.elapsedRealtime()
+                            },
                         )
                     }
                 }
+
+                query.isEmpty() && history.isNotEmpty() -> {
+                    item {
+                        SectionHeader(
+                            title = stringResource(R.string.launcher_history_title),
+                            hint = stringResource(R.string.launcher_history_hint),
+                        )
+                    }
+                    // No key. The store deduplicates before writing, so
+                    // these are unique in practice, and a duplicate key is a
+                    // crash rather than a glitch.
+                    items(history) { line ->
+                        Text(
+                            text = line,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            color = PhosphorDim,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                // Fills the prompt. A tap must never run a
+                                // command: the whole point of a confirmation
+                                // gate is that arming takes a deliberate
+                                // Enter, and a list you scroll with your
+                                // thumb is the opposite of deliberate.
+                                .clickable {
+                                    query = line
+                                    lastKeystrokeMs = SystemClock.elapsedRealtime()
+                                }
+                                .padding(vertical = 7.dp, horizontal = 4.dp),
+                        )
+                    }
+                }
+
+                else -> items(filteredApps, key = { it.packageName }) { app ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onLaunchPackage(app.packageName) }
+                            .padding(vertical = 7.dp, horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = app.label,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            color = PhosphorGreen,
+                        )
+
+                        if (app.isTarget) {
+                            Text(
+                                text = stringResource(R.string.launcher_target_badge),
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp,
+                                color = PhosphorGreen,
+                            )
+                        }
+                    }
+                }
             }
+        }
+    }
+}
+
+/** A dim title and one line of explanation, shared by the manual and history. */
+@Composable
+private fun SectionHeader(title: String, hint: String) {
+    Column(modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp)) {
+        Text(
+            text = title,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            color = PhosphorGreen,
+        )
+        Text(
+            text = hint,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            color = PhosphorDivider,
+        )
+    }
+}
+
+/**
+ * One manual row: the usage shape, the description, and the reason when the
+ * command cannot run.
+ *
+ * An unavailable row is dimmed rather than hidden. Hiding it would make the
+ * manual lie by omission: the command parses, and a user who types it deserves
+ * to be told why nothing happened rather than that it does not exist.
+ */
+@Composable
+private fun ManualRow(row: Manual.Row, onPick: (String) -> Unit) {
+    val body = if (row.available) PhosphorGreen else PhosphorDim
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = row.available) { onPick(row.verb) }
+            .padding(vertical = 6.dp, horizontal = 4.dp),
+    ) {
+        Text(
+            text = stringResource(row.usageKey),
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            color = body,
+        )
+        Text(
+            text = stringResource(row.descriptionKey),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            color = if (row.available) PhosphorDim else PhosphorDivider,
+        )
+        val reasonKey = row.reasonKey
+        if (reasonKey != null) {
+            Text(
+                text = stringResource(reasonKey),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = PhosphorDivider,
+            )
         }
     }
 }
@@ -1576,6 +1787,16 @@ private fun AppDrawerOverlay(
 
 /** Bit's frame interval. 25 fps is well above the 12 fps glitch floor. */
 private const val BIT_FRAME_MS = 40L
+
+/**
+ * How long each placeholder suggestion holds.
+ *
+ * Driven off Bit's existing tick rather than a timer of its own, so discovery
+ * adds no recomposition the console was not already doing. Five seconds is
+ * long enough to read a usage shape and short enough that someone standing at
+ * the home screen sees more than one.
+ */
+private const val PLACEHOLDER_CYCLE_MS = 5_000L
 
 /** Taps inside this window count toward the same burst. */
 private const val BIT_TAP_WINDOW_MS = 400L

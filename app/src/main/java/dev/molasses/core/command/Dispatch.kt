@@ -57,7 +57,8 @@ fun interface ReliefPolicy {
  * Pure; no Android imports. Unit-tested in `DispatchTest`.
  */
 class CommandDispatch(
-    private val registry: CommandRegistry,
+    /** Public so the manual is generated from the same rows dispatch uses. */
+    val registry: CommandRegistry,
     private val surfaces: Map<Surface, EffectSurface>,
     private val reliefPolicy: ReliefPolicy,
     /**
@@ -71,30 +72,36 @@ class CommandDispatch(
 ) {
 
     /**
+     * Whether [spec] could run right now, without running anything.
+     *
+     * The same two gates `dispatch` applies, in the same order, exposed so the
+     * manual can dim a row and give the reason the dispatcher would have
+     * given. Two code paths would drift, and the drift would show up as a
+     * manual that says a command works and a dispatcher that refuses it.
+     */
+    fun availabilityOf(spec: CommandSpec): Availability {
+        // 1. Surface availability. The cheapest check and the one that covers
+        //    the most commands at once.
+        val surface = surfaces[spec.surface] ?: return Availability.Unavailable(missingSurfaceKey)
+        val available = surface.availability(spec)
+        if (available is Availability.Unavailable) return available
+
+        // 2. Relief policy, before anything is armed. A dispatcher-level
+        //    check so a future relief command cannot forget it.
+        if (spec.isRelief) return reliefPolicy.allows()
+
+        return Availability.Available
+    }
+
+    /**
      * @param confirmed true when this is the second Enter on a long lock.
      */
     fun dispatch(command: Command, confirmed: Boolean = false): DispatchResult {
         val spec = registry.specFor(command)
 
-        // 1. Surface availability. The cheapest check and the one that covers
-        //    the most commands at once.
-        val surface = surfaces[spec.surface]
-        when (val availability = surface?.availability(spec)) {
-            null -> return DispatchResult.Unavailable(missingSurfaceKey)
-            is Availability.Unavailable -> return availability.let {
-                DispatchResult.Unavailable(it.reasonKey)
-            }
+        when (val available = availabilityOf(spec)) {
+            is Availability.Unavailable -> return DispatchResult.Unavailable(available.reasonKey)
             Availability.Available -> Unit
-        }
-
-        // 2. Relief policy, before anything is armed. A dispatcher-level
-        //    check so a future relief command cannot forget it.
-        if (spec.isRelief) {
-            when (val allowed = reliefPolicy.allows()) {
-                is Availability.Unavailable ->
-                    return DispatchResult.Unavailable(allowed.reasonKey)
-                Availability.Available -> Unit
-            }
         }
 
         // 3. Confirmation for a long lock. LockRegistry is extend-only, so a

@@ -218,4 +218,133 @@ class CommandParserTest {
             }
         }
     }
+
+    // ------------------------------------------------------------- the ghost
+
+    @Test
+    fun `the ghost is the remainder of a unique verb`() {
+        assertEquals("ock", CommandParser.ghostFor("bl"))
+        assertEquals("elp", CommandParser.ghostFor("h"))
+    }
+
+    @Test
+    fun `an empty prompt ghosts nothing, the placeholder has that space`() {
+        assertNull(CommandParser.ghostFor(""))
+        assertNull(CommandParser.ghostFor("   "))
+    }
+
+    @Test
+    fun `an ambiguous prefix ghosts nothing`() {
+        assertNull(CommandParser.ghostFor("b"))
+        assertNull(CommandParser.ghostFor("s"))
+    }
+
+    @Test
+    fun `a complete verb ghosts nothing`() {
+        assertNull(CommandParser.ghostFor("block"))
+        assertNull(CommandParser.ghostFor("help"))
+    }
+
+    @Test
+    fun `the ghost never offers an argument`() {
+        // The one rule: no completion can put a concrete value on screen one
+        // keystroke from being accepted.
+        assertNull(CommandParser.ghostFor("block "))
+        assertNull(CommandParser.ghostFor("block ins"))
+        assertNull(CommandParser.ghostFor("timer 3"))
+        for (verb in CommandParser.VERBS) {
+            val ghost = CommandParser.ghostFor(verb.dropLast(1))
+            if (ghost != null) assertTrue("$verb ghost has a digit", ghost.none { it.isDigit() })
+        }
+    }
+
+    @Test
+    fun `mixed case ghosts nothing, because it would render wrong`() {
+        // The ghost is drawn by overlaying the typed characters exactly, so
+        // "BL" plus "ock" would read as BLock.
+        assertNull(CommandParser.ghostFor("BL"))
+        assertNull(CommandParser.ghostFor("Bl"))
+    }
+
+    @Test
+    fun `the prompt dollar is not part of the prefix`() {
+        assertEquals("ock", CommandParser.ghostFor("\$bl"))
+        assertEquals("ock", CommandParser.ghostFor("\$ bl"))
+    }
+
+    @Test
+    fun `typing the ghost out matches what the parser accepts`() {
+        // If these two disagree the ghost is a lie: it completes to something
+        // that then fails to parse as a verb.
+        for (verb in CommandParser.VERBS) {
+            val prefix = verb.take(1)
+            val ghost = CommandParser.ghostFor(prefix) ?: continue
+            assertEquals(verb, prefix + ghost)
+            assertTrue(verb, CommandParser.VERBS.contains(prefix + ghost))
+        }
+    }
+
+    // ------------------------------------------------------------------ help
+
+    @Test
+    fun `help and its question mark alias parse to the same command`() {
+        assertEquals(ParseResult.Ok(Command.Help), CommandParser.parse("help"))
+        assertEquals(ParseResult.Ok(Command.Help), CommandParser.parse("?"))
+        assertEquals(ParseResult.Ok(Command.Help), CommandParser.parse("\$ ?"))
+    }
+
+    @Test
+    fun `help takes no arguments`() {
+        val r = CommandParser.parse("help block")
+        assertTrue(r.toString(), (r as ParseResult.Err).error is ParseError.TooManyArguments)
+    }
+
+    // ------------------------------------------------- space completion
+
+    @Test
+    fun `a space after a unique prefix completes the verb`() {
+        assertEquals("block ", CommandParser.completeOnSpace("bl", "bl "))
+        assertEquals("help ", CommandParser.completeOnSpace("h", "h "))
+    }
+
+    @Test
+    fun `a space after an ambiguous prefix is just a space`() {
+        assertEquals("b ", CommandParser.completeOnSpace("b", "b "))
+        assertEquals("s ", CommandParser.completeOnSpace("s", "s "))
+    }
+
+    @Test
+    fun `a space inside an argument never rewrites the line`() {
+        // The failure this prevents: typing a reminder and having the second
+        // word silently replaced by a verb.
+        assertEquals("rem 10m call ", CommandParser.completeOnSpace("rem 10m call", "rem 10m call "))
+        assertEquals("block ig ", CommandParser.completeOnSpace("block ig", "block ig "))
+    }
+
+    @Test
+    fun `an ordinary keystroke passes through untouched`() {
+        assertEquals("blo", CommandParser.completeOnSpace("bl", "blo"))
+        assertEquals("b", CommandParser.completeOnSpace("bl", "b"))
+        assertEquals("", CommandParser.completeOnSpace("bl", ""))
+    }
+
+    @Test
+    fun `completing an already complete verb only adds the space`() {
+        assertEquals("block ", CommandParser.completeOnSpace("block", "block "))
+    }
+
+    @Test
+    fun `the prompt dollar survives completion`() {
+        assertEquals("\$ block ", CommandParser.completeOnSpace("\$ bl", "\$ bl "))
+    }
+
+    @Test
+    fun `what the space completes to always parses as a verb`() {
+        for (verb in CommandParser.VERBS) {
+            val prefix = verb.take(1)
+            if (CommandParser.completionFor(prefix) == null) continue
+            val completed = CommandParser.completeOnSpace(prefix, "$prefix ")
+            assertTrue(completed, CommandParser.VERBS.contains(completed.trim()))
+        }
+    }
 }
