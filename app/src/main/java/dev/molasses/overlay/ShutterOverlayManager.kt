@@ -196,6 +196,15 @@ class ShutterOverlayManager(
         scrollEventTimeUptimeMs: Long = 0,
         /** `uptimeMillis` at entry to `onAccessibilityEvent`. Starts segment B. */
         callbackEntryUptimeMs: Long = 0,
+        /**
+         * The friction curve has saturated for this package.
+         *
+         * Turns the top-edge marker the terminal colour. This is the one
+         * place in the app that hue is used, and it is what carries the
+         * permanent terminal signal now that Bit's glitch is a burst on the
+         * crossing rather than a state.
+         */
+        terminal: Boolean = false,
     ) {
         if (!added) attach()
         if (!added) return
@@ -228,6 +237,7 @@ class ShutterOverlayManager(
         ServiceDiagnostics.onShutterArmed(armedUntilElapsed)
 
         setFlags(ARMED_FLAGS)
+        sink.terminal = terminal
         sink.setArmed(true)
 
         // SS6 segments B, C and the D start marker. All four timestamps are on
@@ -411,9 +421,23 @@ class ShutterOverlayManager(
         /** Scroll eventTime of the arming event; 0 once segment D is recorded. */
         var pendingScrollEventTimeUptimeMs = 0L
 
+        /** The curve has saturated. Set before [setArmed]; read on draw. */
+        var terminal = false
+
         private val tellPaint = Paint().apply {
             color = TELL_COLOR
             alpha = TELL_ALPHA
+        }
+
+        /**
+         * The one hue break in the app, reserved for the terminal tier.
+         *
+         * Full alpha rather than the 35% the ordinary tell uses: at the
+         * terminal the marker stops being a disclosure that something is
+         * running and becomes the statement that this is as bad as it gets.
+         */
+        private val terminalTellPaint = Paint().apply {
+            color = TELL_COLOR_TERMINAL
         }
         private val tapTimesMs = ArrayDeque<Long>()
         private val density = context.resources.displayMetrics.density
@@ -495,7 +519,8 @@ class ShutterOverlayManager(
             // app is installed must be able to tell a deliberate stall from a
             // failing digitizer. Themeable via R.color.molasses_tell, but
             // there is no code path that removes it.
-            canvas.drawRect(0f, 0f, width.toFloat(), tellHeightPx, tellPaint)
+            val paint = if (terminal) terminalTellPaint else tellPaint
+            canvas.drawRect(0f, 0f, width.toFloat(), tellHeightPx, paint)
         }
     }
 
@@ -533,5 +558,13 @@ class ShutterOverlayManager(
         const val TELL_DP = 2f
         const val TELL_COLOR = 0xFF8C8C96.toInt()
         const val TELL_ALPHA = 89 // ~35%
+
+        /**
+         * Must equal `ui.theme.TerminalAlert`. The two cannot share a
+         * constant: one is a Compose `Color` and this is an Android colour
+         * int on a `Paint`, and `tools/check-colors.sh` does not reach this
+         * file. `ShutterTellTest` asserts they agree.
+         */
+        const val TELL_COLOR_TERMINAL = 0xFFFF5555.toInt()
     }
 }

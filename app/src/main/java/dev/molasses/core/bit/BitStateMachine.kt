@@ -1,5 +1,7 @@
 package dev.molasses.core.bit
 
+import dev.molasses.core.friction.FrictionCurve
+
 /**
  * Bit's face, as a pure function of mood, reaction and elapsed time.
  *
@@ -83,6 +85,21 @@ object BitStateMachine {
          * it.
          */
         data class Unavailable(val message: String) : Reaction
+
+        /**
+         * Crossing into the terminal of the friction curve.
+         *
+         * A burst, not a state. A permanent glitch stops being information
+         * after the first minute, and worse, it sits at the top of the
+         * precedence table: while it was a mood, a user past the terminal got
+         * no command feedback and no readout at all, because both resolve
+         * below it. Making it transient keeps the table exactly as written
+         * and gives the crossing a beat instead of a condition.
+         *
+         * The permanent signal stays where it belongs: [Mood.GLITCHED] at the
+         * bottom of the table, and the terminal colour on the stall marker.
+         */
+        data object Glitching : Reaction
 
         /** Bit was tapped once. */
         data object Poked : Reaction
@@ -182,6 +199,20 @@ object BitStateMachine {
     /** Glitch frames never run faster than this. 12 fps, per the brief. */
     const val MIN_GLITCH_FRAME_MS = 1000L / 12
 
+    /**
+     * Frames in the terminal burst.
+     *
+     * Eighteen rather than a round duration in milliseconds, so the burst
+     * always ends on a whole frame and, because the count is even, on
+     * [NEUTRAL] rather than cut off mid-[WARDEN]. It starts broken and hands
+     * back composed, which is the shape of a convulsion rather than of a
+     * fault.
+     */
+    const val GLITCH_BURST_FRAMES = 18L
+
+    /** About 1.5 seconds. Derived, so it cannot drift out of frame alignment. */
+    const val GLITCH_BURST_MS = MIN_GLITCH_FRAME_MS * GLITCH_BURST_FRAMES
+
     // ---------------------------------------------------------------- blink
 
     const val BLINK_MIN_INTERVAL_MS = 3_000L
@@ -190,11 +221,36 @@ object BitStateMachine {
 
     // ------------------------------------------------------------------- api
 
-    /** Accumulated cycle time to mood. The boundaries match `TierPolicy`. */
+    /**
+     * The midpoint of the friction curve.
+     *
+     * The only boundary between moods that the curve does not name, so it is
+     * derived rather than chosen: halfway between the onset and the terminal.
+     * That leaves the mood ladder with no free parameters at all, and a
+     * change to the curve moves all three boundaries together.
+     */
+    val MOOD_MIDPOINT_MS: Long = (FrictionCurve.ONSET_MS + FrictionCurve.TERMINAL_MS) / 2
+
+    /**
+     * Accumulated cycle time to mood, anchored to the friction curve.
+     *
+     * The boundaries used to be 7, 15 and 20 minutes against the old discrete
+     * ladder, and they had stopped describing anything: the curve starts at
+     * six, so Bit sat idle through the first minute of stalls, and saturates
+     * at twenty five, so the most alarming face arrived five minutes before
+     * the worst friction and then had nowhere left to go.
+     *
+     * Now: idle until the curve starts, glitched when it saturates, and the
+     * two states in between split the span evenly.
+     *
+     * This is the *deepest* app's accumulated time, not the sum across apps.
+     * The curve is per app, so a sum would read two apps at ten minutes each
+     * as deeper than either of them is.
+     */
     fun moodFor(accumulatedMs: Long): Mood = when {
-        accumulatedMs < 7 * 60_000L -> Mood.IDLE
-        accumulatedMs < 15 * 60_000L -> Mood.VIGILANT
-        accumulatedMs < 20 * 60_000L -> Mood.ANNOYED
+        accumulatedMs < FrictionCurve.ONSET_MS -> Mood.IDLE
+        accumulatedMs < MOOD_MIDPOINT_MS -> Mood.VIGILANT
+        accumulatedMs < FrictionCurve.TERMINAL_MS -> Mood.ANNOYED
         else -> Mood.GLITCHED
     }
 
@@ -265,6 +321,14 @@ object BitStateMachine {
             expired = { idleFrame(mood, tickMs).copy(reactionActive = false) },
         ) { ASYMMETRIC }
 
+        Reaction.Glitching -> phased(
+            ageMs = reactionAgeMs,
+            total = GLITCH_BURST_MS,
+            // Silent. The convulsion is the message.
+            line = null,
+            expired = { idleFrame(mood, tickMs).copy(reactionActive = false) },
+        ) { age -> glitchFace(Math.floorDiv(age, MIN_GLITCH_FRAME_MS)) }
+
         Reaction.Poked -> phased(
             ageMs = reactionAgeMs,
             total = POKE_TOTAL_MS,
@@ -303,6 +367,7 @@ object BitStateMachine {
         is Reaction.Confirm -> reactionAgeMs >= CONFIRM_TOTAL_MS
         is Reaction.Failed -> reactionAgeMs >= FAILED_TOTAL_MS
         is Reaction.Unavailable -> reactionAgeMs >= UNAVAILABLE_TOTAL_MS
+        Reaction.Glitching -> reactionAgeMs >= GLITCH_BURST_MS
         Reaction.Absorbed -> reactionAgeMs >= ABSORBED_TOTAL_MS
         Reaction.Poked -> reactionAgeMs >= POKE_TOTAL_MS
         Reaction.Irritated -> reactionAgeMs >= IRRITATED_TOTAL_MS
@@ -342,14 +407,16 @@ object BitStateMachine {
             // Quantised to the floor so a fast host cannot drive this above
             // 12 fps, which is where it stops reading as a glitch and starts
             // reading as a flicker.
-            val phase = Math.floorDiv(tickMs, MIN_GLITCH_FRAME_MS)
-            val face = if (phase % 2L == 0L) WARDEN else NEUTRAL
-            return BitFrame(face)
+            return BitFrame(glitchFace(Math.floorDiv(tickMs, MIN_GLITCH_FRAME_MS)))
         }
 
         val face = if (blinkPhaseMs(tickMs) < BLINK_HALF_MS) BLINK_HALF else NEUTRAL
         return BitFrame(face)
     }
+
+    /** Even frames are broken, odd frames are composed. */
+    private fun glitchFace(frame: Long): String =
+        if (frame % 2L == 0L) WARDEN else NEUTRAL
 
     /**
      * Milliseconds into the current blink cycle.

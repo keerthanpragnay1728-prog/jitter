@@ -517,6 +517,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                 ms = pinnedStallMs ?: decision.stallMs,
                 scrollEventTimeUptimeMs = eventTime,
                 callbackEntryUptimeMs = callbackEntryUptimeMs,
+                terminal = decision.terminal,
             )
         }
         decision.gate?.let { tier -> gate.show(pkg, tier, alternativeChallenge) }

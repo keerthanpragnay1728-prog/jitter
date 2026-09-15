@@ -260,6 +260,7 @@ class FrictionEngine(
         return FrictionDecision(
             stallMs = stallMs,
             gate = if (checkpointDue) index else null,
+            terminal = effective >= FrictionCurve.TERMINAL_MS,
         )
     }
 

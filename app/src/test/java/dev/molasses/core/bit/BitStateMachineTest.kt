@@ -23,14 +23,34 @@ class BitStateMachineTest {
 
     @Test
     fun `mood boundaries match the ladder`() {
+        // Anchored to the friction curve, not to the old discrete ladder.
+        // Idle until the curve starts, glitched when it saturates, and the
+        // two in between split that span evenly.
+        val onset = dev.molasses.core.friction.FrictionCurve.ONSET_MS
+        val terminal = dev.molasses.core.friction.FrictionCurve.TERMINAL_MS
+        val mid = BitStateMachine.MOOD_MIDPOINT_MS
+
         assertEquals(Mood.IDLE, BitStateMachine.moodFor(0))
-        assertEquals(Mood.IDLE, BitStateMachine.moodFor(7 * min - 1))
-        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(7 * min))
-        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(15 * min - 1))
-        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(15 * min))
-        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(20 * min - 1))
-        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(20 * min))
+        assertEquals(Mood.IDLE, BitStateMachine.moodFor(onset - 1))
+        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(onset))
+        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(mid - 1))
+        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(mid))
+        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(terminal - 1))
+        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(terminal))
         assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(99 * min))
+
+        // The values those derivations actually produce today, so a change to
+        // the curve shows up here as a deliberate edit rather than silently.
+        assertEquals(6 * min, onset)
+        assertEquals(15 * min + 30_000L, mid)
+        assertEquals(25 * min, terminal)
+
+        // Bit stops being idle exactly when stalls begin. The old boundary
+        // was 7 minutes, so the first minute of friction had no tell at all.
+        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(6 * min))
+        // And the most alarming face no longer arrives five minutes before
+        // the worst friction.
+        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(20 * min))
     }
 
     // -------------------------------------------------------- CONFIRM

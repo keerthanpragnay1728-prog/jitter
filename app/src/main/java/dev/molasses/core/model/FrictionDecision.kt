@@ -21,6 +21,17 @@ data class FrictionDecision(
     val stallMs: Long = 0,
     /** Tier of the checkpoint owed, or null when none is due. */
     val gate: Int? = null,
+    /**
+     * The curve has saturated for this package.
+     *
+     * Carried on the decision rather than recomputed at the call site because
+     * the stall marker turns the terminal colour on it, and a second
+     * derivation of "is this terminal" is a second thing to keep in step with
+     * the curve. This is the permanent terminal signal: Bit's glitch is a
+     * burst on the crossing, so the marker is what is still saying it at
+     * minute forty.
+     */
+    val terminal: Boolean = false,
 ) {
     val stalls: Boolean get() = stallMs > 0
     val gates: Boolean get() = gate != null
