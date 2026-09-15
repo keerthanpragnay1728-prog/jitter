@@ -51,6 +51,45 @@ object ServiceDiagnostics {
     @Volatile var usedTargetFallback: Boolean = false
 
     /**
+     * When the armed stall sink is due to release, on `elapsedRealtime`.
+     *
+     * Read by Bit, which holds flat eyes for exactly that window. A deadline
+     * rather than a boolean so a reader that misses the release still expires
+     * it correctly; the sink is already tracking the same number.
+     */
+    @Volatile var shutterArmedUntilElapsedMs: Long = 0L
+        private set
+
+    /**
+     * `elapsedRealtime` of the last touch the sink actually swallowed.
+     *
+     * A timestamp rather than an event, because the reader is a UI polling at
+     * frame rate and a flag would have to be cleared by someone. Only set when
+     * a touch was really absorbed, never merely because the sink is armed: at
+     * a ten percent stall probability, a tell that fired on every armed window
+     * would say that something is running rather than that something is
+     * broken.
+     */
+    @Volatile var lastTouchAbsorbedElapsedMs: Long = 0L
+        private set
+
+    fun onShutterArmed(untilElapsedMs: Long) {
+        shutterArmedUntilElapsedMs = maxOf(shutterArmedUntilElapsedMs, untilElapsedMs)
+    }
+
+    fun onShutterReleased() {
+        shutterArmedUntilElapsedMs = 0L
+    }
+
+    fun onTouchAbsorbed() {
+        lastTouchAbsorbedElapsedMs = SystemClock.elapsedRealtime()
+    }
+
+    /** True while the sink is swallowing touches. */
+    fun shutterArmed(): Boolean =
+        shutterArmedUntilElapsedMs > SystemClock.elapsedRealtime()
+
+    /**
      * Written only from the accessibility callback thread, which the platform
      * serialises. Read from the UI thread through [tallySnapshot], which
      * copies, so a torn read is the worst case and a stale count is harmless.
@@ -78,6 +117,7 @@ object ServiceDiagnostics {
         connectedAtMs = 0L
         readyAtMs = 0L
         lastHeartbeatMs = 0L
+        shutterArmedUntilElapsedMs = 0L
     }
 
     fun recordEvent(event: WindowEvent, route: EventRoute) = tally.record(event, route)

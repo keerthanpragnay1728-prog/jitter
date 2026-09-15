@@ -127,6 +127,7 @@ import dev.molasses.core.ui.PowerBar
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.repo.CycleReadout
 import dev.molasses.data.repo.SettingsRepository
+import dev.molasses.monitor.ServiceDiagnostics
 import dev.molasses.ui.settings.SettingsActivity
 import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.MolassesTheme
@@ -662,6 +663,28 @@ fun TerminalHomeView(
         reactionAgeMs = 0L
     }
 
+    // The two zero-interaction tells. Polled rather than pushed, because
+    // ServiceDiagnostics is a plain object written from the accessibility
+    // callback thread and has no change signal to collect. The poll runs at
+    // the frame rate Bit already recomposes at, and only while this console
+    // is composed.
+    var shutterArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        var lastAbsorbed = ServiceDiagnostics.lastTouchAbsorbedElapsedMs
+        while (true) {
+            shutterArmed = ServiceDiagnostics.shutterArmed()
+            val absorbed = ServiceDiagnostics.lastTouchAbsorbedElapsedMs
+            if (absorbed != lastAbsorbed) {
+                lastAbsorbed = absorbed
+                // Silent. No line, now or ever: the moment Bit narrates a
+                // stall the uncanny phase is over, and the dry acknowledgment
+                // after nine minutes is a separate thing that stays separate.
+                react(BitStateMachine.Reaction.Absorbed)
+            }
+            delay(BIT_FRAME_MS)
+        }
+    }
+
     // Bit's readout. The step advances on a tap and never on a timer: a
     // rotation that moved by itself would mean a user glancing up mid-cycle
     // reads a number with no label and no way to know which one it is.
@@ -791,8 +814,10 @@ fun TerminalHomeView(
                     ),
                 )
             },
-            shutterArmed = false,
+            shutterArmed = shutterArmed,
             curfew = curfewEndMinuteOfDay != null,
+            docked = docked,
+            penaltyAccruing = cycle.penaltyAccruing,
         )
 
         BitCompanion(

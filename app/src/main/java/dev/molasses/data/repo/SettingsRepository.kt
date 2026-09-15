@@ -11,6 +11,7 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import dev.molasses.CycleState
 import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.safety.PauseWindow
@@ -40,6 +41,8 @@ data class InstalledApp(
 data class CycleReadout(
     val anchor: StampedInstant,
     val cumulativeMs: Long,
+    /** A checkpoint is overdue right now. Drives the docked slit's alert. */
+    val penaltyAccruing: Boolean = false,
 )
 
 /** Live state of one onboarding requirement. */
@@ -96,13 +99,15 @@ class SettingsRepository(
      * on screen for five seconds at a time.
      */
     val cycleReadout: Flow<CycleReadout> = store.data.map { state ->
+        val snapshot = state.toEngineSnapshot()
         CycleReadout(
             anchor = StampedInstant(
                 wallMs = state.cycleAnchorWallMs,
                 elapsedMs = state.cycleAnchorElapsedMs,
                 bootId = state.cycleAnchorBootId,
             ),
-            cumulativeMs = state.toEngineSnapshot().perApp.values.sumOf { it.accumulatedMs },
+            cumulativeMs = snapshot.perApp.values.sumOf { it.accumulatedMs },
+            penaltyAccruing = BitStatus.penaltyAccruing(snapshot.perApp.values),
         )
     }
 
