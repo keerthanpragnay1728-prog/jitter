@@ -1,6 +1,7 @@
 package dev.molasses.core.bit
 
 import dev.molasses.core.bit.BitStateMachine.Mood
+import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.bit.BitStateMachine.Reaction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -28,9 +29,15 @@ class BitDisplayTest {
         docked: Boolean = false,
         penaltyAccruing: Boolean = false,
         batteryCritical: Boolean = false,
+        prompt: ConsoleLine.Prompt? = null,
+        notice: ConsoleLine.Notice? = null,
     ) = BitDisplay.resolve(
         mood, reaction, hud, shutterArmed, curfew, docked, penaltyAccruing, batteryCritical,
+        prompt, notice,
     )
+
+    private val aPrompt = ConsoleLine.Prompt("scrolled", listOf("27m"), action = "focus")
+    private val aNotice = ConsoleLine.Notice("scrolled", listOf("27m"))
 
     // ------------------------------------------------- glitch beats all
 
@@ -313,6 +320,162 @@ class BitDisplayTest {
         }
     }
 
+    // ---------------------------------------------- a question, second only
+
+    @Test
+    fun `the glitch burst beats a prompt`() {
+        // The one thing above it. Safe only because the glitch is a burst
+        // now: while it was a permanent mood, a prompt at the terminal tier
+        // could never have been seen at all.
+        assertEquals(
+            BitDisplay.Face(Mood.IDLE, glitch),
+            resolve(reaction = glitch, prompt = aPrompt),
+        )
+    }
+
+    @Test
+    fun `a prompt beats the HUD`() {
+        // A stray tap on Bit must not replace a question with a timer.
+        assertEquals(BitDisplay.Speech(aPrompt, Mood.IDLE), resolve(hud = hud, prompt = aPrompt))
+    }
+
+    @Test
+    fun `a prompt beats a reaction`() {
+        assertEquals(
+            BitDisplay.Speech(aPrompt, Mood.IDLE),
+            resolve(reaction = confirm, prompt = aPrompt),
+        )
+    }
+
+    @Test
+    fun `a prompt beats a notice`() {
+        assertEquals(
+            BitDisplay.Speech(aPrompt, Mood.IDLE),
+            resolve(prompt = aPrompt, notice = aNotice),
+        )
+    }
+
+    @Test
+    fun `a prompt beats the armed tell`() {
+        assertEquals(
+            BitDisplay.Speech(aPrompt, Mood.ARMED),
+            resolve(prompt = aPrompt, shutterArmed = true),
+        )
+    }
+
+    @Test
+    fun `a prompt beats a dying battery`() {
+        assertEquals(
+            BitDisplay.Speech(aPrompt, Mood.BATTERY_CRITICAL),
+            resolve(prompt = aPrompt, batteryCritical = true),
+        )
+    }
+
+    @Test
+    fun `a prompt beats the slit`() {
+        assertEquals(
+            BitDisplay.Speech(aPrompt, Mood.IDLE),
+            resolve(prompt = aPrompt, docked = true),
+        )
+    }
+
+    @Test
+    fun `a prompt beats a curfew and the mood`() {
+        assertEquals(
+            BitDisplay.Speech(aPrompt, Mood.DORMANT),
+            resolve(mood = Mood.ANNOYED, prompt = aPrompt, curfew = true),
+        )
+    }
+
+    @Test
+    fun `a prompt carries the resting face beside it`() {
+        // One Bit, not a face in its usual row and a second in the speech
+        // row.
+        val f = BitStateMachine.frame(resolve(prompt = aPrompt, shutterArmed = true), 0, 0)
+        assertEquals(BitStateMachine.FLAT, f.face)
+    }
+
+    // ---------------------------------------- an observation, below reaction
+
+    @Test
+    fun `the glitch burst beats a notice`() {
+        assertEquals(
+            BitDisplay.Face(Mood.IDLE, glitch),
+            resolve(reaction = glitch, notice = aNotice),
+        )
+    }
+
+    @Test
+    fun `the HUD beats a notice`() {
+        assertEquals(hud, resolve(hud = hud, notice = aNotice))
+    }
+
+    @Test
+    fun `a reaction beats a notice`() {
+        // The change from the brief. A reaction answers something the user
+        // just did; a notice is something Bit volunteered, and the user's own
+        // action wins. Safe because ConsoleSpeech counts renders, so a notice
+        // that loses here stays queued and costs nothing.
+        assertEquals(
+            BitDisplay.Face(Mood.IDLE, confirm),
+            resolve(reaction = confirm, notice = aNotice),
+        )
+    }
+
+    @Test
+    fun `a notice beats the armed tell`() {
+        assertEquals(
+            BitDisplay.Speech(aNotice, Mood.ARMED),
+            resolve(notice = aNotice, shutterArmed = true),
+        )
+    }
+
+    @Test
+    fun `a notice beats a dying battery`() {
+        assertEquals(
+            BitDisplay.Speech(aNotice, Mood.BATTERY_CRITICAL),
+            resolve(notice = aNotice, batteryCritical = true),
+        )
+    }
+
+    @Test
+    fun `a notice beats the slit`() {
+        assertEquals(
+            BitDisplay.Speech(aNotice, Mood.IDLE),
+            resolve(notice = aNotice, docked = true),
+        )
+    }
+
+    @Test
+    fun `a notice beats a curfew and the mood`() {
+        assertEquals(
+            BitDisplay.Speech(aNotice, Mood.DORMANT),
+            resolve(mood = Mood.ANNOYED, notice = aNotice, curfew = true),
+        )
+    }
+
+    @Test
+    fun `speech is reachable at the terminal tier`() {
+        // The same regression the transient glitch was for, checked on the
+        // two rows that did not exist when it was fixed.
+        assertEquals(
+            BidDisplaySpeechAtTerminal.prompt,
+            resolve(mood = Mood.GLITCHED, prompt = aPrompt),
+        )
+        assertEquals(
+            BidDisplaySpeechAtTerminal.notice,
+            resolve(mood = Mood.GLITCHED, notice = aNotice),
+        )
+    }
+
+    private object BidDisplaySpeechAtTerminal {
+        val prompt = BitDisplay.Speech(
+            ConsoleLine.Prompt("scrolled", listOf("27m"), action = "focus"),
+            Mood.GLITCHED,
+        )
+        val notice = BitDisplay.Speech(ConsoleLine.Notice("scrolled", listOf("27m")), Mood.GLITCHED)
+    }
+
     // ------------------------------------------------------- a dying battery
 
     @Test
@@ -473,15 +636,20 @@ class BitDisplayTest {
                             for (docked in listOf(false, true)) {
                                 for (pen in listOf(false, true)) {
                                     for (bat in listOf(false, true)) {
-                                        val d = BitDisplay.resolve(
-                                            m, r, h, armed, curfew, docked, pen, bat,
-                                        )
-                                        assertTrue(
-                                            "$m $r $h $armed $curfew $docked $pen $bat",
-                                            d is BitDisplay.Face ||
-                                                d is BitDisplay.Hud ||
-                                                d is BitDisplay.Slit,
-                                        )
+                                        for (p in listOf(null, aPrompt)) {
+                                            for (n in listOf(null, aNotice)) {
+                                                val d = BitDisplay.resolve(
+                                                    m, r, h, armed, curfew, docked, pen, bat, p, n,
+                                                )
+                                                assertTrue(
+                                                    "$m $r $h $armed $curfew $docked $pen $bat $p $n",
+                                                    d is BitDisplay.Face ||
+                                                        d is BitDisplay.Hud ||
+                                                        d is BitDisplay.Slit ||
+                                                        d is BitDisplay.Speech,
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

@@ -8,6 +8,8 @@ import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import dagger.hilt.android.AndroidEntryPoint
+import dev.molasses.core.console.ConsoleIds
+import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.diag.ServiceHealthPolicy
 import dev.molasses.core.latency.LatencyRegistry
 import dev.molasses.core.lock.LockEnforcement
@@ -22,9 +24,11 @@ import dev.molasses.core.session.ForegroundEventRouter
 import dev.molasses.core.session.ForegroundSessionTracker
 import dev.molasses.core.session.TargetScope
 import dev.molasses.core.session.WindowEvent
+import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.time.MonotonicClock
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.time.WallClock
+import dev.molasses.core.ui.CycleLine
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.datastore.pauseInstant
@@ -521,6 +525,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             )
         }
         decision.gate?.let { tier -> gate.show(pkg, tier, alternativeChallenge) }
+        ServiceDiagnostics.gateShowing = gate.isShowing
     }
 
     /**
@@ -586,6 +591,27 @@ class MolassesAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Queue Bit's one observation, for the next time the console is open.
+     *
+     * Bit speaks only on the launcher, so an observation made here cannot be
+     * delivered here. It goes in the queue and waits, which is why the copy
+     * is past tense: by the time anyone reads it the scrolling has stopped.
+     *
+     * Only past the curve onset, because before that nothing has happened
+     * worth remarking on, and only ever once per cycle, because the id is the
+     * dedupe key and `ConsoleSpeech` refuses a line it has already said.
+     */
+    private fun queueSessionNotice(pkg: String) {
+        val app = engine.state.value.perApp[pkg] ?: return
+        if (app.accumulatedMs < FrictionCurve.ONSET_MS) return
+        val line = ConsoleLine.Notice(
+            id = ConsoleIds.SCROLLED,
+            args = listOf(CycleLine.duration(app.accumulatedMs), labelFor(pkg)),
+        )
+        scope.launch { cycleStore.enqueueConsoleLine(line) }
+    }
+
+    /**
      * Show the lock message and send the user home, if [pkg] is locked.
      *
      * @return true when the caller should stop. Nothing else of ours belongs
@@ -637,6 +663,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         watchdogJob?.cancel()
         watchdogJob = null
         engine.onForegroundExit(pkg, now())
+        queueSessionNotice(pkg)
         // Panic path: a leaked armed sink over the launcher is a bricked
         // phone, so releasing comes before anything that could throw.
         shutter.release("left target ($reason)")
@@ -729,6 +756,7 @@ class MolassesAccessibilityService : AccessibilityService() {
      * that lasts.
      */
     private fun onOverlayWindowsChanged() {
+        ServiceDiagnostics.gateShowing = gate.isShowing
         // The lock flash is one of our windows too. Clearing the id set while
         // it is up would make its own events look like a foreign package.
         if (!shutter.isAttached && !gate.isShowing && !lockOverlay.isShowing) {

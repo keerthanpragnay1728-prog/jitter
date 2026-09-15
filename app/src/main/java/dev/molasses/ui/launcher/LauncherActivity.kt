@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -33,6 +34,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -110,6 +112,8 @@ import dev.molasses.core.bit.BitHud
 import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.BitTap
+import dev.molasses.core.console.ConsoleLine
+import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.bit.HudStep
 import dev.molasses.core.command.AppTokenResolver
 import dev.molasses.core.command.CommandParser
@@ -127,6 +131,7 @@ import dev.molasses.core.ui.BezelSnap
 import dev.molasses.core.ui.CycleLine
 import dev.molasses.core.ui.FontScale
 import dev.molasses.core.ui.PowerBar
+import dev.molasses.data.datastore.ConsoleState
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.repo.CycleReadout
 import dev.molasses.data.repo.SettingsRepository
@@ -210,6 +215,10 @@ class LauncherActivity : ComponentActivity() {
             val cycle by settingsRepository.cycleReadout
                 .collectAsState(initial = CycleReadout(StampedInstant.UNSET, 0L))
 
+            // Bit's queue, its live prompt and what it has already spent.
+            val console by settingsRepository.console
+                .collectAsState(initial = ConsoleState())
+
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showNotifInbox by remember { mutableStateOf(false) }
                 var showDrawer by remember { mutableStateOf(false) }
@@ -261,6 +270,15 @@ class LauncherActivity : ComponentActivity() {
                                 }
                             },
                             nowStamped = settingsRepository::nowStamped,
+                            console = console,
+                            onDeliverConsoleLine = { line, budget ->
+                                scope.launch {
+                                    settingsRepository.deliverConsoleLine(line, budget)
+                                }
+                            },
+                            onAnswerConsolePrompt = {
+                                scope.launch { settingsRepository.clearConsolePrompt() }
+                            },
                             onRecordCommand = { line, confirmation ->
                                 scope.launch {
                                     settingsRepository.recordCommand(line, confirmation)
@@ -438,6 +456,9 @@ fun MainLauncherWorkspace(
     cycle: CycleReadout,
     curfewEndMinuteOfDay: Int?,
     nowStamped: () -> StampedInstant,
+    console: ConsoleState,
+    onDeliverConsoleLine: (ConsoleLine, ConsoleSpeech.Budget) -> Unit,
+    onAnswerConsolePrompt: () -> Unit,
     onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -509,6 +530,9 @@ fun MainLauncherWorkspace(
                     cycle = cycle,
                     curfewEndMinuteOfDay = curfewEndMinuteOfDay,
                     nowStamped = nowStamped,
+                    console = console,
+                    onDeliverConsoleLine = onDeliverConsoleLine,
+                    onAnswerConsolePrompt = onAnswerConsolePrompt,
                     onOpenNotifInbox = onOpenNotifInbox,
                     onOpenDrawer = onOpenDrawer,
                     onLaunchPackage = onLaunchPackage,
@@ -537,6 +561,9 @@ fun TerminalHomeView(
     /** Minute of day a bedtime lock lifts, or null when none stands. */
     curfewEndMinuteOfDay: Int?,
     nowStamped: () -> StampedInstant,
+    console: ConsoleState,
+    onDeliverConsoleLine: (ConsoleLine, ConsoleSpeech.Budget) -> Unit,
+    onAnswerConsolePrompt: () -> Unit,
     onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onLaunchPackage: (String) -> Unit,
@@ -689,10 +716,20 @@ fun TerminalHomeView(
     // the frame rate Bit already recomposes at, and only while this console
     // is composed.
     var shutterArmed by remember { mutableStateOf(false) }
+    var gateShowing by remember { mutableStateOf(false) }
+    var callInProgress by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         var lastAbsorbed = ServiceDiagnostics.lastTouchAbsorbedElapsedMs
         while (true) {
             shutterArmed = ServiceDiagnostics.shutterArmed()
+            gateShowing = ServiceDiagnostics.gateShowing
+            // AudioManager.getMode is a cached binder read, and it catches
+            // VoIP as well as cellular, which is why the shutter already uses
+            // it rather than a phone-state permission.
+            callInProgress = audio?.mode?.let {
+                it == AudioManager.MODE_IN_CALL || it == AudioManager.MODE_IN_COMMUNICATION
+            } ?: false
             val absorbed = ServiceDiagnostics.lastTouchAbsorbedElapsedMs
             if (absorbed != lastAbsorbed) {
                 lastAbsorbed = absorbed
@@ -829,6 +866,59 @@ fun TerminalHomeView(
 
         Spacer(Modifier.height(14.dp))
 
+    // Bit's speech. A delivered notice lives here rather than in the store,
+    // because its eight seconds start at the first composition that draws it
+    // and only the host knows when that was.
+    var liveNotice by remember { mutableStateOf<ConsoleLine.Notice?>(null) }
+    var noticeStartedTick by remember { mutableLongStateOf(0L) }
+    // The id already handed to the store, so a second composition before the
+    // write lands cannot deliver it twice.
+    var deliveringId by remember { mutableStateOf<String?>(null) }
+
+    val visibleNotice = liveNotice?.takeIf {
+        !ConsoleSpeech.noticeExpired(bitTickMs - noticeStartedTick)
+    }
+
+    // Everything above a notice in the precedence table. Computed here rather
+    // than inside resolve, because a notice that would lose has to stay
+    // queued and cost nothing, and only the caller can decide not to spend.
+    val noticeOutranked = reaction != BitStateMachine.Reaction.None ||
+        console.live != null ||
+        hudVisibleStep != HudStep.NONE
+
+    LaunchedEffect(console.queued, noticeOutranked, gateShowing, callInProgress) {
+        val queued = console.queued ?: return@LaunchedEffect
+        if (queued.id == deliveringId) return@LaunchedEffect
+        // An id with no copy renders as an empty row. Drop it rather than
+        // spending one of three an hour on nothing.
+        if (ConsoleCopy.textRes(queued.id) == null) return@LaunchedEffect
+
+        val verdict = ConsoleSpeech.evaluate(
+            queued = queued,
+            budget = console.budget,
+            gate = ConsoleSpeech.Gate(
+                callInProgress = callInProgress,
+                // Structurally false here: at delivery the foreground package
+                // is Jitter, because this row only exists on the console.
+                // Carried anyway so a future surface that is not the console
+                // inherits the check rather than rediscovering it.
+                sensitiveForeground = false,
+                gateActive = gateShowing,
+                outranked = noticeOutranked,
+            ),
+            cycleAnchorWallMs = cycle.anchor.wallMs,
+            nowWallMs = System.currentTimeMillis(),
+        )
+        if (verdict !is ConsoleSpeech.Verdict.Render) return@LaunchedEffect
+
+        deliveringId = queued.id
+        if (verdict.line is ConsoleLine.Notice) {
+            liveNotice = verdict.line
+            noticeStartedTick = bitTickMs
+        }
+        onDeliverConsoleLine(verdict.line, verdict.budget)
+    }
+
         // Resolved once, here, through the one precedence table:
         // glitch > HUD > reaction > mood.
         val display = BitDisplay.resolve(
@@ -857,10 +947,20 @@ fun TerminalHomeView(
             // already dimmed a step. An escalation, not the same signal
             // twice.
             batteryCritical = PowerBar.isCritical(batteryPercent),
+            prompt = console.live,
+            notice = visibleNotice,
         )
 
         BitCompanion(
-            frame = BitStateMachine.frame(display, reactionAgeMs, bitTickMs),
+            // While Bit is speaking it is in the row above the prompt, so its
+            // usual row holds the empty slot. The row keeps its height, so
+            // nothing below it moves, and there is one Bit rather than a face
+            // here and a second one down there.
+            frame = if (display is BitDisplay.Speech) {
+                BitStateMachine.BitFrame(face = "")
+            } else {
+                BitStateMachine.frame(display, reactionAgeMs, bitTickMs)
+            },
             onInteract = { lastBitTouchMs = SystemClock.elapsedRealtime() },
             onTap = { taps ->
                 // Branch first, then decide whether it counted. Setting the
@@ -944,6 +1044,45 @@ fun TerminalHomeView(
         }
 
         Spacer(Modifier.height(16.dp))
+
+        // Bit's one speech row, immediately above the prompt. Never an
+        // overlay: no new window, nothing in the collision guard, no exposure
+        // to the financial suppression set. Bit speaks here or it does not
+        // speak.
+        val speaking = display as? BitDisplay.Speech
+        if (speaking != null) {
+            ConsoleSpeechRow(
+                face = BitGlyph.pad(
+                    BitStateMachine.frame(speaking, reactionAgeMs, bitTickMs).face,
+                ),
+                // Resolved through the context rather than stringResource so
+                // the format call can be guarded. A persisted line carries
+                // however many arguments it was queued with, and a file
+                // written by a different build could supply fewer than the
+                // copy takes, which is an IllegalFormatException on a row
+                // that is meant to be the gentlest thing in the app.
+                text = ConsoleCopy.textRes(speaking.line.id)?.let { res ->
+                    runCatching {
+                        context.getString(res, *speaking.line.args.toTypedArray())
+                    }.getOrDefault("")
+                } ?: "",
+                prompt = speaking.line as? ConsoleLine.Prompt,
+                onAnswer = { confirmed ->
+                    // Both answers clear it. What [DO IT] runs is the action
+                    // the producer named, and no producer emits a prompt yet,
+                    // so the effect table is empty rather than guessed at.
+                    if (confirmed) runConsoleAction(speaking.line)
+                    liveNotice = null
+                    deliveringId = null
+                    onAnswerConsolePrompt()
+                },
+                onDismissNotice = {
+                    liveNotice = null
+                    deliveringId = null
+                },
+            )
+            Spacer(Modifier.height(8.dp))
+        }
 
         // Monospace Search Input
         Row(
@@ -2230,3 +2369,108 @@ private const val CURSOR_BLINK_MS = 530L
 
 /** Typing is considered finished after this long with no keystroke. */
 private const val CURSOR_IDLE_AFTER_MS = 900L
+
+/**
+ * Bit's speech row: a face, a line, and for a prompt two answers.
+ *
+ * ```
+ * (o_o) YOU SCROLLED 27M IN INSTAGRAM.  [DO IT] [NAH]
+ * ```
+ *
+ * ## It is a row, never a window
+ * The whole reason console speech was safe to add is that it is not an
+ * overlay. No new window, no second entry in the collision guard, and no
+ * exposure to the financial suppression set, because by the time this draws
+ * the foreground package is Jitter.
+ *
+ * ## A notice can be swiped away, a prompt cannot
+ * A notice has eight seconds and no answer, so a swipe is a courtesy. A
+ * prompt persists until one of the two buttons is pressed: a question that
+ * could be brushed off by a stray horizontal drag is a question that gets
+ * answered by accident.
+ */
+@Composable
+private fun ConsoleSpeechRow(
+    face: String,
+    text: String,
+    prompt: ConsoleLine.Prompt?,
+    onAnswer: (confirmed: Boolean) -> Unit,
+    onDismissNotice: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (prompt == null) {
+                    Modifier.pointerInput(Unit) {
+                        var dragged = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { dragged = 0f },
+                            onDragEnd = {
+                                if (kotlin.math.abs(dragged) >= SWIPE_THRESHOLD_PX) {
+                                    onDismissNotice()
+                                }
+                            },
+                        ) { _, amount -> dragged += amount }
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = face,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            color = PhosphorGreen,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = text,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            color = PhosphorDim,
+            modifier = Modifier.weight(1f),
+        )
+        if (prompt != null) {
+            Text(
+                text = stringResource(R.string.console_do_it),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = PhosphorGreen,
+                modifier = Modifier
+                    .clickable { onAnswer(true) }
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+            )
+            Text(
+                text = stringResource(R.string.console_nah),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = PhosphorDivider,
+                modifier = Modifier
+                    .clickable { onAnswer(false) }
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+            )
+        }
+    }
+}
+
+/**
+ * What `[DO IT]` runs.
+ *
+ * Empty, and empty on purpose. Item 4 specifies the delivery mechanism and
+ * the two lifetimes; it does not name a prompt or say what its action does,
+ * and no producer emits one. Guessing at an effect that arms a lock would be
+ * inventing policy in the one place where an accident is unrecoverable.
+ *
+ * The action is a stable string precisely so this table can grow later
+ * without the persisted form changing.
+ */
+private fun runConsoleAction(line: ConsoleLine) {
+    if (line !is ConsoleLine.Prompt) return
+    // No actions defined yet. Answering still clears the prompt.
+}

@@ -48,7 +48,7 @@ package dev.molasses.core.bit
  * Below the armed tell, above the resting face:
  *
  * ```
- * glitch  >  HUD  >  reaction  >  armed  >  battery  >  slit  >  mood
+ * glitch > PROMPT > HUD > reaction > NOTICE > armed > battery > slit > mood
  * ```
  *
  * Above the mood because a retreated Bit is meant to be a glyph rather than a
@@ -57,6 +57,21 @@ package dev.molasses.core.bit
  * lose it in exactly the moment it means something. Nothing moves either way:
  * every glyph occupies the same padded slot, so swapping between a slit and a
  * face cannot touch the snap target.
+ *
+ * ## Where Bit's own speech sits
+ * A PROMPT is second, under the glitch burst alone. It is a question waiting
+ * for an answer, so nothing that is merely informative may bury it, and in
+ * particular the readout must not: a stray tap on Bit while a question is up
+ * would otherwise replace the question with a timer. That placement is only
+ * safe because the glitch is a burst now. While it was a permanent mood a
+ * prompt at the terminal tier could never have been seen at all.
+ *
+ * A NOTICE is below `reaction`, which is a change from the brief. A reaction
+ * is the answer to something the user just did; a notice is something Bit
+ * volunteered, and when the two collide the user's own action wins. That is
+ * the principle already holding up two other rows of this table. The cap
+ * concern that argued for putting it higher is answered in `ConsoleSpeech`
+ * instead, by counting renders rather than attempts.
  *
  * ## Which conditions rise above the slit and which do not
  * One rule: a condition the slit can express stays below it, and one it
@@ -78,6 +93,18 @@ sealed interface BitDisplay {
 
     /** A readout, occupying the same fixed-width slot the face would. */
     data class Hud(val step: HudStep, val text: String) : BitDisplay
+
+    /**
+     * Bit is saying something, on the row above the prompt.
+     *
+     * [mood] is the resting state the face should show while it speaks, so
+     * the host renders one Bit rather than a face in its usual row and a
+     * second one in the speech row.
+     */
+    data class Speech(
+        val line: dev.molasses.core.console.ConsoleLine,
+        val mood: BitStateMachine.Mood,
+    ) : BitDisplay
 
     /**
      * The retreated glyph, carrying one character of status.
@@ -103,6 +130,9 @@ sealed interface BitDisplay {
          * @param curfew a bedtime lock is standing.
          * @param docked Bit has retreated to the bezel. See [BitDock].
          * @param penaltyAccruing a checkpoint is overdue. See [BitStatus].
+         * @param prompt a question awaiting an answer, or null.
+         * @param notice a delivered observation still inside its eight
+         *   seconds, or null.
          */
         fun resolve(
             mood: BitStateMachine.Mood,
@@ -113,19 +143,9 @@ sealed interface BitDisplay {
             docked: Boolean = false,
             penaltyAccruing: Boolean = false,
             batteryCritical: Boolean = false,
+            prompt: dev.molasses.core.console.ConsoleLine.Prompt? = null,
+            notice: dev.molasses.core.console.ConsoleLine.Notice? = null,
         ): BitDisplay {
-            // 1. The glitch burst. Nothing displaces it, not even a tap the
-            //    user just made, because a readout that survived the glitch
-            //    would give the mechanism away. Transient, so unlike the old
-            //    permanent glitch it cannot starve everything below it.
-            if (reaction == BitStateMachine.Reaction.Glitching) return Face(mood, reaction)
-
-            // 2. The HUD. The user asked a question 40 ms ago.
-            if (hud != null && hud.step != HudStep.NONE) return hud
-
-            // 3. The resting state, which the reaction plays over. Resolved
-            //    before the reaction check so that a reaction with no frames
-            //    left falls back to the right face.
             val resting = when {
                 shutterArmed -> BitStateMachine.Mood.ARMED
                 batteryCritical -> BitStateMachine.Mood.BATTERY_CRITICAL
@@ -133,19 +153,37 @@ sealed interface BitDisplay {
                 else -> mood
             }
 
-            // 4. A reaction, or the armed tell. Both outrank the retreat: a
-            //    command the user just typed is owed its answer, and the
-            //    armed window is the one thing in this app that is otherwise
-            //    invisible.
+            // 1. The glitch burst. Nothing displaces it, not even a tap the
+            //    user just made, because a readout that survived the glitch
+            //    would give the mechanism away. Transient, so unlike the old
+            //    permanent glitch it cannot starve everything below it.
+            if (reaction == BitStateMachine.Reaction.Glitching) return Face(mood, reaction)
+
+            // 2. A question. Nothing informative may bury something waiting
+            //    for an answer, the readout included.
+            if (prompt != null) return Speech(prompt, resting)
+
+            // 3. The HUD. The user asked a question 40 ms ago.
+            if (hud != null && hud.step != HudStep.NONE) return hud
+
+            // 4. A reaction. The answer to something the user just did
+            //    outranks anything Bit volunteered.
             if (reaction != BitStateMachine.Reaction.None) return Face(resting, reaction)
+
+            // 5. An observation. Below the reaction deliberately; see the
+            //    class doc and ConsoleSpeech for why that is safe.
+            if (notice != null) return Speech(notice, resting)
+
+            // 6. The armed tell outranks the retreat: it is the one thing in
+            //    this app that is otherwise completely invisible.
             if (shutterArmed) return Face(resting, reaction)
 
-            // 5. A dying battery comes out of the bezel, because no slit
+            // 7. A dying battery comes out of the bezel, because no slit
             //    glyph carries it. A curfew stays behind it, because `[z]`
             //    does.
             if (batteryCritical) return Face(resting, reaction)
 
-            // 6. Retreated. One glyph, no text, nothing to tap.
+            // 8. Retreated. One glyph, no text, nothing to tap.
             if (docked) return Slit(BitGlyph.slitFor(curfew, penaltyAccruing))
 
             return Face(resting, reaction)

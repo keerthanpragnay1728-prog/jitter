@@ -397,6 +397,15 @@
     <string name="lock_reason_focus">Focus session. Every tracked app is locked.</string>
     <string name="lock_reason_bedtime">Bedtime. Locked until morning.</string>
     <string name="lock_reason_checkpoint">A checkpoint went unpaid.</string>
+    <!--
+      Bit's console speech. Past tense, deliberately: Bit only speaks on the
+      launcher, and the observation is made inside a target app, so the line
+      is always read after the fact. "You have been scrolling" would be a lie
+      by the time anyone saw it.
+    -->
+    <string name="console_scrolled">You scrolled %1$s in %2$s.</string>
+    <string name="console_do_it">[DO IT]</string>
+    <string name="console_nah">[NAH]</string>
     <!-- App drawer -->
     <string name="drawer_title">ALL APPS</string>
     <string name="drawer_search_placeholder">filter...</string>

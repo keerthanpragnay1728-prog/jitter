@@ -81,6 +81,16 @@ object ServiceDiagnostics {
         shutterArmedUntilElapsedMs = 0L
     }
 
+    /**
+     * A movement gate is on screen.
+     *
+     * Read by the console before it lets Bit speak. The gate is a
+     * TYPE_ACCESSIBILITY_OVERLAY above everything, so the launcher can be
+     * composing underneath one and would otherwise deliver a line into a
+     * window nobody can see.
+     */
+    @Volatile var gateShowing: Boolean = false
+
     fun onTouchAbsorbed() {
         lastTouchAbsorbedElapsedMs = SystemClock.elapsedRealtime()
     }
@@ -118,6 +128,7 @@ object ServiceDiagnostics {
         readyAtMs = 0L
         lastHeartbeatMs = 0L
         shutterArmedUntilElapsedMs = 0L
+        gateShowing = false
     }
 
     fun recordEvent(event: WindowEvent, route: EventRoute) = tally.record(event, route)
