@@ -83,6 +83,22 @@ class BitStatusTest {
     }
 
     @Test
+    fun `a tie breaks on the package name, not on iteration order`() {
+        // The ledger reports one app's time, tier and penalty on one line.
+        // Three fields describing two different apps would be worse than
+        // showing none of them.
+        val a = AppSnapshot("com.a", 10 * minute, 2, 0, 10 * minute, false, 0)
+        val b = AppSnapshot("com.b", 10 * minute, 3, 0, 10 * minute, false, 0)
+        assertEquals("com.a", BitStatus.deepest(listOf(a, b))?.pkg)
+        assertEquals("com.a", BitStatus.deepest(listOf(b, a))?.pkg)
+    }
+
+    @Test
+    fun `no apps has no deepest app`() {
+        assertEquals(null, BitStatus.deepest(emptyList()))
+    }
+
+    @Test
     fun `the deepest app is what counts, not the first or the last`() {
         val apps = listOf(
             app(2 * minute, 5 * minute),

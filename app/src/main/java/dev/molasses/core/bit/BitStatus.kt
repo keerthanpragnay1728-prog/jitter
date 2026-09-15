@@ -42,8 +42,20 @@ object BitStatus {
      * the right answer for the HUD's second step, which asks how much of the
      * cycle has gone rather than how bad it is anywhere.
      */
-    fun deepestMs(apps: Collection<AppSnapshot>): Long =
-        apps.maxOfOrNull { it.accumulatedMs } ?: 0L
+    fun deepestMs(apps: Collection<AppSnapshot>): Long = deepest(apps)?.accumulatedMs ?: 0L
+
+    /**
+     * The deepest app itself, or null when nothing has accumulated.
+     *
+     * Ties break on the package name rather than on iteration order, because
+     * the ledger reports this app's time, tier and penalty on one line and
+     * three fields describing two different apps would be worse than showing
+     * none of them.
+     */
+    fun deepest(apps: Collection<AppSnapshot>): AppSnapshot? =
+        apps.minWithOrNull(
+            compareByDescending<AppSnapshot> { it.accumulatedMs }.thenBy { it.pkg },
+        )
 
     /**
      * Whether this observation crosses into the terminal.
