@@ -124,7 +124,33 @@ object BitStateMachine {
     /** What the host renders this tick. */
     data class BitFrame(
         val face: String,
-        /** Line rendered beside the face, or null. */
+        /**
+         * Line rendered beside the face, or null.
+         *
+         * ## Commenting is capped. Annotating is not.
+         *
+         * Section 05 caps Bit at three unprompted lines an hour and eight a
+         * day. That cap is on Bit **commenting**: an observation it
+         * volunteers about the user's behaviour, unasked, which is the thing
+         * that turns an ambient presence into something with opinions about
+         * you. Those are the lines that have to be rationed, because each one
+         * spends a budget and because a companion that remarks on your
+         * evening is a companion you switch off.
+         *
+         * It is not a cap on Bit **annotating**: a label naming the state the
+         * face is already in. `BAT:CRIT` beside the battery face is the same
+         * shape as `LOCKED` on the lock flash, or `[!]` on the docked slit.
+         * It says what you are looking at. It volunteers nothing, it draws no
+         * conclusion, and removing it would leave a glyph the user has to
+         * decode rather than read.
+         *
+         * The distinction is written down here because the cap reads, on a
+         * careless pass, like a cap on text. It is not. Someone counting
+         * lines against the budget should count the ones that say something
+         * about the user, and none of the ones that say something about the
+         * app. If a line could be deleted and leave the user better off
+         * guessing, it was never annotation.
+         */
         val line: String? = null,
         /** True while the reaction owns the face and input should be ignored. */
         val ignoresInput: Boolean = false,
@@ -134,7 +160,13 @@ object BitStateMachine {
 
     // ------------------------------------------------------------------ faces
 
-    /** The one line that is not a face. Rendered beside it, not in the slot. */
+    /**
+     * The one line that is not a face. Rendered beside it, not in the slot.
+     *
+     * Annotation, not speech, so it does not count against section 05's cap.
+     * See [BitFrame.line] for why the two are different and which one the cap
+     * is actually about.
+     */
     const val BAT_CRIT = "BAT:CRIT"
 
     const val NEUTRAL = "(o_o)"
