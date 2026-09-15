@@ -20,11 +20,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,6 +38,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.core.command.CommandRegistry
+import dev.molasses.core.command.CommandRender
+import dev.molasses.core.lock.LockLadder
+import dev.molasses.core.lock.LockRequest
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.ui.theme.PhosphorDivider
 import dev.molasses.core.safety.SensitivePackages
@@ -72,6 +79,15 @@ fun SettingsScreen(
     val diag by vm.engineDiagnostics.collectAsStateWithLifecycle()
 
     var appFilter by rememberSaveable { mutableStateOf("") }
+
+    // The scrubber. One app open at a time: eight steps and a confirm button
+    // per row, across eighty apps, is a wall.
+    val locks by vm.locks.collectAsStateWithLifecycle()
+    var scrubbing by rememberSaveable { mutableStateOf<String?>(null) }
+    var stepIndex by rememberSaveable { mutableIntStateOf(0) }
+    // The duration awaiting a second, deliberate press. Cleared by anything
+    // else the user does, exactly as the command prompt clears its own.
+    var awaitingConfirm by rememberSaveable { mutableStateOf<Long?>(null) }
     // Selected targets always stay visible, even when they do not match the
     // filter. Otherwise typing a name silently hides what is already ticked
     // and the list reads as though the selection was lost.
@@ -191,25 +207,60 @@ fun SettingsScreen(
             )
         }
         items(shownApps, key = { it.pkg }) { app ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { vm.toggleTarget(app.pkg) },
-            ) {
-                Checkbox(
-                    checked = app.pkg in targets,
-                    onCheckedChange = { vm.toggleTarget(app.pkg) },
-                )
-                Column(Modifier.padding(start = 4.dp)) {
-                    Text(app.label, style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        app.pkg,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
-            }
+            val remainingMs = vm.lockRemainingMs(app.pkg)
+            val locked = remainingMs > 0L
+            TargetRow(
+                label = app.label,
+                pkg = app.pkg,
+                tracked = app.pkg in targets,
+                remainingMs = remainingMs,
+                expanded = scrubbing == app.pkg,
+                stepIndex = stepIndex,
+                awaitingConfirm = if (scrubbing == app.pkg) awaitingConfirm else null,
+                onToggleTarget = { vm.toggleTarget(app.pkg) },
+                onExpand = {
+                    scrubbing = if (scrubbing == app.pkg) null else app.pkg
+                    // A fresh row starts one step above whatever already
+                    // stands, because the only thing the scrubber can do to an
+                    // existing lock is lengthen it.
+                    stepIndex = LockLadder.STEPS_MS.indexOfFirst { it > remainingMs }
+                        .coerceAtLeast(0)
+                    awaitingConfirm = null
+                },
+                onStep = {
+                    stepIndex = it
+                    // Moving the bar cancels a pending confirmation. Leaving
+                    // it armed would mean the second press arms a duration the
+                    // user was not shown.
+                    awaitingConfirm = null
+                },
+                onArm = {
+                    val chosen = LockLadder.durationAt(stepIndex)
+                    // The same evaluation the typed path runs. A second way to
+                    // arm a lock that skipped this would make the confirmation
+                    // step decorative.
+                    when (
+                        val verdict = LockRequest.evaluate(
+                            durationMs = chosen,
+                            standingMs = vm.lockRemainingMs(app.pkg),
+                            confirmAboveMs = CommandRegistry.CONFIRM_ABOVE_MS,
+                            confirmed = awaitingConfirm == chosen,
+                        )
+                    ) {
+                        is LockRequest.Verdict.Confirm -> awaitingConfirm = verdict.durationMs
+                        is LockRequest.Verdict.Arm -> {
+                            vm.armLock(app.pkg, verdict.durationMs)
+                            awaitingConfirm = null
+                            scrubbing = null
+                        }
+                        // Nothing to do and nothing to say beyond the row,
+                        // which already shows the standing remainder.
+                        is LockRequest.Verdict.TooShort, LockRequest.Verdict.Invalid ->
+                            awaitingConfirm = null
+                    }
+                },
+                dim = locked,
+            )
         }
         if (installed.isNotEmpty() && shownApps.isEmpty()) {
             item {
@@ -591,4 +642,117 @@ private fun serviceStateBody(health: ServiceHealth): Int = when (health) {
     ServiceHealth.CONNECTING -> R.string.settings_service_connecting
     ServiceHealth.STALE -> R.string.settings_service_stale
     ServiceHealth.NEVER_CONNECTED -> R.string.settings_service_never
+}
+
+/**
+ * One app in the target list, with its lock scrubber.
+ *
+ * ## Why the scrubber is here and not on its own screen
+ * A lock is a thing you do to an app, and the list of apps is where you are
+ * already looking. A separate screen would mean picking the app twice.
+ *
+ * ## Why a locked row is dim rather than hidden or disabled
+ * Hidden would lose the remaining time, which is the only number that matters
+ * once a lock is running. Disabled would be a lie: a standing lock can still
+ * be lengthened, and the scrubber is how.
+ *
+ * There is no unlock control, at any depth. That is the point of the feature.
+ */
+@Composable
+private fun TargetRow(
+    label: String,
+    pkg: String,
+    tracked: Boolean,
+    remainingMs: Long,
+    expanded: Boolean,
+    stepIndex: Int,
+    /** The duration awaiting a second press, or null. */
+    awaitingConfirm: Long?,
+    dim: Boolean,
+    onToggleTarget: () -> Unit,
+    onExpand: () -> Unit,
+    onStep: (Int) -> Unit,
+    onArm: () -> Unit,
+) {
+    val labelColor =
+        if (dim) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface
+
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onExpand),
+        ) {
+            Checkbox(checked = tracked, onCheckedChange = { onToggleTarget() })
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 4.dp),
+            ) {
+                Text(label, style = MaterialTheme.typography.bodyLarge, color = labelColor)
+                Text(
+                    pkg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            if (remainingMs > 0L) {
+                Text(
+                    stringResource(
+                        R.string.settings_lock_remaining_fmt,
+                        CommandRender.duration(remainingMs),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+        }
+
+        // if/else rather than an early return: Column is an inline function,
+        // so a bare return here would be a non-local return out of the
+        // composable from inside its own content lambda.
+        if (expanded) {
+            val chosen = LockLadder.durationAt(stepIndex)
+            Column(Modifier.padding(start = 12.dp, end = 4.dp, bottom = 8.dp)) {
+                Text(
+                    stringResource(
+                        R.string.settings_lock_scrub_fmt,
+                        CommandRender.duration(chosen),
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                // A discrete slider rather than eight chips: the steps are
+                // geometric, so the bar reads as a scale where a row of equal
+                // sized buttons would read as a menu of equivalent options.
+                Slider(
+                    value = stepIndex.toFloat(),
+                    onValueChange = { onStep(it.toInt().coerceIn(LockLadder.STEPS_MS.indices)) },
+                    valueRange = 0f..(LockLadder.STEPS_MS.size - 1).toFloat(),
+                    steps = LockLadder.STEPS_MS.size - 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    stringResource(R.string.settings_lock_no_unlock),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Button(
+                    onClick = onArm,
+                    modifier = Modifier.padding(top = 6.dp),
+                ) {
+                    Text(
+                        if (awaitingConfirm == chosen) {
+                            stringResource(
+                                R.string.settings_lock_confirm_fmt,
+                                CommandRender.duration(chosen),
+                            )
+                        } else {
+                            stringResource(R.string.settings_lock_arm)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
