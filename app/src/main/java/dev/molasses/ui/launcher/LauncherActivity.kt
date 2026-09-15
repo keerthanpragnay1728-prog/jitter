@@ -108,6 +108,7 @@ import dev.molasses.core.bit.BitDock
 import dev.molasses.core.bit.BitGlyph
 import dev.molasses.core.bit.BitHud
 import dev.molasses.core.bit.BitStateMachine
+import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.HudStep
 import dev.molasses.core.command.AppTokenResolver
 import dev.molasses.core.command.CommandParser
@@ -663,6 +664,21 @@ fun TerminalHomeView(
         reactionAgeMs = 0L
     }
 
+    // The terminal burst. Fired on the crossing rather than on the level, so
+    // it happens once per entry: the deepest app's accumulated time only
+    // falls at a cycle rollover, which makes the rollover the only thing that
+    // re-arms it. Null until the first observation, so a launcher that starts
+    // up already past the terminal does not burst for a threshold that was
+    // crossed twenty minutes ago.
+    var lastDeepestMs by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(cycle.deepestAppMs) {
+        val previous = lastDeepestMs
+        lastDeepestMs = cycle.deepestAppMs
+        if (BitStatus.crossedTerminal(previous, cycle.deepestAppMs)) {
+            react(BitStateMachine.Reaction.Glitching)
+        }
+    }
+
     // The two zero-interaction tells. Polled rather than pushed, because
     // ServiceDiagnostics is a plain object written from the accessibility
     // callback thread and has no change signal to collect. The poll runs at
@@ -799,7 +815,8 @@ fun TerminalHomeView(
         // Resolved once, here, through the one precedence table:
         // glitch > HUD > reaction > mood.
         val display = BitDisplay.resolve(
-            mood = BitStateMachine.moodFor(cycle.cumulativeMs),
+            // The deepest app, never the sum. The curve is per package.
+            mood = BitStateMachine.moodFor(cycle.deepestAppMs),
             reaction = reaction,
             hud = if (hudStep == HudStep.NONE) {
                 null

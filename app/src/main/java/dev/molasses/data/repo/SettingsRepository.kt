@@ -40,7 +40,20 @@ data class InstalledApp(
  */
 data class CycleReadout(
     val anchor: StampedInstant,
+    /**
+     * Summed across targets. The HUD's second step asks how much of the cycle
+     * has gone, and for that a total is the right answer.
+     */
     val cumulativeMs: Long,
+    /**
+     * The deepest single app. What Bit's mood reads.
+     *
+     * Separate from [cumulativeMs] because the friction curve is per package:
+     * two apps at ten minutes each are not twenty minutes deep in anything,
+     * and feeding the sum to `moodFor` put Bit in a mood no app's friction
+     * justified.
+     */
+    val deepestAppMs: Long = 0L,
     /** A checkpoint is overdue right now. Drives the docked slit's alert. */
     val penaltyAccruing: Boolean = false,
 )
@@ -107,6 +120,7 @@ class SettingsRepository(
                 bootId = state.cycleAnchorBootId,
             ),
             cumulativeMs = snapshot.perApp.values.sumOf { it.accumulatedMs },
+            deepestAppMs = BitStatus.deepestMs(snapshot.perApp.values),
             penaltyAccruing = BitStatus.penaltyAccruing(snapshot.perApp.values),
         )
     }

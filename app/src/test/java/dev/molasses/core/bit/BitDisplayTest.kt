@@ -31,43 +31,121 @@ class BitDisplayTest {
 
     // ------------------------------------------------- glitch beats all
 
+    private val glitch = Reaction.Glitching
+
     @Test
-    fun `glitch beats the HUD`() {
+    fun `the glitch burst beats the HUD`() {
         // The illusion outranks the readout. A readout that stayed legible
         // through a glitch would say plainly that something is in control.
-        assertEquals(BitDisplay.Face(Mood.GLITCHED, Reaction.None), resolve(Mood.GLITCHED, hud = hud))
+        assertEquals(BitDisplay.Face(Mood.IDLE, glitch), resolve(reaction = glitch, hud = hud))
     }
 
     @Test
-    fun `glitch beats a reaction`() {
+    fun `the glitch burst beats the armed state`() {
         assertEquals(
-            BitDisplay.Face(Mood.GLITCHED, Reaction.None),
-            resolve(Mood.GLITCHED, reaction = confirm),
+            BitDisplay.Face(Mood.IDLE, glitch),
+            resolve(reaction = glitch, shutterArmed = true),
         )
     }
 
     @Test
-    fun `glitch beats the armed state`() {
+    fun `the glitch burst beats a curfew`() {
+        assertEquals(BitDisplay.Face(Mood.IDLE, glitch), resolve(reaction = glitch, curfew = true))
+    }
+
+    @Test
+    fun `the glitch burst beats the slit`() {
+        assertEquals(BitDisplay.Face(Mood.IDLE, glitch), resolve(reaction = glitch, docked = true))
+    }
+
+    @Test
+    fun `the glitch burst beats everything at once`() {
         assertEquals(
-            BitDisplay.Face(Mood.GLITCHED, Reaction.None),
-            resolve(Mood.GLITCHED, shutterArmed = true),
+            BitDisplay.Face(Mood.GLITCHED, glitch),
+            resolve(Mood.GLITCHED, glitch, hud, shutterArmed = true, curfew = true, docked = true),
         )
     }
 
     @Test
-    fun `glitch beats a curfew`() {
+    fun `the burst runs broken to composed and ends on a whole frame`() {
+        // Even frame count, so it hands back on NEUTRAL rather than cutting
+        // off mid-WARDEN. A convulsion, not a fault.
+        assertEquals(0L, BitStateMachine.GLITCH_BURST_FRAMES % 2)
         assertEquals(
-            BitDisplay.Face(Mood.GLITCHED, Reaction.None),
-            resolve(Mood.GLITCHED, curfew = true),
+            BitStateMachine.MIN_GLITCH_FRAME_MS * BitStateMachine.GLITCH_BURST_FRAMES,
+            BitStateMachine.GLITCH_BURST_MS,
+        )
+        val faces = (0 until BitStateMachine.GLITCH_BURST_FRAMES).map {
+            BitStateMachine.frame(
+                BitDisplay.Face(Mood.IDLE, glitch),
+                it * BitStateMachine.MIN_GLITCH_FRAME_MS,
+                0,
+            ).face
+        }
+        assertEquals(BitStateMachine.WARDEN, faces.first())
+        assertEquals(BitStateMachine.NEUTRAL, faces.last())
+        assertEquals(setOf(BitStateMachine.WARDEN, BitStateMachine.NEUTRAL), faces.toSet())
+    }
+
+    @Test
+    fun `the burst is silent`() {
+        for (age in 0 until BitStateMachine.GLITCH_BURST_MS step 17L) {
+            assertEquals(null, BitStateMachine.frame(Mood.IDLE, glitch, age, 0).line)
+        }
+    }
+
+    @Test
+    fun `the burst expires, unlike the mood it replaced`() {
+        assertTrue(BitStateMachine.isExpired(glitch, BitStateMachine.GLITCH_BURST_MS))
+        assertTrue(!BitStateMachine.isExpired(glitch, BitStateMachine.GLITCH_BURST_MS - 1))
+    }
+
+    // ------------------------- the regression the transient glitch creates
+
+    @Test
+    fun `the HUD is reachable at the terminal tier`() {
+        // While the glitch was a permanent mood it sat at the top of the
+        // table, so a user past the terminal could not read their own cycle
+        // timer at all. This is that regression, pinned.
+        assertEquals(hud, resolve(mood = Mood.GLITCHED, hud = hud))
+    }
+
+    @Test
+    fun `command feedback is reachable at the terminal tier`() {
+        // The sharper half: the command bar went mute exactly when someone
+        // was most likely to reach for it.
+        assertEquals(
+            BitDisplay.Face(Mood.GLITCHED, confirm),
+            resolve(mood = Mood.GLITCHED, reaction = confirm),
         )
     }
 
     @Test
-    fun `glitch beats everything at once`() {
-        assertEquals(
-            BitDisplay.Face(Mood.GLITCHED, Reaction.None),
-            resolve(Mood.GLITCHED, confirm, hud, shutterArmed = true, curfew = true),
-        )
+    fun `an unavailable reason is reachable at the terminal tier`() {
+        val reaction = Reaction.Unavailable("nope")
+        val f = BitStateMachine.frame(resolve(mood = Mood.GLITCHED, reaction = reaction), 0, 0)
+        assertEquals("nope", f.line)
+    }
+
+    @Test
+    fun `the permanent terminal face is still there, at the bottom`() {
+        // It did not go away, it moved to where a mood belongs.
+        val d = resolve(mood = Mood.GLITCHED)
+        assertEquals(BitDisplay.Face(Mood.GLITCHED, Reaction.None), d)
+        val faces = (0L..2_000L step 37L)
+            .map { BitStateMachine.frame(d, 0, it).face }
+            .toSet()
+        assertEquals(setOf(BitStateMachine.WARDEN, BitStateMachine.NEUTRAL), faces)
+    }
+
+    @Test
+    fun `the terminal mood no longer outranks anything`() {
+        // The whole point of the change, stated as one assertion.
+        for (r in listOf(confirm, Reaction.Absorbed, Reaction.Poked)) {
+            assertEquals(BitDisplay.Face(Mood.GLITCHED, r), resolve(mood = Mood.GLITCHED, reaction = r))
+        }
+        assertEquals(hud, resolve(mood = Mood.GLITCHED, hud = hud))
+        assertTrue(resolve(mood = Mood.GLITCHED, docked = true) is BitDisplay.Slit)
     }
 
     // ---------------------------------------------------- HUD beats below
@@ -179,10 +257,14 @@ class BitDisplayTest {
     }
 
     @Test
-    fun `glitch beats the slit`() {
+    fun `the terminal mood does not beat the slit`() {
+        // It is a mood now, and moods sit at the bottom of the table. A
+        // retreated Bit stays retreated at the terminal; the permanent signal
+        // there is the stall marker, and the slit is already carrying the
+        // overdue checkpoint that the terminal guarantees.
         assertEquals(
-            BitDisplay.Face(Mood.GLITCHED, Reaction.None),
-            resolve(Mood.GLITCHED, docked = true),
+            BitDisplay.Slit(BitGlyph.SLIT_ALERT),
+            resolve(Mood.GLITCHED, docked = true, penaltyAccruing = true),
         )
     }
 
@@ -309,7 +391,8 @@ class BitDisplayTest {
         // Totality, asserted rather than assumed. Five inputs, and the
         // resolver must never be able to return nothing or throw.
         val moods = Mood.entries
-        val reactions = listOf(Reaction.None, confirm, Reaction.Absorbed, Reaction.TurnedAway)
+        val reactions =
+            listOf(Reaction.None, confirm, Reaction.Absorbed, Reaction.TurnedAway, glitch)
         val huds = listOf(null, hud, BitDisplay.Hud(HudStep.NONE, ""))
         for (m in moods) {
             for (r in reactions) {

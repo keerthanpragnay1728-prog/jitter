@@ -20,6 +20,19 @@ package dev.molasses.core.bit
  * that the phone appears to be failing, and a readout that stayed legible
  * through a glitch would say plainly that something is in control of it.
  *
+ * The glitch at the top of that table is
+ * [BitStateMachine.Reaction.Glitching], a burst fired once when the user
+ * crosses into the terminal of the friction curve. It used to be
+ * [BitStateMachine.Mood.GLITCHED], which is permanent past the terminal, and
+ * that was a bug rather than a strict reading: everything below the top of
+ * the table became unreachable forever, so a user past the terminal got no
+ * command feedback and no readout at all. The command bar went mute exactly
+ * when someone was most likely to reach for it.
+ *
+ * The permanent terminal signal did not go away, it moved to where it
+ * belongs: `Mood.GLITCHED` resolves at the bottom of the table like any other
+ * mood, and the stall marker turns the terminal colour.
+ *
  * **HUD second.** The user just tapped and asked a question. A blink or a
  * poke arriving in the next 40 ms must not eat the answer.
  *
@@ -90,12 +103,11 @@ sealed interface BitDisplay {
             docked: Boolean = false,
             penaltyAccruing: Boolean = false,
         ): BitDisplay {
-            // 1. Glitch. Nothing displaces it, not even a tap the user just
-            //    made, because a readout that survived the glitch would give
-            //    the mechanism away.
-            if (mood == BitStateMachine.Mood.GLITCHED) {
-                return Face(mood, BitStateMachine.Reaction.None)
-            }
+            // 1. The glitch burst. Nothing displaces it, not even a tap the
+            //    user just made, because a readout that survived the glitch
+            //    would give the mechanism away. Transient, so unlike the old
+            //    permanent glitch it cannot starve everything below it.
+            if (reaction == BitStateMachine.Reaction.Glitching) return Face(mood, reaction)
 
             // 2. The HUD. The user asked a question 40 ms ago.
             if (hud != null && hud.step != HudStep.NONE) return hud

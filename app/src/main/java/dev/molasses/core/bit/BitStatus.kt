@@ -1,5 +1,6 @@
 package dev.molasses.core.bit
 
+import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.model.AppSnapshot
 
 /**
@@ -31,4 +32,36 @@ object BitStatus {
      */
     fun penaltyAccruing(apps: Collection<AppSnapshot>): Boolean =
         apps.any { it.accumulatedMs > it.tierUnlockedUntilMs }
+
+    /**
+     * The deepest single app, which is what the mood reads.
+     *
+     * Not the sum. The friction curve is per package, so two apps at ten
+     * minutes each are not twenty minutes deep in anything; adding them would
+     * put Bit in a mood that no app's friction justifies. The sum is still
+     * the right answer for the HUD's second step, which asks how much of the
+     * cycle has gone rather than how bad it is anywhere.
+     */
+    fun deepestMs(apps: Collection<AppSnapshot>): Long =
+        apps.maxOfOrNull { it.accumulatedMs } ?: 0L
+
+    /**
+     * Whether this observation crosses into the terminal.
+     *
+     * ## Why a transition and not a threshold
+     * The burst fires once per entry, not once per scroll and not once per
+     * foreground. Reading a transition rather than a level gives that for
+     * free, and it gives the reset for free too: the deepest app's
+     * accumulated time only ever falls at a cycle rollover, so the next
+     * crossing after a rollover is the next burst and nothing else is.
+     *
+     * @param previousDeepestMs null before the first observation. A caller
+     *   that has just started, and finds itself already past the terminal,
+     *   must not burst: it did not see the crossing, and a burst for a
+     *   threshold that was passed twenty minutes ago is a lie about when.
+     */
+    fun crossedTerminal(previousDeepestMs: Long?, deepestMs: Long): Boolean =
+        previousDeepestMs != null &&
+            previousDeepestMs < FrictionCurve.TERMINAL_MS &&
+            deepestMs >= FrictionCurve.TERMINAL_MS
 }
