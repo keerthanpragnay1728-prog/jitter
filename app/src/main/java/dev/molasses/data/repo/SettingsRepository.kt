@@ -11,6 +11,8 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import dev.molasses.CycleState
 import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.core.lock.LockReason
+import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.FontScale
@@ -49,6 +51,27 @@ class SettingsRepository(
     val targets: Flow<List<String>> = store.data.map { it.targetPackagesList.toList() }
     val resetPolicy: Flow<CycleResetPolicy> = store.data.map { it.resetPolicy.toModel() }
     val alternativeChallenge: Flow<Boolean> = store.data.map { it.alternativeChallenge }
+
+    /**
+     * The persisted locks.
+     *
+     * There is no unlock on this repository, and that is not an omission. A
+     * lock that can be cleared is a lock that will be cleared, at the exact
+     * moment it is doing its job.
+     */
+    val locks: Flow<LockRegistry> = store.locks
+
+    suspend fun armLock(
+        pkg: String,
+        durationMs: Long,
+        reason: LockReason,
+    ) = store.armLock(pkg, nowStamped(), durationMs, reason)
+
+    suspend fun armLocks(
+        packages: Collection<String>,
+        durationMs: Long,
+        reason: LockReason,
+    ) = store.armLocks(packages, nowStamped(), durationMs, reason)
 
     /** The last twenty submitted command lines, newest first. */
     val commandHistory: Flow<List<String>> =

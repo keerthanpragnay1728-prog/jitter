@@ -10,6 +10,8 @@ import dev.molasses.AppState
 import dev.molasses.CycleResetPolicyProto
 import dev.molasses.CycleState
 import dev.molasses.core.command.CommandHistory
+import dev.molasses.core.lock.LockReason
+import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
@@ -185,6 +187,78 @@ class CycleStateStore(context: Context) {
         store.updateData {
             val next = CommandHistory.record(it.commandHistoryList, line, confirmation)
             it.toBuilder().clearCommandHistory().addAllCommandHistory(next).build()
+        }
+    }
+
+    // ------------------------------------------------------------------ locks
+
+    /**
+     * The persisted registry, rebuilt on every emission.
+     *
+     * Rebuilt rather than cached because `LockRegistry` is immutable and the
+     * list is at most a handful of entries. A cache would be a second source
+     * of truth for the one piece of state in this app that must not be
+     * possible to disagree about.
+     */
+    val locks: Flow<LockRegistry> =
+        store.data.map { state -> LockRegistry.of(state.locksList.map { it.toLock() }) }
+
+    /**
+     * Arm or extend a lock on [pkg].
+     *
+     * ## Why the read and the write are in the same block
+     * The extend-only rule is the whole value of a lock, and it is only worth
+     * anything if it holds against what is on disk rather than against a copy
+     * something read earlier. Doing the comparison inside `updateData` means a
+     * shorter lock armed after a process death, a reboot, or from a second
+     * code path is still a no-op: DataStore serialises the transform, so no
+     * caller can read a thirty day lock, be descheduled, and write a one
+     * minute one over it.
+     *
+     * Expired entries are pruned on the way through, which is the only place
+     * that happens. `isLocked` already treats an expired lock as absent, so
+     * this changes no behaviour and exists to keep the list bounded.
+     */
+    suspend fun armLock(
+        pkg: String,
+        now: StampedInstant,
+        durationMs: Long,
+        reason: LockReason,
+    ) = armLocks(listOf(pkg), now, durationMs, reason)
+
+    /** The same duration across several packages, as `$ focus` does. */
+    suspend fun armLocks(
+        packages: Collection<String>,
+        now: StampedInstant,
+        durationMs: Long,
+        reason: LockReason,
+    ) {
+        if (packages.isEmpty() || durationMs <= 0L) return
+        store.updateData { state ->
+            val next = LockRegistry.of(state.locksList.map { it.toLock() })
+                .armAll(packages, now, durationMs, reason)
+                .prune(now)
+            state.toBuilder()
+                .clearLocks()
+                .addAllLocks(next.snapshot().map { it.toProto() })
+                .build()
+        }
+    }
+
+    /**
+     * Drop expired entries. Housekeeping; no lock changes state because of it.
+     *
+     * There is deliberately no unlock. A lock that can be cleared is a lock
+     * that will be cleared, at the exact moment it is working.
+     */
+    suspend fun pruneLocks(now: StampedInstant) {
+        store.updateData { state ->
+            val next = LockRegistry.of(state.locksList.map { it.toLock() }).prune(now)
+            if (next.snapshot().size == state.locksCount) return@updateData state
+            state.toBuilder()
+                .clearLocks()
+                .addAllLocks(next.snapshot().map { it.toProto() })
+                .build()
         }
     }
 

@@ -94,6 +94,40 @@ message CycleState {
   // "block instagram 30d" sitting in a list the user taps is one tap and one
   // Enter from a month.
   repeated string command_history = 27;
+
+  // Armed locks, expired entries pruned on every write.
+  //
+  // Persisted rather than held in memory because a lock that does not survive
+  // a process death is not a lock. The extend-only rule is enforced against
+  // THIS list inside updateData, not against a copy read earlier, so a
+  // shorter lock armed after a restart is still a no-op.
+  repeated LockEntry locks = 28;
+}
+
+// One armed lock. The three stamp fields are a StampedInstant; splitting them
+// keeps the proto flat and matches how cycle_anchor_* is already stored.
+//
+// LockPersistenceTest asserts a field here for every property of Lock and
+// StampedInstant, so growing the model without growing the proto fails rather
+// than silently dropping a field on the next write.
+message LockEntry {
+  string pkg = 1;
+  int64 started_wall_ms = 2;
+  int64 started_elapsed_ms = 3;
+  int32 started_boot_id = 4;
+  int64 duration_ms = 5;
+  LockReasonProto reason = 6;
+}
+
+// Mirrors dev.molasses.core.lock.LockReason. BLOCK is 0 because proto3 pins
+// the zero value as the default, and a lock with a corrupt reason field
+// reading as BLOCK is the honest fallback: it is the reason with no extra
+// behaviour attached.
+enum LockReasonProto {
+  BLOCK = 0;
+  FOCUS = 1;
+  BEDTIME = 2;
+  CHECKPOINT = 3;
 }
 
 message AppState {
