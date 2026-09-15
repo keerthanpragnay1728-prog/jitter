@@ -18,6 +18,7 @@ import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.pauseInstant
+import dev.molasses.data.datastore.toEngineSnapshot
 import dev.molasses.data.datastore.toModel
 import dev.molasses.monitor.MolassesAccessibilityService
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +28,18 @@ import kotlinx.coroutines.flow.map
 data class InstalledApp(
     val pkg: String,
     val label: String,
+)
+
+/**
+ * The cycle, as much of it as Bit's HUD reads.
+ *
+ * [cumulativeMs] is summed across targets rather than reported per app,
+ * because the question the HUD answers is "how deep am I", not "how deep am I
+ * in Instagram specifically". The ledger already answers the second.
+ */
+data class CycleReadout(
+    val anchor: StampedInstant,
+    val cumulativeMs: Long,
 )
 
 /** Live state of one onboarding requirement. */
@@ -72,6 +85,26 @@ class SettingsRepository(
         durationMs: Long,
         reason: LockReason,
     ) = store.armLocks(packages, nowStamped(), durationMs, reason)
+
+    /**
+     * What Bit's readout needs, in one emission.
+     *
+     * The anchor rather than a remaining figure, so the caller subtracts
+     * against a fresh stamp at the moment it renders. A precomputed remainder
+     * would either be up to fifteen seconds stale, because that is the
+     * checkpoint cadence, or need a per-second ticker for a readout that is
+     * on screen for five seconds at a time.
+     */
+    val cycleReadout: Flow<CycleReadout> = store.data.map { state ->
+        CycleReadout(
+            anchor = StampedInstant(
+                wallMs = state.cycleAnchorWallMs,
+                elapsedMs = state.cycleAnchorElapsedMs,
+                bootId = state.cycleAnchorBootId,
+            ),
+            cumulativeMs = state.toEngineSnapshot().perApp.values.sumOf { it.accumulatedMs },
+        )
+    }
 
     /** The last twenty submitted command lines, newest first. */
     val commandHistory: Flow<List<String>> =

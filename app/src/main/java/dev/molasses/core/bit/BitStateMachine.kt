@@ -20,8 +20,34 @@ package dev.molasses.core.bit
  */
 object BitStateMachine {
 
-    /** Derived from accumulated cycle time. See [moodFor]. */
-    enum class Mood { IDLE, VIGILANT, ANNOYED, GLITCHED }
+    /**
+     * The resting state.
+     *
+     * The first four are derived from accumulated cycle time by [moodFor].
+     * The last two are not: they are conditions the host knows about and
+     * [BitDisplay.resolve] maps in at the same level, because they answer the
+     * same question the mood does. What is Bit doing when nothing has just
+     * happened to it.
+     */
+    enum class Mood {
+        IDLE,
+        VIGILANT,
+        ANNOYED,
+        GLITCHED,
+
+        /**
+         * The stall sink is armed right now.
+         *
+         * A continuous readout of the one thing in this app that is otherwise
+         * completely invisible. Silent by construction: there is no line, and
+         * adding one would announce the mechanism to someone who was not
+         * already looking for it.
+         */
+        ARMED,
+
+        /** A bedtime lock is standing. Asleep, because it is. */
+        DORMANT,
+    }
 
     /** A transient overlay on the mood, started by an event. */
     sealed interface Reaction {
@@ -32,6 +58,20 @@ object BitStateMachine {
 
         /** Bad input. The user can fix this by typing something else. */
         data class Failed(val message: String) : Reaction
+
+        /**
+         * The sink just swallowed a touch.
+         *
+         * Fired only when a touch was actually absorbed, never merely because
+         * the sink is armed: at a ten percent stall probability, Bit twitching
+         * on every armed window would be a tell that something is running
+         * rather than that something is broken.
+         *
+         * Carries no message and never will. The moment Bit narrates a stall
+         * the uncanny phase is over, and the dry acknowledgment line after
+         * nine minutes is a separate thing that stays separate.
+         */
+        data object Absorbed : Reaction
 
         /**
          * Parsed, and could not run here or yet.
@@ -70,6 +110,9 @@ object BitStateMachine {
 
     // ------------------------------------------------------------------ faces
 
+    /** The one line that is not a face. Rendered beside it, not in the slot. */
+    const val BAT_CRIT = "BAT:CRIT"
+
     const val NEUTRAL = "(o_o)"
     const val BLINK_HALF = "( -_- )"
     const val BLINK_NARROW = "( o_o )"
@@ -78,10 +121,32 @@ object BitStateMachine {
 
     /** Unavailable. Flat rather than dry: nothing went wrong, it just cannot. */
     const val FLAT = "(-_-)"
+
+    /** One eye off. The 200 ms tell that a touch went nowhere. */
+    const val ASYMMETRIC = "(o_.)"
+
+    /** Asleep, during a curfew window. */
+    const val DORMANT = "(z_z)"
     const val IRRITATED = "(-_-;)"
     const val TURNED_AWAY = "[===]"
     const val BATTERY_CRITICAL = "[ . . ]"
     const val WARDEN = "(>_<)"
+
+    /**
+     * Every face, so `BitGlyph.WIDTH` can be derived rather than written down.
+     *
+     * `BitGlyphTest` reflects over this object and requires every string
+     * constant to be either in here or in a named exception list, so a new
+     * face cannot be added that quietly overflows the fixed slot and starts
+     * moving Bit's snap target.
+     */
+    val FACES: List<String> = listOf(
+        NEUTRAL, BLINK_HALF, BLINK_NARROW, HAPPY, DRY, FLAT, ASYMMETRIC,
+        DORMANT, IRRITATED, TURNED_AWAY, BATTERY_CRITICAL, WARDEN,
+    )
+
+    /** String constants that are not faces. Named, so the check stays honest. */
+    val NON_FACES: List<String> = listOf(BAT_CRIT)
 
     // ------------------------------------------------------------- durations
 
@@ -103,6 +168,12 @@ object BitStateMachine {
 
     /** Same hold as a failure: an unavailable reason is equally worth reading. */
     const val UNAVAILABLE_TOTAL_MS = 2_000L
+
+    /**
+     * Short enough to read as a flicker rather than as an expression. A tell,
+     * not a statement.
+     */
+    const val ABSORBED_TOTAL_MS = 200L
 
     const val POKE_TOTAL_MS = 1_200L
     const val IRRITATED_TOTAL_MS = 1_200L
@@ -126,6 +197,22 @@ object BitStateMachine {
         accumulatedMs < 20 * 60_000L -> Mood.ANNOYED
         else -> Mood.GLITCHED
     }
+
+    /**
+     * The frame for a resolved [BitDisplay].
+     *
+     * The entry point the host uses. Precedence has already been decided by
+     * `BitDisplay.resolve`; this only renders, which is what keeps the
+     * ordering in one place rather than half here and half at the call site.
+     */
+    fun frame(display: BitDisplay, reactionAgeMs: Long, tickMs: Long): BitFrame =
+        when (display) {
+            // reactionActive is false so the host's expiry loop does not treat
+            // a readout as a reaction and tear it down on the next tick. The
+            // HUD owns its own timeout.
+            is BitDisplay.Hud -> BitFrame(face = display.text, reactionActive = false)
+            is BitDisplay.Face -> frame(display.mood, display.reaction, reactionAgeMs, tickMs)
+        }
 
     /**
      * The frame to render.
@@ -169,6 +256,14 @@ object BitStateMachine {
             expired = { idleFrame(mood, tickMs).copy(line = null, reactionActive = false) },
         ) { FLAT }
 
+        Reaction.Absorbed -> phased(
+            ageMs = reactionAgeMs,
+            total = ABSORBED_TOTAL_MS,
+            // Never a line. Not "usually" and not "for now".
+            line = null,
+            expired = { idleFrame(mood, tickMs).copy(reactionActive = false) },
+        ) { ASYMMETRIC }
+
         Reaction.Poked -> phased(
             ageMs = reactionAgeMs,
             total = POKE_TOTAL_MS,
@@ -198,8 +293,6 @@ object BitStateMachine {
         Reaction.BatteryCritical -> BitFrame(face = BATTERY_CRITICAL, line = BAT_CRIT)
     }
 
-    const val BAT_CRIT = "BAT:CRIT"
-
     /**
      * Whether a reaction has run its course, so the host can drop it without
      * rendering a frame first.
@@ -209,6 +302,7 @@ object BitStateMachine {
         is Reaction.Confirm -> reactionAgeMs >= CONFIRM_TOTAL_MS
         is Reaction.Failed -> reactionAgeMs >= FAILED_TOTAL_MS
         is Reaction.Unavailable -> reactionAgeMs >= UNAVAILABLE_TOTAL_MS
+        Reaction.Absorbed -> reactionAgeMs >= ABSORBED_TOTAL_MS
         Reaction.Poked -> reactionAgeMs >= POKE_TOTAL_MS
         Reaction.Irritated -> reactionAgeMs >= IRRITATED_TOTAL_MS
         Reaction.TurnedAway -> reactionAgeMs >= TURNED_AWAY_TOTAL_MS
@@ -237,6 +331,12 @@ object BitStateMachine {
      * as a loading spinner.
      */
     private fun idleFrame(mood: Mood, tickMs: Long): BitFrame {
+        // Neither of these blinks. A blink reads as idling, and both of them
+        // are states: one says the sink is live right now, the other says the
+        // phone is meant to be asleep.
+        if (mood == Mood.ARMED) return BitFrame(FLAT)
+        if (mood == Mood.DORMANT) return BitFrame(DORMANT)
+
         if (mood == Mood.GLITCHED) {
             // Quantised to the floor so a fast host cannot drive this above
             // 12 fps, which is where it stops reading as a glitch and starts
