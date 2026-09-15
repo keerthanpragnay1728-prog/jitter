@@ -246,15 +246,112 @@ class CommandParserTest {
     }
 
     @Test
-    fun `the ghost never offers an argument`() {
-        // The one rule: no completion can put a concrete value on screen one
-        // keystroke from being accepted.
-        assertNull(CommandParser.ghostFor("block "))
-        assertNull(CommandParser.ghostFor("block ins"))
-        assertNull(CommandParser.ghostFor("timer 3"))
+    fun `the ghost never offers a concrete value`() {
+        // The one rule: no completion can put a value the user did not choose
+        // one keystroke from being armed. Shapes, never values, at every
+        // position and for every verb.
+        val lines = CommandParser.VERBS.flatMap {
+            listOf(it, "$it ", "$it x", "$it x ", "$it x y", it.dropLast(1))
+        }
+        for (line in lines) {
+            val ghost = CommandParser.ghostFor(line) ?: continue
+            assertTrue("'$line' ghosted a digit: $ghost", ghost.none { c -> c.isDigit() })
+        }
+    }
+
+    // ------------------------------------------------- the argument position
+
+    @Test
+    fun `a complete verb ghosts the arguments it owes`() {
+        assertEquals("<app> <duration>", CommandParser.ghostFor("block "))
+        assertEquals("<duration>", CommandParser.ghostFor("focus "))
+        assertEquals("[app]", CommandParser.ghostFor("log "))
+        assertEquals("[on|off]", CommandParser.ghostFor("wifi "))
+    }
+
+    @Test
+    fun `a partial app name is never rewritten`() {
+        // The defect this prevents: "insta" expanding to "instagram" would
+        // replace characters the user typed, and the ghost is an overlay with
+        // the typed prefix drawn transparent. Anything that does not purely
+        // extend the line renders as garbage.
+        val ghost = CommandParser.ghostFor("block insta")
+        assertEquals(" <duration>", ghost)
+        // The proof of the property rather than of the string: the typed text
+        // plus the ghost still starts with exactly what was typed.
+        assertTrue(("block insta" + ghost).startsWith("block insta"))
+    }
+
+    @Test
+    fun `a started argument is spoken for, a trailing space is not`() {
+        assertEquals(" <duration>", CommandParser.ghostFor("block insta"))
+        assertEquals("<duration>", CommandParser.ghostFor("block insta "))
+    }
+
+    @Test
+    fun `a fully typed command ghosts nothing`() {
+        assertNull(CommandParser.ghostFor("block insta 30m"))
+        assertNull(CommandParser.ghostFor("block insta 30m "))
+        assertNull(CommandParser.ghostFor("focus 30m"))
+    }
+
+    @Test
+    fun `a multi-word free-text argument does not re-ghost`() {
+        // rem is the one verb with a free-text tail, so every token past the
+        // second is part of the reminder and nothing further is owed.
+        // A complete verb with no space yet ghosts nothing: the hint line
+        // below the prompt already shows the whole shape at that point, and
+        // two renderings of the same thing on one screen is one too many.
+        assertNull(CommandParser.ghostFor("rem"))
+        assertEquals("<duration> <text>", CommandParser.ghostFor("rem "))
+        assertEquals(" <text>", CommandParser.ghostFor("rem 10m"))
+        assertEquals("<text>", CommandParser.ghostFor("rem 10m "))
+        assertNull(CommandParser.ghostFor("rem 10m call"))
+        assertNull(CommandParser.ghostFor("rem 10m call mum"))
+        assertNull(CommandParser.ghostFor("rem 10m call mum about the thing"))
+    }
+
+    @Test
+    fun `an incomplete verb followed by a space ghosts nothing`() {
+        // Offering arguments for a command the user has not finished naming
+        // would be guessing at which one they meant.
+        assertNull(CommandParser.ghostFor("blo insta"))
+        assertNull(CommandParser.ghostFor("b "))
+    }
+
+    @Test
+    fun `a verb with no arguments ghosts nothing after a space`() {
+        assertNull(CommandParser.ghostFor("status "))
+        assertNull(CommandParser.ghostFor("bedtime "))
+        assertNull(CommandParser.ghostFor("help "))
+    }
+
+    @Test
+    fun `the argument ghost always extends the typed line`() {
+        // The rendering contract, swept. The overlay draws the typed prefix
+        // transparent and the ghost after it, so a ghost that did anything
+        // but append would render as garbage.
+        val lines = listOf(
+            "block", "block ", "block i", "block insta", "block insta ",
+            "rem", "rem 1", "rem 10m", "rem 10m c", "focus", "focus ",
+            "log", "log ", "wifi", "wifi o", "alarm", "alarm ",
+        )
+        for (line in lines) {
+            val ghost = CommandParser.ghostFor(line) ?: continue
+            assertTrue("'$line' + '$ghost' must extend", (line + ghost).startsWith(line))
+        }
+    }
+
+    @Test
+    fun `argument shapes come from the usage strings and nowhere else`() {
+        // A second list of hints would be a second thing to keep in step with
+        // the grammar. Every shape a ghost can emit is a token of USAGE.
+        val shapes = CommandParser.USAGE.values.flatMap { it.split(" ") }.toSet()
         for (verb in CommandParser.VERBS) {
-            val ghost = CommandParser.ghostFor(verb.dropLast(1))
-            if (ghost != null) assertTrue("$verb ghost has a digit", ghost.none { it.isDigit() })
+            val ghost = CommandParser.ghostFor("$verb ") ?: continue
+            for (token in ghost.trim().split(" ")) {
+                assertTrue("'$token' is not a USAGE token", token in shapes)
+            }
         }
     }
 
@@ -319,6 +416,21 @@ class CommandParserTest {
         // word silently replaced by a verb.
         assertEquals("rem 10m call ", CommandParser.completeOnSpace("rem 10m call", "rem 10m call "))
         assertEquals("block ig ", CommandParser.completeOnSpace("block ig", "block ig "))
+    }
+
+    @Test
+    fun `a space at position four or later never completes`() {
+        // The free-text tail is where this bites: every word of a reminder is
+        // followed by a space, and any one of them silently becoming a verb
+        // would rewrite the message the user is composing.
+        val line = "rem 10m call mum about the thing"
+        var built = ""
+        for (word in line.split(" ")) {
+            val before = if (built.isEmpty()) word else "$built $word"
+            val after = "$before "
+            assertEquals("completing after '$before'", after, CommandParser.completeOnSpace(before, after))
+            built = before
+        }
     }
 
     @Test
