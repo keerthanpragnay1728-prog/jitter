@@ -25,15 +25,36 @@ object BitDock {
     /**
      * How long without an interaction before Bit retreats.
      *
-     * Long enough that it does not dock between two taps of the same gesture,
-     * short enough that it is docked by the time anyone looks away and back.
+     * ## Why thirty seconds and not eight
+     * Eight made the face the exception rather than the default, and the face
+     * is what carries the mood. A friction signal that is hidden unless you
+     * touch something is not ambient, it is a menu item.
+     *
+     * It also made the blink nearly unobservable. The blink band is three to
+     * seven seconds, so an eight second window holds one blink at best and
+     * reads as a twitch. Thirty holds four to ten, which is what makes it
+     * read as breathing rather than as a glitch. [IDLE_MS] is required by
+     * test to be at least two full maximum intervals, so that reasoning is
+     * structural rather than a comment.
+     *
+     * Thirty is also longer than any ordinary visit to the launcher. Coming
+     * home between two apps takes a second or two, and a deliberate look is
+     * five to fifteen, so in practice the retreat happens when the user has
+     * actually gone away rather than when they paused. That is the right
+     * split: a face while you are here, a glyph of status to come back to.
      */
-    const val IDLE_MS = 8_000L
+    const val IDLE_MS = 30_000L
 
     /**
      * @param msSinceInteraction since the last tap or drag. A negative value,
      *   which within one boot can only be a bad read, docks rather than
      *   un-docking: retreating is the safe direction.
+     *
+     * The host seeds the clock at first composition rather than at zero, so
+     * landing on the launcher shows the face and then watching it retreat is
+     * the first thing anyone sees. Seeded at zero it was docked before the
+     * first frame, which is how the whole of Bit ended up behind a gesture
+     * nobody knew to perform.
      */
     fun isDocked(typing: Boolean, msSinceInteraction: Long): Boolean =
         typing || msSinceInteraction < 0L || msSinceInteraction >= IDLE_MS

@@ -37,4 +37,27 @@ class BitDockTest {
         // of them would swap the behaviour mid-gesture.
         assertTrue(BitDock.IDLE_MS > 5 * 1_200L)
     }
+
+    @Test
+    fun `the face is on screen long enough to blink more than once`() {
+        // The reasoning behind thirty seconds, made structural. The blink
+        // band is three to seven, so a window shorter than two full maximum
+        // intervals can hold one blink and reads as a twitch rather than as
+        // breathing. At eight seconds, which is what this used to be, the
+        // face was the exception and the blink was nearly unobservable.
+        assertTrue(
+            "IDLE_MS must hold at least two maximum blink intervals",
+            BitDock.IDLE_MS >= 2 * BitStateMachine.BLINK_MAX_INTERVAL_MS,
+        )
+    }
+
+    @Test
+    fun `an ordinary visit to the launcher does not end in a retreat`() {
+        // Coming home between two apps is a second or two; a deliberate look
+        // is five to fifteen. The retreat is meant to mean the user went
+        // away, not that they paused.
+        for (visitMs in listOf(1_000L, 3_000L, 15_000L)) {
+            assertFalse("$visitMs", BitDock.isDocked(typing = false, msSinceInteraction = visitMs))
+        }
+    }
 }
