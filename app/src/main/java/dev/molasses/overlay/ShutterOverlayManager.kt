@@ -25,6 +25,7 @@ import dev.molasses.core.latency.LatencyRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EventType
 import dev.molasses.engine.FrictionLedger
+import dev.molasses.monitor.ServiceDiagnostics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -221,6 +222,10 @@ class ShutterOverlayManager(
         val ceiling = armedSinceElapsed + MAX_CONTINUOUS_ARMED_MS
         val target = minOf(now + ms, ceiling)
         armedUntilElapsed = maxOf(armedUntilElapsed, target)
+        // Bit reads this and holds flat eyes for exactly the armed window. A
+        // continuous readout of the one thing in this app that is otherwise
+        // completely invisible.
+        ServiceDiagnostics.onShutterArmed(armedUntilElapsed)
 
         setFlags(ARMED_FLAGS)
         sink.setArmed(true)
@@ -282,6 +287,7 @@ class ShutterOverlayManager(
 
         val actual = SystemClock.elapsedRealtime() - armedSinceElapsed
         armedUntilElapsed = 0
+        ServiceDiagnostics.onShutterReleased()
         setFlags(IDLE_FLAGS)
         sink.setArmed(false)
 
@@ -444,6 +450,11 @@ class ShutterOverlayManager(
                         return true
                     }
                 }
+                // Only here, inside the branch that ran because a touch was
+                // actually swallowed. Bit's 200 ms tell hangs off this, and
+                // firing it on every armed window instead would be a tell that
+                // something is running rather than that something is broken.
+                ServiceDiagnostics.onTouchAbsorbed()
                 recordGroundTruth(event)
             }
             return true

@@ -25,7 +25,9 @@ class BitDisplayTest {
         hud: BitDisplay.Hud? = null,
         shutterArmed: Boolean = false,
         curfew: Boolean = false,
-    ) = BitDisplay.resolve(mood, reaction, hud, shutterArmed, curfew)
+        docked: Boolean = false,
+        penaltyAccruing: Boolean = false,
+    ) = BitDisplay.resolve(mood, reaction, hud, shutterArmed, curfew, docked, penaltyAccruing)
 
     // ------------------------------------------------- glitch beats all
 
@@ -156,6 +158,105 @@ class BitDisplayTest {
         assertEquals(BitDisplay.Face(Mood.VIGILANT, Reaction.None), resolve(mood = Mood.VIGILANT))
     }
 
+    // ------------------------------------------------------- the docked slit
+
+    @Test
+    fun `a retreated Bit is a slit, not a face`() {
+        assertEquals(BitDisplay.Slit(BitGlyph.SLIT_NORMAL), resolve(docked = true))
+    }
+
+    @Test
+    fun `the slit carries the alert when a checkpoint is overdue`() {
+        assertEquals(
+            BitDisplay.Slit(BitGlyph.SLIT_ALERT),
+            resolve(docked = true, penaltyAccruing = true),
+        )
+    }
+
+    @Test
+    fun `the slit carries the curfew glyph during a bedtime lock`() {
+        assertEquals(BitDisplay.Slit(BitGlyph.SLIT_CURFEW), resolve(docked = true, curfew = true))
+    }
+
+    @Test
+    fun `glitch beats the slit`() {
+        assertEquals(
+            BitDisplay.Face(Mood.GLITCHED, Reaction.None),
+            resolve(Mood.GLITCHED, docked = true),
+        )
+    }
+
+    @Test
+    fun `the HUD beats the slit`() {
+        // Tapping a docked Bit is what opens the HUD, so this is the ordinary
+        // case rather than an edge one.
+        assertEquals(hud, resolve(hud = hud, docked = true))
+    }
+
+    @Test
+    fun `a reaction beats the slit`() {
+        // A command the user just typed is owed its answer, retreated or not.
+        assertEquals(BitDisplay.Face(Mood.IDLE, confirm), resolve(reaction = confirm, docked = true))
+    }
+
+    @Test
+    fun `the armed tell beats the slit`() {
+        // The one thing in this app that is otherwise completely invisible.
+        // Hiding it behind a retreat would lose it exactly when it means
+        // something.
+        assertEquals(
+            BitDisplay.Face(Mood.ARMED, Reaction.None),
+            resolve(docked = true, shutterArmed = true),
+        )
+    }
+
+    @Test
+    fun `the slit beats the resting mood`() {
+        assertEquals(
+            BitDisplay.Slit(BitGlyph.SLIT_NORMAL),
+            resolve(mood = Mood.ANNOYED, docked = true),
+        )
+    }
+
+    @Test
+    fun `an undocked Bit is never a slit`() {
+        for (curfew in listOf(false, true)) {
+            for (penalty in listOf(false, true)) {
+                val d = resolve(curfew = curfew, penaltyAccruing = penalty)
+                assertTrue("$curfew $penalty", d is BitDisplay.Face)
+            }
+        }
+    }
+
+    // ---------------------------------------------- the absorbed touch tell
+
+    @Test
+    fun `an absorbed touch never carries a line`() {
+        // The moment Bit narrates a stall the uncanny phase is over. Asserted
+        // rather than described, because a line is one constructor argument
+        // away at every point in the future.
+        for (age in listOf(0L, 100L, 199L)) {
+            val f = BitStateMachine.frame(Mood.IDLE, Reaction.Absorbed, age, 0)
+            assertEquals(BitStateMachine.ASYMMETRIC, f.face)
+            assertEquals(null, f.line)
+        }
+    }
+
+    @Test
+    fun `the absorbed tell is short enough to read as a flicker`() {
+        assertTrue(BitStateMachine.ABSORBED_TOTAL_MS <= 250L)
+        assertTrue(BitStateMachine.isExpired(Reaction.Absorbed, BitStateMachine.ABSORBED_TOTAL_MS))
+        assertTrue(!BitStateMachine.isExpired(Reaction.Absorbed, BitStateMachine.ABSORBED_TOTAL_MS - 1))
+    }
+
+    @Test
+    fun `the absorbed face is distinct from every other face`() {
+        assertEquals(
+            BitStateMachine.FACES.size,
+            BitStateMachine.FACES.distinct().size,
+        )
+    }
+
     // ------------------------------------------------------------ totality
 
     @Test
@@ -170,8 +271,17 @@ class BitDisplayTest {
                 for (h in huds) {
                     for (armed in listOf(false, true)) {
                         for (curfew in listOf(false, true)) {
-                            val d = BitDisplay.resolve(m, r, h, armed, curfew)
-                            assertTrue("$m $r $h $armed $curfew", d is BitDisplay.Face || d is BitDisplay.Hud)
+                            for (docked in listOf(false, true)) {
+                                for (pen in listOf(false, true)) {
+                                    val d = BitDisplay.resolve(m, r, h, armed, curfew, docked, pen)
+                                    assertTrue(
+                                        "$m $r $h $armed $curfew $docked $pen",
+                                        d is BitDisplay.Face ||
+                                            d is BitDisplay.Hud ||
+                                            d is BitDisplay.Slit,
+                                    )
+                                }
+                            }
                         }
                     }
                 }

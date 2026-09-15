@@ -211,6 +211,7 @@ object BitStateMachine {
             // a readout as a reaction and tear it down on the next tick. The
             // HUD owns its own timeout.
             is BitDisplay.Hud -> BitFrame(face = display.text, reactionActive = false)
+            is BitDisplay.Slit -> BitFrame(face = display.glyph, reactionActive = false)
             is BitDisplay.Face -> frame(display.mood, display.reaction, reactionAgeMs, tickMs)
         }
 
