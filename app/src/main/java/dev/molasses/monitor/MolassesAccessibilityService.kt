@@ -10,6 +10,9 @@ import android.view.accessibility.AccessibilityEvent
 import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.core.diag.ServiceHealthPolicy
 import dev.molasses.core.latency.LatencyRegistry
+import dev.molasses.core.lock.LockEnforcement
+import dev.molasses.core.lock.LockReason
+import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.safety.PauseWindow
@@ -26,11 +29,13 @@ import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.datastore.pauseInstant
 import dev.molasses.data.datastore.toEngineSnapshot
+import dev.molasses.data.datastore.toLock
 import dev.molasses.data.db.UsageEventDao
 import dev.molasses.data.repo.DataStoreEngineStore
 import dev.molasses.data.repo.RoomFrictionLedger
 import dev.molasses.engine.FrictionEngine
 import dev.molasses.overlay.GateOverlayManager
+import dev.molasses.overlay.LockOverlayManager
 import dev.molasses.overlay.ShutterOverlayManager
 import dev.molasses.sensing.MovementDetector
 import java.io.FileDescriptor
@@ -73,13 +78,28 @@ class MolassesAccessibilityService : AccessibilityService() {
     private lateinit var engine: FrictionEngine
     private lateinit var shutter: ShutterOverlayManager
     private lateinit var gate: GateOverlayManager
+    private lateinit var lockOverlay: LockOverlayManager
     private var ready = false
+
+    /**
+     * The armed locks, refreshed by the settings observer.
+     *
+     * Volatile because it is written from a coroutine and read from the
+     * accessibility callback thread. The registry itself is immutable, so the
+     * worst case is a read that is one emission stale, which costs at most one
+     * more scroll before a newly armed lock bites.
+     */
+    @Volatile
+    private var locks: LockRegistry = LockRegistry()
 
     private var targets: Set<String> = emptySet()
     private var alternativeChallenge = false
 
     /** Package we currently believe is in the foreground, target or not. */
     private var foregroundPkg: String? = null
+
+    /** Package to display label, for the lock flash. See [labelFor]. */
+    private val labels = mutableMapOf<String, String>()
 
     private var watchdogJob: Job? = null
     private var checkpointJob: Job? = null
@@ -198,6 +218,22 @@ class MolassesAccessibilityService : AccessibilityService() {
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
 
+        lockOverlay = LockOverlayManager(
+            service = this,
+            windowManager = wm,
+            ledger = ledger,
+            scope = scope,
+            // GLOBAL_ACTION_HOME is the one privileged thing this service can
+            // do, and it is the only mechanism an app has to close another
+            // app it does not own. Wrapped so the manager holds no service
+            // reference and can be reasoned about without one.
+            goHome = {
+                runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
+                    .onFailure { Log.w(TAG, "GLOBAL_ACTION_HOME refused", it) }
+            },
+            onWindowsChanged = ::onOverlayWindowsChanged,
+        )
+
         scope.launch {
             // Reconcile BEFORE the engine exists, so no live event can be
             // processed against un-reconciled state.
@@ -296,6 +332,13 @@ class MolassesAccessibilityService : AccessibilityService() {
 
                 sensitivePrefixes =
                     SensitivePackages.resolve(state.sensitivePackagePrefixesList)
+
+                // Rebuilt on every emission rather than diffed. The list is a
+                // handful of entries and the registry is immutable, so a
+                // second source of truth would cost more than it saves for the
+                // one piece of state in this app that must not be possible to
+                // disagree about.
+                locks = LockRegistry.of(state.locksList.map { it.toLock() })
 
                 val wasPaused = PauseWindow.isActive(pauseStartedAt, nowStamped())
                 pauseStartedAt = state.pauseInstant()
@@ -454,6 +497,15 @@ class MolassesAccessibilityService : AccessibilityService() {
         // friction holiday and suppression over a bank would be a free ride.
         // Only the drawing is withheld.
         val decision = engine.onScroll(pkg, now())
+
+        // Reactive backstop for the lock. A lock armed while its app was
+        // already in the foreground has no enter event to fire on, and a
+        // refused home action would otherwise leave the user scrolling. This
+        // polls nothing: it is a map lookup on a path that already does
+        // arithmetic, and it only does work when the package is actually
+        // locked.
+        if (enforceLockIfNeeded(pkg)) return
+
         if (overlaysSuppressed()) return
 
         // Both, in that order. A scroll can now earn a stall and a checkpoint
@@ -512,11 +564,64 @@ class MolassesAccessibilityService : AccessibilityService() {
         foregroundPkg = pkg
         val id = sessions.open(pkg)
         // Accounting first and unconditionally. Suppression is about the
-        // glass, never about the ledger.
+        // glass, never about the ledger. That holds for a locked app too: the
+        // session did open, and a ledger that hid enforced attempts would
+        // make the most interesting rows the ones it does not have.
         engine.onForegroundEnter(pkg, now())
+
+        // A locked app never gets a shutter. The user is about to be sent
+        // home, and attaching a sink that is torn down in the same breath is
+        // churn at best and a leaked armed sink at worst. The watchdog is
+        // still armed, because if the home action is refused it is the only
+        // thing that will ever close this session.
+        if (enforceLockIfNeeded(pkg)) {
+            armWatchdog(pkg, id)
+            return
+        }
+
         shutter.setCurrentPackage(pkg)
         if (!overlaysSuppressed()) shutter.attach()
         armWatchdog(pkg, id)
+    }
+
+    /**
+     * Show the lock message and send the user home, if [pkg] is locked.
+     *
+     * @return true when the caller should stop. Nothing else of ours belongs
+     *   on screen behind a terminal message.
+     *
+     * Reactive only. There is no poller looking for locked apps, and there
+     * deliberately is not one: enforcement that can fire without the user
+     * having just done something is a service that closes apps on its own.
+     */
+    private fun enforceLockIfNeeded(pkg: String): Boolean {
+        val now = nowStamped()
+        val decision = LockEnforcement.decide(
+            remainingMs = locks.remainingMs(pkg, now),
+            sensitiveForeground = SensitivePackages.isSensitive(foregroundPkg, sensitivePrefixes),
+            paused = PauseWindow.isActive(pauseStartedAt, now),
+        )
+        if (decision !is LockEnforcement.Decision.Enforce) return false
+
+        val reason = locks.reasonFor(pkg, now) ?: LockReason.BLOCK
+        tearDownOverlays("locked")
+        lockOverlay.flash(pkg, labelFor(pkg), reason, decision.remainingMs)
+        return true
+    }
+
+    /**
+     * The user-visible name of a package, falling back to the package itself.
+     *
+     * Cached because this runs on the accessibility callback thread. It is
+     * only reached when a lock actually fires, so the lookup never touches the
+     * hot path, and the cache is bounded by the target list.
+     */
+    private fun labelFor(pkg: String): String = labels.getOrPut(pkg) {
+        runCatching {
+            packageManager.getApplicationLabel(
+                packageManager.getApplicationInfo(pkg, 0),
+            ).toString()
+        }.getOrDefault(pkg)
     }
 
     /**
@@ -554,7 +659,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         // in which a switch to a banking app puts an overlay over a payment
         // screen. Bounded in cost: the shutter caps its own arm at 8 s and the
         // gate is user-dismissable, so the fast poll is never the steady state.
-        val interval = if (shutter.isAttached || gate.isShowing) {
+        val interval = if (shutter.isAttached || gate.isShowing || lockOverlay.isShowing) {
             OVERLAY_WATCHDOG_INTERVAL_MS
         } else {
             WATCHDOG_INTERVAL_MS
@@ -623,7 +728,11 @@ class MolassesAccessibilityService : AccessibilityService() {
      * that lasts.
      */
     private fun onOverlayWindowsChanged() {
-        if (!shutter.isAttached && !gate.isShowing) ownWindowIds.clear()
+        // The lock flash is one of our windows too. Clearing the id set while
+        // it is up would make its own events look like a foreign package.
+        if (!shutter.isAttached && !gate.isShowing && !lockOverlay.isShowing) {
+            ownWindowIds.clear()
+        }
         repaceWatchdog()
     }
 
@@ -688,6 +797,10 @@ class MolassesAccessibilityService : AccessibilityService() {
         runCatching { if (::engine.isInitialized) engine.checkpoint(now()) }
         runCatching { if (::shutter.isInitialized) { shutter.release("teardown"); shutter.detach() } }
         runCatching { if (::gate.isInitialized) gate.dismiss() }
+        // The flash dismisses itself after its hold, so this only matters when
+        // the service dies mid-hold. Without it that window outlives the
+        // process that can remove it.
+        runCatching { if (::lockOverlay.isInitialized) lockOverlay.dismiss("teardown") }
         scope.cancel()
     }
 

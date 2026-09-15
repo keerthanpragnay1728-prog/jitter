@@ -3,6 +3,7 @@ package dev.molasses.overlay
 import android.content.Context
 import android.graphics.PixelFormat
 import android.util.Log
+import android.view.ViewTreeObserver
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.ComposeView
@@ -76,8 +77,14 @@ class OverlayHost(
     /**
      * Idempotent while showing (replaces the content). Refused after
      * [dismiss] -- see "Single use" above.
+     *
+     * @param onFirstDraw fired once, on the main thread, the first time this
+     *   window actually draws. The lock flash needs it: sending
+     *   `GLOBAL_ACTION_HOME` from the call that added the window means the
+     *   frame never reaches the display, so the user is bounced with no
+     *   explanation and it reads as a crash.
      */
-    fun show(content: @Composable () -> Unit) {
+    fun show(onFirstDraw: (() -> Unit)? = null, content: @Composable () -> Unit) {
         if (destroyed) {
             Log.w(TAG, "show() on a dismissed host; build a new OverlayHost instead")
             return
@@ -111,6 +118,36 @@ class OverlayHost(
         composeView = view
         isShowing = true
         registry.currentState = Lifecycle.State.RESUMED
+
+        if (onFirstDraw != null) attachFirstDraw(view, onFirstDraw)
+    }
+
+    /**
+     * Fire [callback] once, after this window's first real draw.
+     *
+     * `OnDrawListener` rather than a pre-draw listener, because pre-draw runs
+     * before the frame is rendered and the whole point is to know that
+     * something was actually painted.
+     *
+     * The listener is removed from a posted runnable rather than from inside
+     * `onDraw`, which throws: `ViewTreeObserver` explicitly refuses
+     * `removeOnDrawListener` during a draw pass.
+     */
+    private fun attachFirstDraw(view: ComposeView, callback: () -> Unit) {
+        val observer = view.viewTreeObserver
+        var fired = false
+        val listener = object : ViewTreeObserver.OnDrawListener {
+            override fun onDraw() {
+                if (fired) return
+                fired = true
+                val self = this
+                view.post {
+                    runCatching { view.viewTreeObserver.removeOnDrawListener(self) }
+                    callback()
+                }
+            }
+        }
+        observer.addOnDrawListener(listener)
     }
 
     /** Idempotent and exception-safe. Terminal: the host cannot be reshown. */
