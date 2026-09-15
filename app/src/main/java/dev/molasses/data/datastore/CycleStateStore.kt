@@ -9,6 +9,7 @@ import androidx.datastore.dataStoreFile
 import dev.molasses.AppState
 import dev.molasses.CycleResetPolicyProto
 import dev.molasses.CycleState
+import dev.molasses.core.command.CommandHistory
 import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
@@ -166,6 +167,24 @@ class CycleStateStore(context: Context) {
     suspend fun setTargets(packages: List<String>) {
         store.updateData {
             it.toBuilder().clearTargetPackages().addAllTargetPackages(packages).build()
+        }
+    }
+
+    /**
+     * Push one submitted line onto the command history.
+     *
+     * The cap and the dedupe happen inside `updateData` rather than in the
+     * caller, so two commands submitted in the same frame cannot both read a
+     * nineteen entry list and write a twenty first.
+     *
+     * @param confirmation true when this Enter was the second Enter on a long
+     *   lock. See [dev.molasses.core.command.CommandHistory].
+     */
+    suspend fun recordCommand(line: String, confirmation: Boolean) {
+        if (confirmation || line.isBlank()) return
+        store.updateData {
+            val next = CommandHistory.record(it.commandHistoryList, line, confirmation)
+            it.toBuilder().clearCommandHistory().addAllCommandHistory(next).build()
         }
     }
 

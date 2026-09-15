@@ -188,6 +188,17 @@
     <string name="launcher_search_placeholder">type command or app...</string>
     <string name="launcher_status_ready">DAEMON: ACTIVE | CYCLE: 6H</string>
     <string name="launcher_target_badge">[TRACKED]</string>
+    <!--
+      Discovery. The prompt is a blank line with a dollar in front of it, and
+      a blank line teaches nobody anything. These three are the only places a
+      command can be learned without reading the source: a rotating
+      suggestion, the manual, and what you have already typed.
+    -->
+    <string name="launcher_placeholder_try">try: %1$s</string>
+    <string name="launcher_manual_title">COMMANDS</string>
+    <string name="launcher_manual_hint">Type any of these. Dimmed rows parse but cannot run yet.</string>
+    <string name="launcher_history_title">RECENT</string>
+    <string name="launcher_history_hint">Tap to put a line back in the prompt. It does not run until you press Enter.</string>
     <!-- Launcher Telemetry & Quick Access -->
     <string name="launcher_filter_label">NOTIF FILTER</string>
     <string name="launcher_filter_active">MUTED</string>
@@ -269,6 +280,7 @@
          the usage shape, because "block <app> <duration>" alone does not tell
          someone that 30mins is the wrong spelling. -->
     <string name="cmd_ack_status">ACK: LEDGER</string>
+    <string name="cmd_ack_help">ACK: MANUAL</string>
     <string name="cmd_ack_wifi_panel">ACK: WIFI PANEL</string>
     <string name="cmd_ack_dnd_panel">ACK: DND SETTINGS</string>
     <string name="cmd_ack_alarm">ACK: ALARM %1$s</string>
@@ -321,6 +333,7 @@
     <string name="cmd_usage_allow" translatable="false">allow &lt;app&gt; &lt;duration&gt;</string>
     <string name="cmd_usage_bedtime" translatable="false">bedtime</string>
     <string name="cmd_usage_status" translatable="false">status</string>
+    <string name="cmd_usage_help" translatable="false">help</string>
     <string name="cmd_usage_log" translatable="false">log [app]</string>
     <string name="cmd_usage_alarm" translatable="false">alarm &lt;time&gt;</string>
     <string name="cmd_usage_timer" translatable="false">timer &lt;duration&gt;</string>
@@ -335,6 +348,7 @@
     <string name="cmd_desc_allow">Suspend checkpoints for one app. Friction keeps accruing.</string>
     <string name="cmd_desc_bedtime">Lock until the configured wake time.</string>
     <string name="cmd_desc_status">Show the ledger.</string>
+    <string name="cmd_desc_help">List every command. Also $ ?.</string>
     <string name="cmd_desc_log">Filter the system log, or clear the filter.</string>
     <string name="cmd_desc_alarm">Set an alarm in the clock app.</string>
     <string name="cmd_desc_timer">Start a timer in the clock app.</string>

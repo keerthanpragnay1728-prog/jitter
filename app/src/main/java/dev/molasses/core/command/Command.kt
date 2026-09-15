@@ -36,6 +36,15 @@ sealed interface Command {
     /** `$ status`. Switch to the ledger page. */
     data object Status : Command
 
+    /**
+     * `$ help` / `$ ?`. Show the manual.
+     *
+     * A command rather than a key the prompt intercepts, so it appears in the
+     * manual it opens. A discovery feature that cannot itself be discovered is
+     * the same problem one level up.
+     */
+    data object Help : Command
+
     /** `$ log [app]`. Filter the system log, or clear the filter. */
     data class Log(val appToken: String?) : Command
 

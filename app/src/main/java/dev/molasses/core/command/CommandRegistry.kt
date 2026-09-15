@@ -107,6 +107,7 @@ class CommandRegistry(keys: Keys) {
         val allowUsage: Int, val allowDesc: Int,
         val bedtimeUsage: Int, val bedtimeDesc: Int,
         val statusUsage: Int, val statusDesc: Int,
+        val helpUsage: Int, val helpDesc: Int,
         val logUsage: Int, val logDesc: Int,
         val alarmUsage: Int, val alarmDesc: Int,
         val timerUsage: Int, val timerDesc: Int,
@@ -132,8 +133,9 @@ class CommandRegistry(keys: Keys) {
         CommandSpec("log", keys.logUsage, keys.logDesc, Surface.SUBSYSTEM),
         CommandSpec("rem", keys.remUsage, keys.remDesc, Surface.SUBSYSTEM),
 
-        // STATE. Scrolls the pager. Nothing can stop it.
+        // STATE. Scroll the pager, open the manual. Nothing can stop either.
         CommandSpec("status", keys.statusUsage, keys.statusDesc, Surface.STATE),
+        CommandSpec("help", keys.helpUsage, keys.helpDesc, Surface.STATE),
 
         // INTENT. Each needs a different Intent to resolve.
         CommandSpec("alarm", keys.alarmUsage, keys.alarmDesc, Surface.INTENT),
@@ -174,6 +176,7 @@ class CommandRegistry(keys: Keys) {
             is Command.Allow -> "allow"
             Command.Bedtime -> "bedtime"
             Command.Status -> "status"
+            Command.Help -> "help"
             is Command.Log -> "log"
             is Command.Alarm -> "alarm"
             is Command.Timer -> "timer"

@@ -84,6 +84,16 @@ message CycleState {
   // thousand scrolls; forcing probability to 1.0 makes the capture practical.
   // Zero means "use the curve"; 1..100 forces that percentage.
   int32 debug_forced_probability_pct = 26;
+
+  // The last twenty command lines, newest first. Capped and deduped by
+  // CommandHistory before it is written, so the stored order is the display
+  // order and nothing here needs to sort or truncate.
+  //
+  // The second Enter on a long lock is never recorded. It carries text the
+  // app generated rather than text the user typed, and a fully formed
+  // "block instagram 30d" sitting in a list the user taps is one tap and one
+  // Enter from a month.
+  repeated string command_history = 27;
 }
 
 message AppState {

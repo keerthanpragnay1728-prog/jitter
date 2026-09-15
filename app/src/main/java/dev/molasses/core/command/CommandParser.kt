@@ -25,6 +25,7 @@ object CommandParser {
     val VERBS: List<String> = listOf(
         "block", "focus", "allow", "bedtime", "sleep", "status", "log",
         "alarm", "timer", "rem", "reboot", "poweroff", "wifi", "dnd",
+        "help", "?",
     )
 
     /**
@@ -46,6 +47,8 @@ object CommandParser {
         "poweroff" to "poweroff",
         "wifi" to "wifi [on|off]",
         "dnd" to "dnd [on|off]",
+        "help" to "help",
+        "?" to "?",
     )
 
     fun parse(line: String): ParseResult {
@@ -67,6 +70,7 @@ object CommandParser {
 
             "bedtime", "sleep" -> noArgs(verb, args, Command.Bedtime)
             "status" -> noArgs(verb, args, Command.Status)
+            "help", "?" -> noArgs(verb, args, Command.Help)
             "reboot" -> noArgs(verb, args, Command.Reboot)
             "poweroff" -> noArgs(verb, args, Command.PowerOff)
 
@@ -172,6 +176,51 @@ object CommandParser {
         if (text.isEmpty() || text.contains(' ')) return null
         val matches = VERBS.filter { it.startsWith(text) }
         return matches.singleOrNull()
+    }
+
+    /**
+     * The text the prompt should hold after a keystroke, applying space
+     * completion.
+     *
+     * A soft keyboard has no Tab, and Space is the key a terminal user
+     * reaches for anyway. So typing a space after a unique verb prefix
+     * completes it: `bl` then Space becomes `block `.
+     *
+     * Only the verb, and only when the space is the very next character after
+     * the prefix. Anything else is returned untouched, so a space inside an
+     * app name or a reminder never rewrites what the user typed.
+     *
+     * @param before the text as it was.
+     * @param after the text the field is proposing.
+     */
+    fun completeOnSpace(before: String, after: String): String {
+        if (after != "$before ") return after
+        val completion = completionFor(before) ?: return after
+        val typed = before.removePrefix("$").trimStart()
+        if (completion == typed) return after
+        return before.dropLast(typed.length) + completion + " "
+    }
+
+    /**
+     * The dim remainder to draw after what the user has typed, or null.
+     *
+     * The verb only. Ghosting an argument would put a concrete value on
+     * screen one keystroke from being accepted, and the one rule this grammar
+     * has is that no completion can ever offer a value.
+     *
+     * Returns null for anything but a plain lower-case prefix typed at the
+     * start of the line. The ghost is drawn by overlaying the typed text
+     * exactly, so it is only correct when the completion extends the typed
+     * characters rather than changing them: `BL` completes to `block`, and
+     * drawing "ock" after "BL" would read as `BLock`.
+     */
+    fun ghostFor(partial: String): String? {
+        val typed = partial.removePrefix("$").trimStart()
+        if (typed.isEmpty() || typed != typed.lowercase()) return null
+        if (typed.any { it.isWhitespace() }) return null
+        val completion = completionFor(typed) ?: return null
+        val remainder = completion.removePrefix(typed)
+        return remainder.ifEmpty { null }
     }
 
     private fun ok(c: Command): ParseResult = ParseResult.Ok(c)
