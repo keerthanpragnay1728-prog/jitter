@@ -109,6 +109,7 @@ import dev.molasses.core.bit.BitGlyph
 import dev.molasses.core.bit.BitHud
 import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.bit.BitStatus
+import dev.molasses.core.bit.BitTap
 import dev.molasses.core.bit.HudStep
 import dev.molasses.core.command.AppTokenResolver
 import dev.molasses.core.command.CommandParser
@@ -708,7 +709,13 @@ fun TerminalHomeView(
     // Held on the same tick that already drives the blink and the placeholder,
     // so the readout costs no timer of its own.
     var hudStartedTick by remember { mutableLongStateOf(0L) }
-    var lastBitTouchMs by remember { mutableLongStateOf(0L) }
+
+    // Seeded at composition rather than at zero. At zero Bit was docked
+    // before the first frame ever drew, which is how the face, the blink and
+    // the mood all ended up behind a gesture nobody knew to perform. Landing
+    // on the launcher now shows the face, and the retreat is something the
+    // user watches happen.
+    var lastBitTouchMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
 
     // Section 05: retreat while typing or idle. Docked Bit answers a question
     // on tap; undocked Bit keeps the startle reaction. One state, two
@@ -718,8 +725,15 @@ fun TerminalHomeView(
         msSinceInteraction = SystemClock.elapsedRealtime() - lastBitTouchMs,
     )
 
-    if (hudStep != HudStep.NONE && BitHud.isExpired(bitTickMs - hudStartedTick)) {
-        hudStep = HudStep.NONE
+    // Derived, not written. This used to be a state assignment in the middle
+    // of composition, which Compose treats as a backwards write: it happened
+    // to converge because the condition is false afterwards, but it is
+    // unsupported and it had never been run. Deriving costs nothing and needs
+    // no timer either, because bitTickMs is already ticking for the blink.
+    val hudVisibleStep = if (BitHud.isExpired(bitTickMs - hudStartedTick)) {
+        HudStep.NONE
+    } else {
+        hudStep
     }
 
     // Drives the reaction clock, and only while a reaction is running. An
@@ -818,13 +832,13 @@ fun TerminalHomeView(
             // The deepest app, never the sum. The curve is per package.
             mood = BitStateMachine.moodFor(cycle.deepestAppMs),
             reaction = reaction,
-            hud = if (hudStep == HudStep.NONE) {
+            hud = if (hudVisibleStep == HudStep.NONE) {
                 null
             } else {
                 BitDisplay.Hud(
-                    step = hudStep,
+                    step = hudVisibleStep,
                     text = BitHud.textFor(
-                        step = hudStep,
+                        step = hudVisibleStep,
                         cycleRemainingMs = CycleWindow.remainingMs(cycle.anchor, nowStamped()),
                         cumulativeMs = cycle.cumulativeMs,
                         curfewEndMinuteOfDay = curfewEndMinuteOfDay,
@@ -841,24 +855,23 @@ fun TerminalHomeView(
             frame = BitStateMachine.frame(display, reactionAgeMs, bitTickMs),
             onInteract = { lastBitTouchMs = SystemClock.elapsedRealtime() },
             onTap = { taps ->
-                lastBitTouchMs = SystemClock.elapsedRealtime()
-                if (docked) {
-                    // Docked Bit is a readout, not a pet. Stepping the HUD
-                    // instead of startling resolves the collision rather than
-                    // adding a second gesture beside it.
-                    hudStep = BitHud.next(hudStep)
-                    hudStartedTick = bitTickMs
-                    reaction = BitStateMachine.Reaction.None
-                } else {
-                    hudStep = HudStep.NONE
-                    react(
-                        when {
-                            taps >= 5 -> BitStateMachine.Reaction.TurnedAway
-                            taps >= 2 -> BitStateMachine.Reaction.Irritated
-                            else -> BitStateMachine.Reaction.Poked
-                        },
-                    )
+                // Branch first, then decide whether it counted. Setting the
+                // idle clock before the branch un-docked Bit on the tap that
+                // opened the readout, so the second tap took the other branch
+                // and two thirds of the readout was unreachable.
+                val action = BitTap.onTap(docked, hudVisibleStep, taps)
+                when (action) {
+                    is BitTap.Action.StepHud -> {
+                        hudStep = action.step
+                        hudStartedTick = bitTickMs
+                        reaction = BitStateMachine.Reaction.None
+                    }
+                    is BitTap.Action.React -> {
+                        hudStep = HudStep.NONE
+                        react(action.reaction)
+                    }
                 }
+                if (action.undocks) lastBitTouchMs = SystemClock.elapsedRealtime()
             },
         )
 
