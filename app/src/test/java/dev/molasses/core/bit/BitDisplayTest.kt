@@ -257,6 +257,51 @@ class BitDisplayTest {
         )
     }
 
+    // ------------------------------------------ the two uses of flat eyes
+
+    @Test
+    fun `an unavailable reason never shows its face without its line`() {
+        // FLAT is now two things: "that command cannot run" and "the sink is
+        // armed". They are only distinguishable by the line, so the line has
+        // to last exactly as long as the face does. It does, because both
+        // come out of the same phased() call with the same total, and this is
+        // the test that keeps it that way.
+        val reaction = Reaction.Unavailable("locks are not enforced yet")
+        for (age in 0 until BitStateMachine.UNAVAILABLE_TOTAL_MS step 7L) {
+            val f = BitStateMachine.frame(Mood.IDLE, reaction, age, tickMs = 0)
+            assertEquals("age=$age", BitStateMachine.FLAT, f.face)
+            assertEquals("age=$age", "locks are not enforced yet", f.line)
+        }
+    }
+
+    @Test
+    fun `when the reason expires the flat face goes with it`() {
+        val reaction = Reaction.Unavailable("nope")
+        val f = BitStateMachine.frame(Mood.IDLE, reaction, BitStateMachine.UNAVAILABLE_TOTAL_MS, 0)
+        assertEquals(null, f.line)
+        assertTrue("a flat face with no line must mean armed", f.face != BitStateMachine.FLAT)
+    }
+
+    @Test
+    fun `flat eyes with no line can only mean the sink is armed`() {
+        // The residual case, stated as a test rather than left implicit: the
+        // only way to reach FLAT without a line beside it is the armed state.
+        val armed = BitStateMachine.frame(BitDisplay.Face(Mood.ARMED, Reaction.None), 0, 0)
+        assertEquals(BitStateMachine.FLAT, armed.face)
+        assertEquals(null, armed.line)
+    }
+
+    @Test
+    fun `an armed sink does not shorten the reason showing over it`() {
+        // resolve puts a reaction over ARMED, so the line still runs its full
+        // course while the sink is armed underneath.
+        val reaction = Reaction.Unavailable("nope")
+        val d = resolve(reaction = reaction, shutterArmed = true)
+        val f = BitStateMachine.frame(d, BitStateMachine.UNAVAILABLE_TOTAL_MS - 1, 0)
+        assertEquals(BitStateMachine.FLAT, f.face)
+        assertEquals("nope", f.line)
+    }
+
     // ------------------------------------------------------------ totality
 
     @Test
