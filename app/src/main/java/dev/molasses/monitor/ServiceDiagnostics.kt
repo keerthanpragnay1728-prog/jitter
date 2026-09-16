@@ -44,6 +44,21 @@ object ServiceDiagnostics {
     /** Set when the reconciler failed or timed out. Shown verbatim in debug. */
     @Volatile var startupNote: String? = null
 
+    /**
+     * Set while a call-detection path is degraded. Shown verbatim in debug.
+     *
+     * The call checks are the reason a stall can never survive an incoming
+     * call, and both of them can go quiet without anything changing shape: the
+     * telephony callback fails to register because `READ_PHONE_STATE` is not
+     * requested, and `AudioManager` can be absent or throw. Either way the
+     * answer handed back is still an ordinary boolean, so from outside the app
+     * a degraded panic path is indistinguishable from a healthy one.
+     *
+     * Logcat is not a substitute. The only place this matters is a device in
+     * someone's hand, which is the one place logcat is not being read.
+     */
+    @Volatile var panicPathNote: String? = null
+
     /** Whatever `packageNames` was last handed to `setServiceInfo`. */
     @Volatile var appliedPackageNames: List<String> = emptyList()
 
@@ -111,6 +126,7 @@ object ServiceDiagnostics {
         readyAtMs = 0L
         lastHeartbeatMs = 0L
         startupNote = null
+        panicPathNote = null
         tally.reset()
     }
 

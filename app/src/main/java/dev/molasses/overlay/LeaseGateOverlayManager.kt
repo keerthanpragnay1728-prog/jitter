@@ -169,7 +169,16 @@ class LeaseGateOverlayManager(
                 // with a listener because the permission-free check is a
                 // cached binder read and a listener needs READ_PHONE_STATE,
                 // which this app deliberately does not request.
-                if (calls.inProgress()) {
+                //
+                // `whenUnknown = false`, the opposite of the shutter's answer,
+                // and for the opposite reason. Treating "cannot tell" as a
+                // call here would take the gate down on its first tick, every
+                // time, on any device where the detector is broken: every
+                // target app would open free and nothing would say so. The
+                // ordinary case is still covered, because a dialer coming to
+                // the foreground takes the gate down through the watchdog.
+                // This check exists for the VoIP call that never does.
+                if (calls.inProgress(whenUnknown = false)) {
                     dismiss("call in progress")
                     return@launch
                 }
