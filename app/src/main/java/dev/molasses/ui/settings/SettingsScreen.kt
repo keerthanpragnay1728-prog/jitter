@@ -74,6 +74,7 @@ fun SettingsScreen(
     val policy by vm.resetPolicy.collectAsStateWithLifecycle()
     val altChallenge by vm.alternativeChallenge.collectAsStateWithLifecycle()
     val sensitivePrefixes by vm.sensitivePrefixes.collectAsStateWithLifecycle()
+    val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
     val fontScale by vm.fontScale.collectAsStateWithLifecycle()
     val diag by vm.engineDiagnostics.collectAsStateWithLifecycle()
 
@@ -370,6 +371,13 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.secondary,
             )
         }
+        item {
+            PauseControl(
+                remainingMs = pauseRemainingMs,
+                onPause = { vm.setPaused(true) },
+                onResume = { vm.setPaused(false) },
+            )
+        }
         item { DisableControl(onDisable = { vm.requestDisable() }) }
         item {
             SensitivePrefixEditor(
@@ -511,12 +519,82 @@ private fun PolicyRow(
 }
 
 /**
+ * "Pause friction (15m)" and its countdown.
+ *
+ * ## Why this is not the same button as the one below it
+ * The two solve different problems and the labels say so. This one suspends
+ * what Jitter *does*: stalls, gates and every overlay. That is enough for any
+ * app that objects to being drawn over, which is most of them, and it costs
+ * nothing to use because it ends by itself.
+ *
+ * It cannot help with Paytm, which blocks on an enabled accessibility service
+ * being present at all. Nothing short of disabling the service changes that
+ * reading, so the button below exists and is irreversible.
+ *
+ * Restoring this one after that one shipped was the point: a user at a till
+ * wants the fifteen minutes, and should not pay a trip into Android Settings
+ * and back for a problem that expires on its own.
+ *
+ * ## Why the countdown is digits
+ * The situation it exists for is standing at a till with a card reader
+ * waiting, and a number answers "can I pay yet" in one glance. A progress bar
+ * does not.
+ *
+ * Recomposes from the store rather than from a timer, so the digits step when
+ * the state changes rather than once a second. A per-second recomposition of
+ * a settings screen is not worth the wakeups, and the user is looking at the
+ * payment app, not at this.
+ *
+ * ## Why the remainder is measured on elapsedRealtime
+ * A pause is relief, and relief measured on a wall clock is held open forever
+ * by winding the clock back. `PauseWindow` drops the wall clock entirely and
+ * expires across a reboot. See CLAUDE.md, "Which clock a deadline is measured
+ * on".
+ */
+@Composable
+private fun PauseControl(
+    remainingMs: Long,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+) {
+    val active = remainingMs > 0
+    Column(Modifier.fillMaxWidth()) {
+        if (active) {
+            val totalSeconds = remainingMs / 1000
+            Text(
+                stringResource(
+                    R.string.settings_pause_active,
+                    (totalSeconds / 60).toString(),
+                    (totalSeconds % 60).toString().padStart(2, '0'),
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onResume, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_pause_resume))
+            }
+        } else {
+            Button(onClick = onPause, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_pause_start))
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.settings_pause_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+    }
+}
+
+/**
  * The one way out of Jitter.
  *
- * ## Why this replaced the fifteen minute pause
- * The pause suppressed overlays. That is enough for GPay and PhonePe, which
+ * ## Why the fifteen minute pause above is not enough
+ * The pause suppresses overlays. That is enough for GPay and PhonePe, which
  * refuse to run under a window drawn over them, and both complete payments
- * normally with Jitter enabled.
+ * normally with Jitter enabled. It is the button to reach for first, because
+ * it ends by itself.
  *
  * Paytm is a different check and the pause cannot reach it. It calls
  * `getEnabledAccessibilityServiceList()` and blocks on the *presence* of any
