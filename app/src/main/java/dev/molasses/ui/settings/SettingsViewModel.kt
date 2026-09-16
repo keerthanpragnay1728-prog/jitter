@@ -304,6 +304,17 @@ class SettingsViewModel @Inject constructor(
      * touch accumulated time or tier, so this is an escape hatch and not a
      * friction holiday.
      */
+    /**
+     * Turn the accessibility service off, for good, until the user turns it
+     * back on from Android Settings.
+     *
+     * The Activity cannot call `disableSelf()`; only the service can. So this
+     * is a request the service observes, exactly like the stall preview.
+     */
+    fun requestDisable() {
+        viewModelScope.launch { store.requestDisable() }
+    }
+
     fun setPaused(active: Boolean) {
         viewModelScope.launch { repo.setPaused(active) }
     }
