@@ -118,8 +118,46 @@ class ShutterOverlayManager(
      * Primary call check, and permission-free. Checked before every arm and
      * again on each disarm tick. See [CallDetector] for why this one and not
      * telephony, and why a false positive is the safe direction.
+     *
+     * `whenUnknown = true`: a detector that cannot answer must not unblock an
+     * armed touch sink. The cost of getting this wrong in that direction is
+     * that no stall is ever armed on such a device, which is friction lost.
+     * The cost in the other direction is a touch sink absorbing the taps on an
+     * incoming call, which is a phone that cannot answer.
      */
-    private fun callInProgress(): Boolean = calls.inProgress()
+    private fun callInProgress(): Boolean {
+        val verdict = calls.inProgress(whenUnknown = true)
+        publishPanicNote()
+        return verdict
+    }
+
+    private var publishedPanicNote: String? = null
+
+    /**
+     * Put a degraded call path where the debug screen can see it.
+     *
+     * Published from here rather than from where each failure is recorded,
+     * because `AudioManager` can start answering and then stop: the read is
+     * only attempted when something is about to arm, so the first sign of it
+     * is a call check that just came back unanswerable.
+     *
+     * Compared before writing so the hot path stores a reference only when the
+     * text actually changes, which in the healthy case is never.
+     *
+     * The launch gate holds its own [CallDetector] and is not published
+     * separately. Both resolve `AudioManager` from the same application
+     * context, so they fail together and one note describes both.
+     */
+    private fun publishPanicNote() {
+        val note = listOfNotNull(
+            telephonyPanicUnavailable?.let { "call-state listener unavailable: $it" },
+            calls.unavailable?.let { "audio mode unavailable: $it" },
+        ).joinToString("; ").ifEmpty { null }
+        if (note != publishedPanicNote) {
+            publishedPanicNote = note
+            ServiceDiagnostics.panicPathNote = note
+        }
+    }
 
     // ------------------------------------------------------------- lifecycle
 
@@ -200,7 +238,7 @@ class ShutterOverlayManager(
 
         // Checked before every arm, not only on a call-state transition.
         if (callInProgress()) {
-            Log.d(TAG, "refusing to arm: audio mode ${audio?.mode}")
+            Log.d(TAG, "refusing to arm: ${calls.describe()}")
             return
         }
 
@@ -261,7 +299,7 @@ class ShutterOverlayManager(
                 // Re-checked on the existing tick rather than from a new timer.
                 // A call that starts mid-stall has to release it.
                 if (callInProgress()) {
-                    disarm("audio mode ${audio?.mode}")
+                    disarm(calls.describe())
                     return@launch
                 }
                 val remaining = armedUntilElapsed - SystemClock.elapsedRealtime()
@@ -371,6 +409,7 @@ class ShutterOverlayManager(
             // its own would stop the crash and quietly disable a panic
             // condition.
             telephonyPanicUnavailable = it::class.java.simpleName + ": " + it.message
+            publishPanicNote()
             Log.w(TAG, "call-state panic path unavailable", it)
         }
     }

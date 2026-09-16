@@ -85,6 +85,10 @@ fun DebugScreen(
             item { Warning(stringResource(R.string.debug_warn_stuck)) }
         }
         diag.startupNote?.let { note -> item { Warning(note) } }
+        // A degraded call path is a warning and not a field, because it is
+        // never true on a healthy device and it is the difference between a
+        // stall that releases on an incoming call and one that does not.
+        diag.panicPathNote?.let { note -> item { Warning(note) } }
         if (diag.health == ServiceHealth.NEVER_CONNECTED) {
             item { Warning(stringResource(R.string.debug_never_connected)) }
         }
