@@ -121,6 +121,23 @@ message CycleState {
   // reversed programmatically, by platform guarantee, and that guarantee is
   // the entire value of the control.
   int64 disable_request_nonce = 32;
+
+  // Granted leases, expired entries pruned on every write.
+  //
+  // Persisted for the opposite reason to locks: a lock that does not survive
+  // a process death is not a lock, and a lease that does not survive one is a
+  // gate the user can clear by killing the launcher. Expiry is recomputed
+  // from the clock on every read, so restoring this list cannot resurrect a
+  // lease that has run out.
+  repeated LeaseEntry leases = 33;
+
+  // GatePolicy.GateMode ordinal. Stored as an int rather than a proto enum
+  // for the same reason as font_scale_ordinal: an unknown value resolves to
+  // the default in one Kotlin function rather than needing a proto enum whose
+  // zero value duplicates the same choice. COUNTDOWN is ordinal 0, which is
+  // also the default, so an install that has never touched the setting reads
+  // correctly with no migration.
+  int32 gate_mode_ordinal = 34;
 }
 
 // One line of Bit's speech, in the form that survives a process death.
@@ -182,16 +199,59 @@ enum LockReasonProto {
   CHECKPOINT = 3;
 }
 
+// One granted lease. The three stamp fields are a StampedInstant, split the
+// same way LockEntry splits them.
+//
+// started_wall_ms is stored for the round trip and is deliberately not read
+// when deciding whether a lease is live: LeaseManager measures on
+// elapsedRealtime alone, because a lease is relief and a wall clock's failure
+// mode for relief is granting it forever. See LeaseManager.
+//
+// LeasePersistenceTest asserts a field here for every property of Lease and
+// StampedInstant, so growing the model without growing the proto fails rather
+// than silently dropping a field on the next write.
+message LeaseEntry {
+  string pkg = 1;
+  int64 started_wall_ms = 2;
+  int64 started_elapsed_ms = 3;
+  int32 started_boot_id = 4;
+  int64 duration_ms = 5;
+  // Accumulated foreground total at the moment of the grant. The one number
+  // that crosses from the lease system to the friction engine.
+  int64 taken_at_accumulated_ms = 6;
+}
+
 message AppState {
   int64 accumulated_ms = 1;
   int32 tier_index = 2;                // monotonic, never decremented
-  int32 gates_cleared = 3;
-  int64 tier_unlocked_until_ms = 4;
 
-  // Ignoring a checkpoint adds friction rather than suspending it. This is
-  // the ratchet that does it: it accrues while a checkpoint is overdue and
-  // never decreases. Kept separate from accumulated_ms on purpose, so the
-  // ledger still reports true time.
+  // Leases granted on this package in the current cycle. Drives the gate
+  // escalation and resets with everything else on rollover.
+  //
+  // Field 3 was gates_cleared, the count of checkpoint gates passed. The
+  // number means very nearly the same thing (tolls paid this cycle on this
+  // app) and the field is reused rather than reserved for that reason: an
+  // install upgrading across this change carries its count forward, which is
+  // the honest reading, and the alternative is every existing user getting
+  // their escalation reset to zero on update.
+  int32 leases_taken = 3;
+
+  // Accumulated-time mark where the last lease taken runs out. Zero when none
+  // has been taken this cycle, and that is not the same as a lease that
+  // expired at zero: with none taken nothing is overdue and the ratchet below
+  // does not run at all.
+  //
+  // Field 4 was tier_unlocked_until_ms, the accumulated ceiling the user had
+  // paid for under the checkpoint gate. Same shape, same units, same role in
+  // the ratchet, so the field is reused. An install upgrading across this
+  // change reads its old ceiling as a lease mark, which is wrong by at most
+  // one tier width and is corrected by the next cycle rollover.
+  int64 lease_until_accumulated_ms = 4;
+
+  // Sitting in an app past the lease you took adds friction rather than
+  // suspending it. This is the ratchet that does it: it accrues while the
+  // lease is overdue and never decreases. Kept separate from accumulated_ms
+  // on purpose, so the ledger still reports true time.
   int64 penalty_ms = 5;
 }
 

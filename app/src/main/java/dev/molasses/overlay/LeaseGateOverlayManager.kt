@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.WindowManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.molasses.core.lease.GateReadout
 import dev.molasses.core.lock.LockEnforcement
@@ -84,6 +85,13 @@ class LeaseGateOverlayManager(
     private var holdJob: Job? = null
 
     /**
+     * The numbers, as Compose state, so the two the system owns can land
+     * after the window is already up. See the service's `showLeaseGate` for
+     * why they are not waited for.
+     */
+    private var stats by mutableStateOf(GateStats(null, null, null))
+
+    /**
      * One resolution per gate. Without it the back key racing a tap on a
      * lease button would both take the lease and send the user home.
      */
@@ -105,6 +113,7 @@ class LeaseGateOverlayManager(
         currentPkg = pkg
         resolved = false
 
+        this.stats = stats
         val deadline = monotonicMs() + countdownMs
         // A Compose state read by the composition and written by the ticker.
         // mutableLongStateOf rather than mutableStateOf<Long> so the tick does
@@ -120,9 +129,9 @@ class LeaseGateOverlayManager(
                     appLabel = label,
                     expired = expired,
                     fields = GateReadout.fields(
-                        todayMs = stats.todayMs,
-                        cycleMs = stats.cycleMs,
-                        opensToday = stats.opensToday,
+                        todayMs = this@LeaseGateOverlayManager.stats.todayMs,
+                        cycleMs = this@LeaseGateOverlayManager.stats.cycleMs,
+                        opensToday = this@LeaseGateOverlayManager.stats.opensToday,
                         remainingMs = remaining,
                     ),
                     panelUp = GateReadout.panelUp(remaining),
@@ -172,11 +181,28 @@ class LeaseGateOverlayManager(
         }
     }
 
+    /**
+     * Fill in the numbers that were not ready when the window went up.
+     *
+     * Keyed on the package so a query that lands after the gate has moved on
+     * to a different app cannot write that app's numbers under this one's
+     * name. A stale answer renders as `--`, which is what it is.
+     *
+     * Main thread only: it writes Compose state read by a live composition.
+     */
+    fun updateStats(pkg: String, stats: GateStats) {
+        if (currentPkg != pkg) return
+        this.stats = stats
+    }
+
     private fun takeLease(durationMs: Long) {
         val pkg = currentPkg ?: return
         if (resolved) return
         resolved = true
-        ledger.log(pkg, EventType.LEASE_TAKEN, "duration=${durationMs}ms")
+        // LEASE_TAKEN belongs to FrictionEngine, which writes it from
+        // onLeaseGranted along with the accounting it changes. Logging it
+        // here too would put two rows in the ledger for one decision, the
+        // same reason GateOverlayManager does not write GATE_PASSED.
         dismissInternal()
         onLeaseTaken(pkg, durationMs)
     }

@@ -22,16 +22,15 @@ import dev.molasses.core.model.AppSnapshot
 object BitStatus {
 
     /**
-     * True when any tracked app has passed a checkpoint it did not clear.
+     * True when any tracked app is being used past the lease taken for it.
      *
-     * Reads the checkpoint schedule rather than `penaltyMs` itself. The
-     * ratchet only ever grows, so a non-zero `penaltyMs` says a checkpoint
-     * went unpaid at some point in this cycle, not that one is unpaid now.
-     * The glyph is about the second: it is an alert the user can act on by
-     * clearing the gate.
+     * Reads the lease mark rather than `penaltyMs` itself. The ratchet only
+     * ever grows, so a non-zero `penaltyMs` says a lease was overrun at some
+     * point in this cycle, not that one is being overrun now. The glyph is
+     * about the second: it is an alert the user can act on, by leaving.
      */
     fun penaltyAccruing(apps: Collection<AppSnapshot>): Boolean =
-        apps.any { it.accumulatedMs > it.tierUnlockedUntilMs }
+        apps.any { it.pastLease }
 
     /**
      * The deepest single app, which is what the mood reads.

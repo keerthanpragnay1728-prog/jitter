@@ -79,8 +79,9 @@ class FrictionEngineTest {
         fun enter(pkg: String, ms: Long) { at(ms); engine.onForegroundEnter(pkg, ms) }
         fun exit(pkg: String, ms: Long) { at(ms); engine.onForegroundExit(pkg, ms) }
         fun scroll(pkg: String, ms: Long): FrictionDecision { at(ms); return engine.onScroll(pkg, ms) }
-        fun clear(pkg: String, ms: Long) { at(ms); engine.onGateCleared(pkg, ms) }
-        fun abandon(pkg: String, ms: Long) { at(ms); engine.onGateAbandoned(pkg, ms) }
+        fun lease(pkg: String, ms: Long, durationMs: Long = 5 * 60_000L) {
+            at(ms); engine.onLeaseGranted(pkg, durationMs, ms)
+        }
         fun snap(pkg: String): AppSnapshot = engine.snapshot().perApp.getValue(pkg)
 
         companion object { const val WALL_BASE = 1_700_000_000_000L }
@@ -90,80 +91,81 @@ class FrictionEngineTest {
     fun `under five minutes nothing happens`() {
         val r = Rig()
         r.enter(ig, 0)
-        // Tier 0 and no checkpoint due. Worth noting this now passes for a
-        // different reason than before: not because a pending gate suppresses
-        // the stall, but because nothing is owed.
+        // Tier 0 and under the curve's onset. Nothing here is about a gate
+        // any more: the gate fired at the launch, before the first of these
+        // scrolls, and the engine was never told about it.
         assertEquals(FrictionDecision.NONE, r.scroll(ig, 1 * min))
         assertEquals(FrictionDecision.NONE, r.scroll(ig, 4 * min + 59_000))
     }
 
     @Test
-    fun `at five minutes a checkpoint is owed and the stall runs anyway`() {
+    fun `a scroll earns a stall and never a gate`() {
+        // The engine stopped deciding when to interrupt. It decides what a
+        // scroll costs; whether the user may be here at all is the lease
+        // system's question and is asked at the launch.
         val r = Rig()
         r.enter(ig, 0)
+        r.lease(ig, 0, 5 * min)
 
-        // Both, from the first scroll. The old behaviour returned Gate and
-        // suppressed the stall until it was cleared, so walking away from the
-        // gate switched friction off entirely.
-        // The checkpoint is owed at five minutes. The stall is not yet due:
-        // the curve's onset is six minutes, so this minute is the one window
-        // where a checkpoint arrives before any friction does.
-        val first = r.scroll(ig, 5 * min)
-        assertEquals(1, first.gate)
-        assertEquals("before the curve's onset", 0L, first.stallMs)
-
-        // Past the onset and still unpaid: both, which is the whole point.
-        val second = r.scroll(ig, 7 * min)
-        assertEquals(1, second.gate)
-        assertTrue("stall must not stop while a checkpoint is owed", second.stalls)
-
-        r.clear(ig, 7 * min)
-
-        val after = r.scroll(ig, 7 * min + 1_000)
-        assertNull("checkpoint should be paid", after.gate)
-        assertTrue("stall continues after clearing", after.stalls)
+        assertEquals("before the curve's onset", 0L, r.scroll(ig, 5 * min).stallMs)
+        assertTrue("past the onset", r.scroll(ig, 7 * min).stalls)
     }
 
     @Test
-    fun `ignoring a checkpoint adds friction rather than removing it`() {
-        // The invariant this flip exists to create, stated directly.
-        val ignored = Rig()
-        ignored.enter(ig, 0)
-        ignored.scroll(ig, 5 * min)
-        ignored.scroll(ig, 15 * min)
+    fun `overstaying a lease adds friction rather than removing it`() {
+        // The invariant the ratchet exists to create, stated directly. It
+        // used to be about ignoring a checkpoint; the mark it measures
+        // against is now the lease that was taken, and nothing else changed.
+        val overstayed = Rig()
+        overstayed.enter(ig, 0)
+        overstayed.lease(ig, 0, 5 * min)
+        overstayed.scroll(ig, 15 * min)
 
-        // Paying means paying every checkpoint, not just the first. The
-        // original version of this test cleared only at five minutes and then
-        // ignored the ten and fifteen minute ones, which accrued exactly the
-        // same penalty and made the test assert nothing.
+        // Staying inside means taking another lease each time one runs out,
+        // not just the first. A version of this that leased only once and
+        // then sat for ten minutes accrues exactly the same penalty as the
+        // overstaying rig and makes the test assert nothing.
         val paid = Rig()
         paid.enter(ig, 0)
+        paid.lease(ig, 0, 5 * min)
         paid.scroll(ig, 5 * min)
-        paid.clear(ig, 5 * min)
+        paid.lease(ig, 5 * min, 5 * min)
         paid.scroll(ig, 10 * min)
-        paid.clear(ig, 10 * min)
+        paid.lease(ig, 10 * min, 5 * min)
         paid.scroll(ig, 15 * min)
 
         assertTrue(
-            "ignoring must cost more than paying: ignored=" +
-                "${ignored.snap(ig).penaltyMs} paid=${paid.snap(ig).penaltyMs}",
-            ignored.snap(ig).penaltyMs > paid.snap(ig).penaltyMs,
+            "overstaying must cost more than leasing: overstayed=" +
+                "${overstayed.snap(ig).penaltyMs} paid=${paid.snap(ig).penaltyMs}",
+            overstayed.snap(ig).penaltyMs > paid.snap(ig).penaltyMs,
         )
-        assertEquals("paying every toll accrues nothing", 0L, paid.snap(ig).penaltyMs)
+        assertEquals("leasing every span accrues nothing", 0L, paid.snap(ig).penaltyMs)
     }
 
     @Test
-    fun `the penalty is a ratchet and clearing never refunds it`() {
+    fun `no lease taken means nothing is overdue`() {
+        // The guard that keeps the ratchet off users it was never meant to
+        // charge. Anchoring to a mark of zero with no lease behind it would
+        // make every app on a device with the gate suppressed overdue from
+        // its first millisecond.
         val r = Rig()
         r.enter(ig, 0)
-        r.scroll(ig, 5 * min)
+        r.scroll(ig, 20 * min)
+        assertEquals(0L, r.snap(ig).penaltyMs)
+    }
+
+    @Test
+    fun `the penalty is a ratchet and a new lease never refunds it`() {
+        val r = Rig()
+        r.enter(ig, 0)
+        r.lease(ig, 0, 5 * min)
         r.scroll(ig, 12 * min)
         val earned = r.snap(ig).penaltyMs
         assertTrue("penalty should have accrued, got $earned", earned > 0)
 
-        r.clear(ig, 12 * min)
+        r.lease(ig, 12 * min, 15 * min)
         r.scroll(ig, 13 * min)
-        assertEquals("clearing must not refund the penalty", earned, r.snap(ig).penaltyMs)
+        assertEquals("a new lease must not refund the penalty", earned, r.snap(ig).penaltyMs)
     }
 
     @Test
@@ -172,7 +174,7 @@ class FrictionEngineTest {
         // separate number and is shown as one.
         val r = Rig()
         r.enter(ig, 0)
-        r.scroll(ig, 5 * min)
+        r.lease(ig, 0, 5 * min)
         r.scroll(ig, 15 * min)
         val snap = r.snap(ig)
         assertTrue("penalty should have accrued", snap.penaltyMs > 0)
@@ -183,37 +185,35 @@ class FrictionEngineTest {
     }
 
     @Test
-    fun `checkpoints arrive every five minutes and stalls never fall`() {
-        // Renamed from "full ladder walk": there is no ladder of stall values
-        // any more. What the walk actually pins now is the structure, which
-        // is the part that must not drift: a checkpoint at every five minute
-        // boundary on true time, and a stall that never decreases.
+    fun `tiers climb with true time and stalls never fall`() {
+        // What the walk pins is the structure, which is the part that must
+        // not drift: a tier per five minute boundary on true time, and a
+        // stall that never decreases, including across a lease.
         val r = Rig()
         r.enter(ig, 0)
 
         var previousStall = 0L
-        fun checkpoint(atMs: Long, tier: Int) {
-            val owed = r.scroll(ig, atMs)
-            assertEquals("checkpoint at tier $tier", tier, owed.gate)
+        fun step(atMs: Long, tier: Int) {
+            val d = r.scroll(ig, atMs)
+            assertEquals("tier at ${atMs / min}m", tier, r.snap(ig).tierIndex)
             assertTrue(
-                "stall fell at tier $tier: $previousStall to ${owed.stallMs}",
-                owed.stallMs >= previousStall,
+                "stall fell at tier $tier: $previousStall to ${d.stallMs}",
+                d.stallMs >= previousStall,
             )
-            previousStall = owed.stallMs
-            r.clear(ig, atMs)
+            previousStall = d.stallMs
+            r.lease(ig, atMs, 5 * min)
             val after = r.scroll(ig, atMs + 1_000)
-            assertNull("checkpoint paid at tier $tier", after.gate)
-            assertTrue("stall must survive the clear", after.stallMs >= previousStall)
+            assertTrue("stall must survive the lease", after.stallMs >= previousStall)
         }
 
-        checkpoint(5 * min, 1)
-        checkpoint(10 * min, 2)
-        checkpoint(15 * min, 3)
-        checkpoint(20 * min, 4)
-        // Terminal: re-arms every five minutes, indefinitely. No silent cap.
-        checkpoint(25 * min, 5)
-        checkpoint(30 * min, 6)
-        checkpoint(120 * min, 24)
+        step(5 * min, 1)
+        step(10 * min, 2)
+        step(15 * min, 3)
+        step(20 * min, 4)
+        // Terminal: the index keeps climbing, indefinitely. No silent cap.
+        step(25 * min, 5)
+        step(30 * min, 6)
+        step(120 * min, 24)
 
         assertEquals("terminal stall", 5_000L, previousStall)
     }
@@ -224,27 +224,26 @@ class FrictionEngineTest {
         // it is not mistaken for a consequence of the precedence flip.
         val r = Rig()
         r.enter(ig, 0)
-        // The five minute checkpoint has to be paid first, or the penalty it
-        // accrues pulls the onset forward and this measures the wrong thing.
-        // Thirty seconds of ignoring it is enough to reach six minutes of
-        // effective time at five and a half minutes of real time, which is
-        // the penalty working exactly as intended.
-        r.scroll(ig, 5 * min)
-        r.clear(ig, 5 * min)
+        // A lease covering the whole span, so no penalty accrues and this
+        // measures the curve rather than the ratchet.
+        r.lease(ig, 0, 15 * min)
 
         assertEquals(0L, r.scroll(ig, 5 * min + 30_000).stallMs)
         assertTrue(r.scroll(ig, 6 * min + 1_000).stalls)
     }
 
     @Test
-    fun `ignoring the first checkpoint pulls the onset forward`() {
-        // The other side of the same coin, asserted rather than left implicit.
-        val ignored = Rig()
-        ignored.enter(ig, 0)
-        ignored.scroll(ig, 5 * min)
+    fun `overstaying a lease pulls the onset forward`() {
+        // The other side of the same coin, asserted rather than left
+        // implicit. Five minutes leased and thirty seconds overstayed is six
+        // minutes of effective time at five and a half of real time, which is
+        // the ratchet working exactly as intended.
+        val overstayed = Rig()
+        overstayed.enter(ig, 0)
+        overstayed.lease(ig, 0, 5 * min)
         assertTrue(
             "thirty seconds overdue should reach the onset early",
-            ignored.scroll(ig, 5 * min + 30_000).stalls,
+            overstayed.scroll(ig, 5 * min + 30_000).stalls,
         )
     }
 
@@ -264,123 +263,116 @@ class FrictionEngineTest {
     }
 
     @Test
-    fun `a probability miss withholds the stall and never the checkpoint`() {
-        // A Bernoulli miss must not become an excuse to skip the toll.
+    fun `a probability miss withholds the stall and nothing else`() {
+        // A Bernoulli miss is not a free minute. The curve has been read and
+        // the ratchet has run either way; only the sink is withheld.
         val r = Rig(roll = { 1f })
         r.enter(ig, 0)
-        val owed = r.scroll(ig, 10 * min)
-        assertEquals("checkpoint is not subject to chance", 2, owed.gate)
-        assertEquals("the roll missed, so no stall", 0L, owed.stallMs)
+        r.lease(ig, 0, 5 * min)
+        val d = r.scroll(ig, 10 * min)
+        assertEquals("the roll missed, so no stall", 0L, d.stallMs)
+        assertEquals("tier is not subject to chance", 2, r.snap(ig).tierIndex)
+        assertTrue("the ratchet is not subject to chance", r.snap(ig).penaltyMs > 0)
     }
 
     // ------------------------------------------------------- the invariant
 
     @Test
-    fun `clearing a gate leaves accumulated time untouched`() {
+    fun `taking a lease leaves accumulated time untouched`() {
         val r = Rig()
         r.enter(ig, 0)
         r.scroll(ig, 12 * min)
         val before = r.snap(ig).accumulatedMs
         assertTrue("time must have accumulated at all, got $before", before >= 12 * min)
 
-        r.clear(ig, 12 * min)
+        r.lease(ig, 12 * min, 15 * min)
 
-        assertEquals("gate clearing must not refund time", before, r.snap(ig).accumulatedMs)
+        assertEquals("a lease must not refund time", before, r.snap(ig).accumulatedMs)
     }
 
     @Test
-    fun `clearing a gate never lowers the stall duration`() {
+    fun `taking a lease never lowers the stall duration`() {
+        // The sentence that makes a lease safe to sell: it buys time, never
+        // friction. A user who takes fifteen minutes scrolls through exactly
+        // the stall they would have had.
         val r = Rig()
         r.enter(ig, 0)
+        r.lease(ig, 0, 15 * min)
         r.scroll(ig, 15 * min)
-        r.clear(ig, 15 * min)
         val before = r.scroll(ig, 15 * min + 1_000).stallMs
         assertTrue("a stall should be commanded at 15 min, got $before", before > 0)
 
-        // A duplicated or late clear must not walk it back. Relational rather
+        // A duplicated or late grant must not walk it back. Relational rather
         // than against a hardcoded 5000, so retuning cannot quietly turn this
         // into a test of the constant instead of the invariant.
-        r.clear(ig, 15 * min + 2_000)
-        r.clear(ig, 15 * min + 2_500)
+        r.lease(ig, 15 * min + 2_000, 15 * min)
+        r.lease(ig, 15 * min + 2_500, 15 * min)
         assertTrue(
-            "clearing lowered the stall",
+            "a lease lowered the stall",
             r.scroll(ig, 15 * min + 3_000).stallMs >= before,
         )
     }
 
     @Test
-    fun `clearing a gate never rewinds tierIndex`() {
+    fun `taking a lease never rewinds tierIndex`() {
         val r = Rig()
         r.enter(ig, 0)
         r.scroll(ig, 20 * min)
         assertEquals(4, r.snap(ig).tierIndex)
 
-        r.clear(ig, 20 * min)
-        r.clear(ig, 20 * min)
-        r.abandon(ig, 20 * min)
+        r.lease(ig, 20 * min, 15 * min)
+        r.lease(ig, 20 * min, 5 * min)
 
         assertEquals(4, r.snap(ig).tierIndex)
     }
 
     @Test
-    fun `clearing a gate writes only tierUnlockedUntil and gatesCleared`() {
+    fun `taking a lease writes only the lease mark and the count`() {
         val r = Rig()
         r.enter(ig, 0)
         r.scroll(ig, 10 * min)
         val before = r.snap(ig)
 
-        r.clear(ig, 10 * min)
+        r.lease(ig, 10 * min, 5 * min)
         val after = r.snap(ig)
 
-        // The two fields a clear is allowed to move.
-        assertNotEquals(before.tierUnlockedUntilMs, after.tierUnlockedUntilMs)
-        assertEquals(before.gatesCleared + 1, after.gatesCleared)
+        // The two fields a grant is allowed to move.
+        assertNotEquals(before.leaseUntilAccumulatedMs, after.leaseUntilAccumulatedMs)
+        assertEquals(before.leasesTaken + 1, after.leasesTaken)
         // Everything else frozen. Compared field-by-field rather than with
         // copy(), so a field added to AppSnapshot later fails this test
         // instead of being silently carried through.
         assertEquals(before.pkg, after.pkg)
         assertEquals(before.accumulatedMs, after.accumulatedMs)
         assertEquals(before.tierIndex, after.tierIndex)
+        assertEquals(before.penaltyMs, after.penaltyMs)
     }
 
     @Test
-    fun `unlock advances exactly one tier width, not to the current time`() {
+    fun `the lease mark is now plus the duration, in accumulated time`() {
         val r = Rig()
         r.enter(ig, 0)
-        // Enter tier 2 late: 13 minutes in, not 10.
+        // Thirteen minutes in, with no lease so far.
         r.scroll(ig, 13 * min)
-        r.clear(ig, 13 * min)
-        // Unlocked to the tier-3 boundary (15 min), not 13 + 5 = 18.
-        assertEquals(15 * min, r.snap(ig).tierUnlockedUntilMs)
-        val mid = r.scroll(ig, 14 * min)
-        assertNull("no checkpoint owed before the boundary", mid.gate)
-        // The stall is higher than true time alone earns, and deliberately:
-        // reaching 13 minutes means the five and ten minute checkpoints were
-        // both ignored, which accrued eight minutes of penalty. The tier
-        // index and the unlock boundary above are still on true time; only
-        // the stall reads the penalty.
-        assertTrue("penalty should have accrued", r.snap(ig).penaltyMs > 0)
-        assertTrue(
-            "stall ${mid.stallMs} should exceed the true-time tier 2 stall",
-            mid.stallMs > 3_000L,
-        )
-        assertEquals("checkpoint owed at the boundary", 3, r.scroll(ig, 15 * min).gate)
+        r.lease(ig, 13 * min, 5 * min)
+        // Eighteen minutes of accumulated time, not the next tier boundary.
+        // The old field advanced to a fixed grid; a lease is a span the user
+        // picked and it starts where they are.
+        assertEquals(18 * min, r.snap(ig).leaseUntilAccumulatedMs)
+        assertEquals("nothing overdue inside it", 0L, r.snap(ig).penaltyMs)
+        r.scroll(ig, 17 * min)
+        assertEquals("still nothing overdue", 0L, r.snap(ig).penaltyMs)
+        r.scroll(ig, 19 * min)
+        assertTrue("a minute past it is overdue", r.snap(ig).penaltyMs > 0)
     }
 
     @Test
-    fun `abandoning a gate changes nothing and re-gates on the next scroll`() {
+    fun `a shorter lease cannot pull the mark backwards`() {
         val r = Rig()
         r.enter(ig, 0)
-        assertEquals(1, r.scroll(ig, 5 * min).gate)
-        val before = r.snap(ig)
-
-        r.abandon(ig, 5 * min + 1_000)
-
-        val after = r.snap(ig)
-        assertEquals(before.gatesCleared, after.gatesCleared)
-        assertEquals(before.tierUnlockedUntilMs, after.tierUnlockedUntilMs)
-        assertEquals(before.tierIndex, after.tierIndex)
-        assertEquals(1, r.scroll(ig, 5 * min + 2_000).gate)
+        r.lease(ig, 0, 15 * min)
+        r.lease(ig, 0, 5 * min)
+        assertEquals(15 * min, r.snap(ig).leaseUntilAccumulatedMs)
     }
 
     // -------------------------------------------------------- accounting
@@ -397,7 +389,8 @@ class FrictionEngineTest {
         assertEquals(4 * min, r.snap(ig).accumulatedMs)
 
         // Two more minutes in-app tips it over five.
-        assertEquals(1, r.scroll(ig, 66 * min).gate)
+        r.scroll(ig, 66 * min)
+        assertTrue(r.snap(ig).accumulatedMs >= 6 * min)
     }
 
     @Test
@@ -406,14 +399,16 @@ class FrictionEngineTest {
         r.enter(ig, 0)
         // TYPE_WINDOW_STATE_CHANGED fires repeatedly inside one app.
         repeat(20) { r.enter(ig, (it * 10_000).toLong()) }
-        assertEquals(1, r.scroll(ig, 5 * min).gate)
+        r.scroll(ig, 5 * min)
+        assertEquals(5 * min, r.snap(ig).accumulatedMs)
     }
 
     @Test
     fun `a scroll with no preceding window state change still accumulates`() {
         val r = Rig()
         assertEquals(FrictionDecision.NONE, r.scroll(ig, 0))
-        assertEquals(1, r.scroll(ig, 5 * min).gate)
+        r.scroll(ig, 5 * min)
+        assertEquals(5 * min, r.snap(ig).accumulatedMs)
     }
 
     @Test
@@ -425,7 +420,7 @@ class FrictionEngineTest {
         assertEquals(0L, r.snap(yt).accumulatedMs)
 
         assertEquals(FrictionDecision.NONE, r.scroll(yt, 6 * min))
-        assertEquals(1, r.scroll(yt, 8 * min).gate)
+        assertTrue(r.scroll(yt, 12 * min).stalls)
         // Instagram is untouched at 3 minutes.
         assertEquals(3 * min, r.snap(ig).accumulatedMs)
     }
@@ -525,24 +520,25 @@ class FrictionEngineTest {
     fun `state survives a restart through the snapshot`() {
         val r = Rig()
         r.enter(ig, 0)
+        // A five minute lease taken at the start and then overstayed by
+        // seven, so there is a penalty to survive the restart at all.
+        r.lease(ig, 0, 5 * min)
         r.scroll(ig, 12 * min)
-        r.clear(ig, 12 * min)
         r.exit(ig, 12 * min)
         val persisted = r.engine.snapshot()
 
         val r2 = Rig(persisted)
         r2.enter(ig, 0)
-        // Picks up mid-tier-2 with the gate already paid for. The stall is
-        // above the true-time tier 2 value because the penalty carried
-        // through the snapshot: the five and ten minute checkpoints were both
-        // passed without clearing before the one at twelve minutes was.
+        // Picks up mid-tier-2 with a lease already taken. The stall is above
+        // the true-time tier 2 value because the penalty carried through the
+        // snapshot.
         assertTrue(
             "penalty must survive the restart",
             r2.snap(ig).penaltyMs > 0,
         )
         assertTrue(r2.scroll(ig, 1_000).stallMs >= 3_000L)
         assertEquals(2, r2.snap(ig).tierIndex)
-        assertEquals(1, r2.snap(ig).gatesCleared)
+        assertEquals(1, r2.snap(ig).leasesTaken)
     }
 
     @Test
@@ -560,24 +556,38 @@ class FrictionEngineTest {
     // ---------------------------------------------------------------- ledger
 
     @Test
-    fun `ledger records the gate lifecycle`() = runTest {
+    fun `ledger records the session and the lease`() = runTest {
         val r = Rig()
         r.enter(ig, 0)
-        r.scroll(ig, 5 * min)
-        r.abandon(ig, 5 * min + 1_000)
-        r.scroll(ig, 5 * min + 2_000)
-        r.clear(ig, 5 * min + 3_000)
-        r.exit(ig, 6 * min)
+        // Past the curve's onset, or the scroll earns nothing and writes no
+        // row. A SCROLL row is written when a stall is actually commanded,
+        // which is the only moment it describes anything.
+        r.scroll(ig, 8 * min)
+        r.lease(ig, 8 * min + 3_000, 5 * min)
+        r.exit(ig, 9 * min)
 
         val types = r.ledger.typesFor(ig)
         assertTrue(types.contains(EventType.RESUMED))
         assertTrue(types.contains(EventType.SCROLL))
-        assertTrue(types.contains(EventType.GATE_SHOWN))
-        assertTrue(types.contains(EventType.GATE_ABANDONED))
-        assertTrue(types.contains(EventType.GATE_PASSED))
+        assertTrue(types.contains(EventType.LEASE_TAKEN))
         assertTrue(types.contains(EventType.PAUSED))
-        // GATE_SHOWN fires on the transition only, not once per scroll.
-        assertEquals(1, r.ledger.count(EventType.GATE_SHOWN))
+        // One row per lease, not one per scroll after it.
+        assertEquals(1, r.ledger.count(EventType.LEASE_TAKEN))
+    }
+
+    @Test
+    fun `the gate rows are the overlay's and never the engine's`() = runTest {
+        // LEASE_GATE_SHOWN and LEASE_DECLINED are written by the overlay,
+        // which is the only thing that knows a window went up. The engine is
+        // never told a gate was shown, so it must not claim one was.
+        val r = Rig()
+        r.enter(ig, 0)
+        r.scroll(ig, 20 * min)
+        r.lease(ig, 20 * min, 5 * min)
+        val types = r.ledger.typesFor(ig)
+        assertTrue(EventType.LEASE_GATE_SHOWN !in types)
+        assertTrue(EventType.LEASE_DECLINED !in types)
+        assertTrue(EventType.GATE_SHOWN !in types)
     }
 
     @Test
@@ -593,7 +603,7 @@ class FrictionEngineTest {
         val r = Rig()
         r.enter(ig, 0)
         r.scroll(ig, 5 * min)
-        r.clear(ig, 5 * min)
+        r.lease(ig, 5 * min, 5 * min)
         // The writer coroutine only runs when the TestScope is advanced; the
         // point is that none of the calls above suspended or blocked.
         r.scope.testScheduler.advanceUntilIdle()

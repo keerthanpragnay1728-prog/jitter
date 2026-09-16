@@ -343,11 +343,12 @@ fun DebugScreen(
                         R.string.debug_field_effective,
                         formatDuration(row.accumulatedMs + row.penaltyMs),
                     )
-                    MonoRow(R.string.debug_field_gates_cleared, row.gatesCleared.toString())
+                    MonoRow(R.string.debug_field_leases_taken, row.leasesTaken.toString())
                     MonoRow(
-                        R.string.debug_field_unlocked_until,
+                        R.string.debug_field_lease_until,
                         stringResource(
-                            R.string.debug_value_seconds, row.tierUnlockedUntilMs / 1000,
+                            R.string.debug_value_seconds,
+                            row.leaseUntilAccumulatedMs / 1000,
                         ),
                     )
                 }

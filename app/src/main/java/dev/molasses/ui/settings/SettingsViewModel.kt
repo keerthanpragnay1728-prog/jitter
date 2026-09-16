@@ -66,8 +66,8 @@ data class LadderRow(
     val pkg: String,
     val accumulatedMs: Long,
     val tierIndex: Int,
-    val gatesCleared: Int,
-    val tierUnlockedUntilMs: Long,
+    val leasesTaken: Int,
+    val leaseUntilAccumulatedMs: Long,
     /** Never added to [accumulatedMs]. True time and effective time are two numbers. */
     val penaltyMs: Long,
 )
@@ -210,8 +210,8 @@ class SettingsViewModel @Inject constructor(
                         pkg = it.pkg,
                         accumulatedMs = it.accumulatedMs,
                         tierIndex = it.tierIndex,
-                        gatesCleared = it.gatesCleared,
-                        tierUnlockedUntilMs = it.tierUnlockedUntilMs,
+                        leasesTaken = it.leasesTaken,
+                        leaseUntilAccumulatedMs = it.leaseUntilAccumulatedMs,
                         penaltyMs = it.penaltyMs,
                     )
                 }

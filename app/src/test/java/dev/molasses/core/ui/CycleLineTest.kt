@@ -21,9 +21,8 @@ class CycleLineTest {
         pkg = pkg,
         accumulatedMs = accumulatedMs,
         tierIndex = tierIndex,
-        gatesCleared = 0,
-        tierUnlockedUntilMs = 40 * minute,
-        gatePending = false,
+        leasesTaken = 0,
+        leaseUntilAccumulatedMs = 40 * minute,
         penaltyMs = penaltyMs,
     )
 

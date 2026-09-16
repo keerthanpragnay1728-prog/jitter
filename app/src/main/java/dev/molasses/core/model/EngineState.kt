@@ -5,12 +5,16 @@ data class AppSnapshot(
     val pkg: String,
     val accumulatedMs: Long,
     val tierIndex: Int,
-    val gatesCleared: Int,
-    val tierUnlockedUntilMs: Long,
-    /** True when a gate is owed and has been neither cleared nor superseded. */
-    val gatePending: Boolean,
+    /** Leases granted on this package in the current cycle. */
+    val leasesTaken: Int,
     /**
-     * Extra time added to the friction lookup for ignoring checkpoints.
+     * Accumulated-time mark where the last lease taken runs out, or 0 when
+     * none has been taken this cycle. Zero is not a lease that expired at
+     * zero: with none taken, nothing is overdue. See [pastLease].
+     */
+    val leaseUntilAccumulatedMs: Long,
+    /**
+     * Extra time added to the friction lookup for sitting past a lease.
      *
      * Deliberately a separate field and never folded into [accumulatedMs].
      * The ledger has to report true time, and the debug screen shows the two
@@ -18,7 +22,18 @@ data class AppSnapshot(
      * what they actually spent and what it is costing them.
      */
     val penaltyMs: Long = 0,
-)
+) {
+    /**
+     * Sitting in this app past the lease that was taken for it.
+     *
+     * The [leasesTaken] half is load bearing. Without it every app with any
+     * accumulated time and no lease reads as overdue, which is every app on
+     * a device where the gate is suppressed, and the ratchet would run
+     * against users it was never meant to charge.
+     */
+    val pastLease: Boolean
+        get() = leasesTaken > 0 && accumulatedMs > leaseUntilAccumulatedMs
+}
 
 /** Immutable view of the engine, published on [dev.molasses.engine.FrictionEngine.state]. */
 data class EngineState(

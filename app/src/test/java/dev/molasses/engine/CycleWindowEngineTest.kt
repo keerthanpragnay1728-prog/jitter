@@ -105,7 +105,7 @@ class CycleWindowEngineTest {
         r.tick(window + 15_000)
 
         assertEquals(0, r.snap(ig).tierIndex)
-        assertEquals(0, r.snap(ig).gatesCleared)
+        assertEquals(0, r.snap(ig).leasesTaken)
         // Only the 15 s since the rollover, not the six hours before it.
         assertTrue(
             "accumulated should have reset, was ${r.snap(ig).accumulatedMs}",

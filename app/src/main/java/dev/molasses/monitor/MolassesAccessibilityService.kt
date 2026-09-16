@@ -12,6 +12,9 @@ import dev.molasses.core.console.ConsoleIds
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.diag.ServiceHealthPolicy
 import dev.molasses.core.latency.LatencyRegistry
+import dev.molasses.core.lease.GatePolicy
+import dev.molasses.core.lease.LaunchGate
+import dev.molasses.core.lease.LeaseManager
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
@@ -25,20 +28,25 @@ import dev.molasses.core.session.ForegroundSessionTracker
 import dev.molasses.core.session.TargetScope
 import dev.molasses.core.session.WindowEvent
 import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.stats.DayUsage
 import dev.molasses.core.time.MonotonicClock
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.time.WallClock
 import dev.molasses.core.ui.CycleLine
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.DEFAULT_TARGETS
+import dev.molasses.data.datastore.gateModeFromOrdinal
 import dev.molasses.data.datastore.pauseInstant
 import dev.molasses.data.datastore.toEngineSnapshot
+import dev.molasses.data.datastore.toLease
 import dev.molasses.data.datastore.toLock
 import dev.molasses.data.db.UsageEventDao
 import dev.molasses.data.repo.DataStoreEngineStore
 import dev.molasses.data.repo.RoomFrictionLedger
 import dev.molasses.engine.FrictionEngine
 import dev.molasses.overlay.GateOverlayManager
+import dev.molasses.overlay.GateStats
+import dev.molasses.overlay.LeaseGateOverlayManager
 import dev.molasses.overlay.LockOverlayManager
 import dev.molasses.overlay.ShutterOverlayManager
 import dev.molasses.sensing.MovementDetector
@@ -83,6 +91,7 @@ class MolassesAccessibilityService : AccessibilityService() {
     private lateinit var shutter: ShutterOverlayManager
     private lateinit var gate: GateOverlayManager
     private lateinit var lockOverlay: LockOverlayManager
+    private lateinit var leaseGate: LeaseGateOverlayManager
     private var ready = false
 
     /**
@@ -96,7 +105,27 @@ class MolassesAccessibilityService : AccessibilityService() {
     @Volatile
     private var locks: LockRegistry = LockRegistry()
 
+    /**
+     * The granted leases, refreshed by the settings observer.
+     *
+     * Volatile for the same reason as [locks], and rebuilt wholesale on every
+     * emission rather than diffed. One stale read costs at most one extra
+     * gate, which is the direction that fails safely.
+     */
+    @Volatile
+    private var leases: LeaseManager = LeaseManager()
+
+    /** The configured gate mode. Only in force at the terminal tier. */
+    @Volatile
+    private var gateMode: GatePolicy.GateMode = GatePolicy.GateMode.COUNTDOWN
+
     private var targets: Set<String> = emptySet()
+    /**
+     * The old typing escape hatch flag, kept only so the stored value still
+     * has a reader. The gate mode supersedes it: see
+     * [GatePolicy.GateMode.TYPING_ONLY], which is how a user who cannot walk
+     * on demand reaches the same screen now.
+     */
     private var alternativeChallenge = false
 
     /** Package we currently believe is in the foreground, target or not. */
@@ -214,12 +243,17 @@ class MolassesAccessibilityService : AccessibilityService() {
             detector = detector,
             ledger = ledger,
             scope = scope,
-            onCleared = { pkg ->
-                if (ready) engine.onGateCleared(pkg, now())
-            },
-            onAbandoned = { pkg ->
-                if (ready) engine.onGateAbandoned(pkg, now())
-            },
+            // Walking is the toll, not the purchase. Clearing it puts the
+            // decision panel up with the countdown already spent, so the
+            // duration is still chosen in the one place a duration is ever
+            // chosen. Granting a fixed lease here instead would have made
+            // the walking mode the only path with a second rule for how long
+            // a lease lasts.
+            onCleared = { pkg -> if (ready) showLeaseGate(pkg, countdownMs = 0, expired = false) },
+            // Nothing. No lease was taken, so the next scroll in this package
+            // gates again, which is the whole reason the launch check also
+            // runs on scroll.
+            onAbandoned = { },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
 
@@ -236,6 +270,21 @@ class MolassesAccessibilityService : AccessibilityService() {
                 runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
                     .onFailure { Log.w(TAG, "GLOBAL_ACTION_HOME refused", it) }
             },
+            onWindowsChanged = ::onOverlayWindowsChanged,
+        )
+
+        leaseGate = LeaseGateOverlayManager(
+            service = this,
+            windowManager = wm,
+            ledger = ledger,
+            scope = scope,
+            monotonicMs = ::now,
+            goHome = {
+                runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
+                    .onFailure { Log.w(TAG, "GLOBAL_ACTION_HOME refused", it) }
+            },
+            onLeaseTaken = ::grantLease,
+            onDeclined = { _, _ -> },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
 
@@ -303,6 +352,11 @@ class MolassesAccessibilityService : AccessibilityService() {
             // content-provider round trip on the accessibility thread.
             bootIdProvider = { bootId },
             scope = scope,
+            // A rollover resets every counter the engine holds. The leases
+            // live in the store, so they have to be told: a lease outliving
+            // the cycle it was escalating against would hold the first gate
+            // of the new cycle off until it expired.
+            onCycleRolled = { scope.launch { cycleStore.clearLeases() } },
         )
     }
 
@@ -345,6 +399,8 @@ class MolassesAccessibilityService : AccessibilityService() {
                 // one piece of state in this app that must not be possible to
                 // disagree about.
                 locks = LockRegistry.of(state.locksList.map { it.toLock() })
+                leases = LeaseManager.of(state.leasesList.map { it.toLease() })
+                gateMode = gateModeFromOrdinal(state.gateModeOrdinal)
 
                 val wasPaused = PauseWindow.isActive(pauseStartedAt, nowStamped())
                 pauseStartedAt = state.pauseInstant()
@@ -531,10 +587,15 @@ class MolassesAccessibilityService : AccessibilityService() {
 
         if (overlaysSuppressed()) return
 
-        // Both, in that order. A scroll can now earn a stall and a checkpoint
-        // at once, and the stall is armed first because it belongs to the
-        // gesture that just happened: arming it after showing the gate would
-        // put it behind a full-screen window where it absorbs nothing.
+        // The launch check runs here too, and this is not belt and braces.
+        // The gate can be left unresolved without leaving the app: the
+        // walking gate times out, a call takes it down, an addView fails.
+        // Without this the user would be inside the app with no lease and no
+        // gate until they left and came back, which is a bypass anyone would
+        // find within a week. It is a map lookup on a path that already does
+        // arithmetic, and it returns immediately once a lease is live.
+        if (maybeLaunchGate(pkg)) return
+
         if (decision.stalls) {
             shutter.arm(
                 ms = pinnedStallMs ?: decision.stallMs,
@@ -543,9 +604,150 @@ class MolassesAccessibilityService : AccessibilityService() {
                 terminal = decision.terminal,
             )
         }
-        decision.gate?.let { tier -> gate.show(pkg, tier, alternativeChallenge) }
-        ServiceDiagnostics.gateShowing = gate.isShowing
+        ServiceDiagnostics.gateShowing = gate.isShowing || leaseGate.isShowing
     }
+
+    /**
+     * Show the launch gate if this package is owed one.
+     *
+     * @return true when a gate went up, or when one is already up, and the
+     *   caller should stop. Nothing of ours belongs on the glass behind it.
+     *
+     * Reactive, like the lock. Nothing polls for ungated apps and nothing
+     * fires without the user having just opened or just scrolled something.
+     */
+    private fun maybeLaunchGate(pkg: String): Boolean {
+        if (leaseGate.isShowing || gate.isShowing || lockOverlay.isShowing) return true
+
+        val now = nowStamped()
+        val decision = LaunchGate.decide(
+            isTarget = pkg in targets,
+            leaseRemainingMs = leases.remainingMs(pkg, now),
+            sensitiveForeground = SensitivePackages.isSensitive(foregroundPkg, sensitivePrefixes),
+            locked = locks.isLocked(pkg, now),
+            paused = PauseWindow.isActive(pauseStartedAt, now),
+            leasesTakenThisCycle = engine.leasesTakenThisCycle(pkg),
+            configuredMode = gateMode,
+            terminal = engine.isTerminal(pkg, now()),
+        )
+        if (decision !is LaunchGate.Decision.Intercept) return false
+
+        when (decision.mode) {
+            GatePolicy.GateMode.COUNTDOWN ->
+                showLeaseGate(pkg, decision.countdownMs, decision.expired)
+            // The movement gate is the toll in these two, and the panel
+            // follows it. Both paths end in showLeaseGate via onCleared.
+            GatePolicy.GateMode.WALK ->
+                gate.show(pkg, engine.state.value.perApp[pkg]?.tierIndex ?: 0, false)
+            GatePolicy.GateMode.TYPING_ONLY ->
+                gate.show(pkg, engine.state.value.perApp[pkg]?.tierIndex ?: 0, true)
+        }
+        ServiceDiagnostics.gateShowing = true
+        return true
+    }
+
+    /**
+     * Put the gate up now, and fill in the two numbers the system owns when
+     * it answers.
+     *
+     * THIS CYCLE comes from the engine and is on screen in the first frame.
+     * TODAY and OPENS TODAY come from `UsageStatsManager`, which is an IPC and
+     * a replay of a day of events, and this method is reached from the
+     * accessibility callback thread where that is not allowed. So the gate
+     * opens reading `--` for those two and they land a moment later.
+     *
+     * The alternative was to query first and show second, which would leave
+     * the target app on screen and scrollable for however long the query
+     * took. A gate that is late is a gate that does not work; a number that
+     * is late is a number that says so while it waits.
+     */
+    private fun showLeaseGate(pkg: String, countdownMs: Long, expired: Boolean) {
+        // Nothing of ours behind a full-screen window. An armed sink under a
+        // gate absorbs nothing and would still be armed when the gate came
+        // down.
+        shutter.release("lease gate")
+        shutter.detach()
+        leaseGate.show(
+            pkg = pkg,
+            label = labelFor(pkg),
+            countdownMs = countdownMs,
+            expired = expired,
+            stats = GateStats(
+                todayMs = null,
+                cycleMs = engine.state.value.perApp[pkg]?.accumulatedMs,
+                opensToday = null,
+            ),
+        )
+        scope.launch(Dispatchers.IO) {
+            val day = dayUsageFor(pkg)
+            withContext(Dispatchers.Main.immediate) {
+                leaseGate.updateStats(
+                    pkg,
+                    GateStats(
+                        todayMs = day?.foregroundMs,
+                        cycleMs = engine.state.value.perApp[pkg]?.accumulatedMs,
+                        opensToday = day?.opens,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * A lease was chosen. Two writes that must both happen and are
+     * deliberately not one.
+     *
+     * The store holds the lease, which is wall-clock permission to be here.
+     * The engine is told a lease was taken, which moves the ratchet's mark in
+     * accumulated time. Neither reads the other, and this method is the only
+     * place in the app where both are named in the same breath.
+     */
+    private fun grantLease(pkg: String, durationMs: Long) {
+        if (!ready) return
+        val accumulated = engine.state.value.perApp[pkg]?.accumulatedMs ?: 0L
+        engine.onLeaseGranted(pkg, durationMs, now())
+        // Re-attach: the user is in the app with permission now, and the
+        // shutter came down when the gate went up.
+        if (!overlaysSuppressed()) {
+            shutter.setCurrentPackage(pkg)
+            shutter.attach()
+        }
+        scope.launch {
+            cycleStore.grantLease(pkg, nowStamped(), durationMs, accumulated)
+        }
+    }
+
+    /**
+     * Today's foreground total and visit count for one package.
+     *
+     * Runs on IO: this is an IPC followed by a replay of a day of events. See
+     * [DayUsage] for why the raw stream and not the aggregate buckets.
+     */
+    private fun dayUsageFor(pkg: String): DayUsage.Entry? = runCatching {
+        val usm = getSystemService(android.app.usage.UsageStatsManager::class.java)
+            ?: return null
+        val startOfDay = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val endMs = wall.wallMs()
+        val events = usm.queryEvents(startOfDay, endMs)
+        val event = android.app.usage.UsageEvents.Event()
+        val transitions = mutableListOf<DayUsage.Transition>()
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.packageName != pkg) continue
+            val kind = when (event.eventType) {
+                android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED -> DayUsage.Kind.RESUMED
+                android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED -> DayUsage.Kind.PAUSED
+                else -> null
+            } ?: continue
+            transitions += DayUsage.Transition(pkg, kind, event.timeStamp)
+        }
+        DayUsage.replay(transitions, startOfDay, endMs).entry(pkg)
+    }.getOrNull()
 
     /**
      * True when nothing may be drawn on screen, for any reason.
@@ -583,6 +785,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         shutter.release(reason)
         shutter.detach()
         if (gate.isShowing) gate.abandon(reason)
+        leaseGate.dismiss(reason)
     }
 
     private fun enterTarget(pkg: String) {
@@ -600,6 +803,16 @@ class MolassesAccessibilityService : AccessibilityService() {
         // still armed, because if the home action is refused it is the only
         // thing that will ever close this session.
         if (enforceLockIfNeeded(pkg)) {
+            armWatchdog(pkg, id)
+            return
+        }
+
+        // The gate goes up before anything else of ours, and before the user
+        // has scrolled once. That is the whole change: a toll paid at the
+        // launch is a toll paid while the answer can still be no, and a gate
+        // eleven minutes into a session arrives after the decision it was
+        // meant to inform.
+        if (maybeLaunchGate(pkg)) {
             armWatchdog(pkg, id)
             return
         }
@@ -689,6 +902,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         shutter.detach()
         shutter.setCurrentPackage(null)
         if (gate.isShowing) gate.abandon("left target")
+        leaseGate.dismiss("left target")
     }
 
     /**
@@ -706,7 +920,9 @@ class MolassesAccessibilityService : AccessibilityService() {
         // in which a switch to a banking app puts an overlay over a payment
         // screen. Bounded in cost: the shutter caps its own arm at 8 s and the
         // gate is user-dismissable, so the fast poll is never the steady state.
-        val interval = if (shutter.isAttached || gate.isShowing || lockOverlay.isShowing) {
+        val interval = if (
+            shutter.isAttached || gate.isShowing || lockOverlay.isShowing || leaseGate.isShowing
+        ) {
             OVERLAY_WATCHDOG_INTERVAL_MS
         } else {
             WATCHDOG_INTERVAL_MS
@@ -775,10 +991,13 @@ class MolassesAccessibilityService : AccessibilityService() {
      * that lasts.
      */
     private fun onOverlayWindowsChanged() {
-        ServiceDiagnostics.gateShowing = gate.isShowing
+        ServiceDiagnostics.gateShowing = gate.isShowing || leaseGate.isShowing
         // The lock flash is one of our windows too. Clearing the id set while
         // it is up would make its own events look like a foreign package.
-        if (!shutter.isAttached && !gate.isShowing && !lockOverlay.isShowing) {
+        if (
+            !shutter.isAttached && !gate.isShowing && !lockOverlay.isShowing &&
+            !leaseGate.isShowing
+        ) {
             ownWindowIds.clear()
         }
         repaceWatchdog()
@@ -822,6 +1041,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         runCatching { shutter.release("onInterrupt") }
         runCatching { shutter.detach() }
         runCatching { if (gate.isShowing) gate.abandon("onInterrupt") }
+        runCatching { leaseGate.dismiss("onInterrupt") }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {

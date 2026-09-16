@@ -214,8 +214,8 @@
     <string name="debug_field_accumulated" translatable="false">accumulated</string>
     <string name="debug_field_tier_index" translatable="false">tierIndex</string>
     <string name="debug_field_stall" translatable="false">stall</string>
-    <string name="debug_field_gates_cleared" translatable="false">gatesCleared</string>
-    <string name="debug_field_unlocked_until" translatable="false">unlockedUntil</string>
+    <string name="debug_field_leases_taken" translatable="false">leasesTaken</string>
+    <string name="debug_field_lease_until" translatable="false">leaseUntil</string>
     <string name="debug_value_seconds" translatable="false">%1$s s</string>
     <string name="debug_value_ms" translatable="false">%1$s ms</string>
     <string name="debug_tier_terminal" translatable="false">%1$s (terminal)</string>
