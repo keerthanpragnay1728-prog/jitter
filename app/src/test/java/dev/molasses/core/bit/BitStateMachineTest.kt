@@ -277,4 +277,89 @@ class BitStateMachineTest {
             assertTrue("$f has a non-ascii char", f.all { it.code in 32..126 })
         }
     }
+
+    // ------------------------------------------------------------- the blink
+
+    @Test
+    fun `the eyes stay shut for at least three frames`() {
+        // The spasm. At 75 ms the host's 40 ms sampling caught the closure
+        // once or twice depending on where the two phases lined up, so the
+        // eyes shut for a single frame, or for two, and which one drifted. A
+        // single frame is a flicker, not a blink.
+        assertTrue(
+            "BLINK_HALF_MS must survive sampling at TICK_MS",
+            BitStateMachine.BLINK_HALF_MS >= 3 * BitStateMachine.TICK_MS,
+        )
+    }
+
+    @Test
+    fun `a blink is caught by the same number of frames at every phase`() {
+        // The inconsistency was the tell, more than the brevity. Sweep the
+        // sampling phase across a whole cycle and require the count never to
+        // vary by more than one frame.
+        val counts = (0 until 40).map { offset ->
+            var cycle = BitStateMachine.BlinkCycle()
+            var closed = 0
+            var t = offset.toLong()
+            while (t < 30_000L) {
+                cycle = BitStateMachine.advanceBlink(cycle, t)
+                if (BitStateMachine.isBlinking(cycle, t)) closed += 1
+                t += BitStateMachine.TICK_MS
+            }
+            closed
+        }
+        assertTrue("phase-dependent blink count: $counts", counts.max() - counts.min() <= 1)
+    }
+
+    @Test
+    fun `the carried cycle agrees with the derivation it replaces`() {
+        // The walk is correct and is what every other test here exercises;
+        // this is the cheap one the host uses. They must not disagree.
+        var cycle = BitStateMachine.BlinkCycle()
+        var t = 0L
+        while (t < 60_000L) {
+            cycle = BitStateMachine.advanceBlink(cycle, t)
+            assertEquals(
+                "at $t",
+                BitStateMachine.blinkPhaseMs(t) < BitStateMachine.BLINK_HALF_MS,
+                BitStateMachine.isBlinking(cycle, t),
+            )
+            t += 13L
+        }
+    }
+
+    @Test
+    fun `advancing is one step in the steady state`() {
+        var cycle = BitStateMachine.advanceBlink(BitStateMachine.BlinkCycle(), 20_000L)
+        val before = cycle.index
+        cycle = BitStateMachine.advanceBlink(cycle, 20_040L)
+        assertTrue("a single frame must not skip cycles", cycle.index - before <= 1)
+    }
+
+    @Test
+    fun `a host that resets its clock starts over rather than looping`() {
+        // The pager disposes this page on every swipe to the ledger, which
+        // used to restart the tick origin underneath a schedule that assumed
+        // it only ever grew.
+        val cycle = BitStateMachine.advanceBlink(BitStateMachine.BlinkCycle(), 50_000L)
+        val reset = BitStateMachine.advanceBlink(cycle, 0L)
+        assertEquals(0L, reset.index)
+        assertEquals(0L, reset.startedAtMs)
+    }
+
+    @Test
+    fun `a long jump forward terminates`() {
+        // A launcher resumed after a day does not walk a day of cycles.
+        val cycle = BitStateMachine.advanceBlink(BitStateMachine.BlinkCycle(), 24 * 60 * 60_000L)
+        assertTrue(cycle.startedAtMs >= 0L)
+    }
+
+    @Test
+    fun `intervals stay inside the specced band`() {
+        for (i in 0L until 500L) {
+            val interval = BitStateMachine.blinkIntervalMs(i)
+            assertTrue("$i -> $interval", interval >= BitStateMachine.BLINK_MIN_INTERVAL_MS)
+            assertTrue("$i -> $interval", interval <= BitStateMachine.BLINK_MAX_INTERVAL_MS)
+        }
+    }
 }
