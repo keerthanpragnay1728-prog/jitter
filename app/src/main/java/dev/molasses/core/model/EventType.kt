@@ -38,4 +38,23 @@ enum class EventType {
      * both or an enforced bounce reads as the user never having tried.
      */
     LOCK_ENFORCED,
+
+    /**
+     * The launch gate attached over a target app.
+     *
+     * Distinct from GATE_SHOWN, which was the checkpoint gate: that one fired
+     * part way through a session, this one fires before it. Reusing the row
+     * type would make a capture from before the lease system indistinguishable
+     * from one after it, and the two say different things about the user.
+     */
+    LEASE_GATE_SHOWN,
+
+    /** A lease was taken. The detail carries the duration. */
+    LEASE_TAKEN,
+
+    /**
+     * The gate was answered with the way out, the back key, or its safety
+     * timeout, and the user went home instead of into the app.
+     */
+    LEASE_DECLINED,
 }

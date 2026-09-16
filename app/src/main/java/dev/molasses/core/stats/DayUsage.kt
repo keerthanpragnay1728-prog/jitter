@@ -41,11 +41,33 @@ package dev.molasses.core.stats
  */
 object DayUsage {
 
+    /**
+     * Two intervals closer together than this are one visit.
+     *
+     * A multi-activity app fires PAUSED and RESUMED crossing between its own
+     * screens, and counting those as separate opens would report a user who
+     * opened Instagram twice and tapped through four profiles as six opens.
+     * Two seconds is longer than any within-app transition and far shorter
+     * than any real return to an app, which makes the boundary unambiguous in
+     * both directions.
+     *
+     * The number is therefore honestly a count of visits, and is labelled as
+     * opens because that is what a visit is to the person having it.
+     */
+    const val VISIT_GAP_MS = 2_000L
+
     enum class Kind { RESUMED, PAUSED }
 
     data class Transition(val pkg: String, val kind: Kind, val wallMs: Long)
 
-    data class Entry(val pkg: String, val foregroundMs: Long)
+    data class Entry(
+        val pkg: String,
+        val foregroundMs: Long,
+        /**
+         * Visits, not resumes. See [VISIT_GAP_MS] for what separates two.
+         */
+        val opens: Int = 0,
+    )
 
     data class Result(
         /** Every package with a non-zero interval, longest first. */
@@ -66,6 +88,9 @@ object DayUsage {
          */
         fun top(count: Int, minMs: Long): List<Entry> =
             apps.filter { it.foregroundMs >= minMs }.take(count)
+
+        /** One package's row, or null when it had no foreground time. */
+        fun entry(pkg: String): Entry? = apps.firstOrNull { it.pkg == pkg }
     }
 
     /**
@@ -88,6 +113,9 @@ object DayUsage {
         // A paused is an ordinary sequence when an app hands off to another.
         val openSince = mutableMapOf<String, Long>()
         val seen = mutableSetOf<String>()
+        val opens = mutableMapOf<String, Int>()
+        /** When each package was last not in front, for the visit rule. */
+        val lastClosed = mutableMapOf<String, Long>()
 
         val ordered = transitions
             .filter { it.pkg.isNotEmpty() && it.pkg !in exclude }
@@ -97,6 +125,12 @@ object DayUsage {
             val at = t.wallMs.coerceIn(windowStartMs, windowEndMs)
             when (t.kind) {
                 Kind.RESUMED -> {
+                    if (t.pkg !in openSince) {
+                        val closed = lastClosed[t.pkg]
+                        if (closed == null || at - closed >= VISIT_GAP_MS) {
+                            opens[t.pkg] = (opens[t.pkg] ?: 0) + 1
+                        }
+                    }
                     // A second RESUMED with no PAUSED between (an app
                     // recreating its task) keeps the earlier timestamp, so
                     // the interval is not silently dropped.
@@ -108,10 +142,19 @@ object DayUsage {
                     // from the window start, clipped: that is the part of the
                     // interval that falls inside today.
                     val from = openSince.remove(t.pkg)
-                        ?: if (t.pkg in seen) null else windowStartMs
+                        ?: if (t.pkg in seen) {
+                            null
+                        } else {
+                            // In front since before the window opened. That
+                            // is a visit the user is having inside it, so it
+                            // counts as one.
+                            opens[t.pkg] = (opens[t.pkg] ?: 0) + 1
+                            windowStartMs
+                        }
                     if (from != null && at > from) {
                         totals[t.pkg] = (totals[t.pkg] ?: 0L) + (at - from)
                     }
+                    if (from != null) lastClosed[t.pkg] = at
                 }
             }
             seen += t.pkg
@@ -126,7 +169,7 @@ object DayUsage {
 
         val apps = totals
             .filterValues { it > 0L }
-            .map { (pkg, ms) -> Entry(pkg, ms) }
+            .map { (pkg, ms) -> Entry(pkg, ms, opens[pkg] ?: 0) }
             // Package name breaks ties so the list does not reshuffle between
             // two recompositions that read the same events.
             .sortedWith(compareByDescending<Entry> { it.foregroundMs }.thenBy { it.pkg })
