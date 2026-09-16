@@ -3,6 +3,7 @@ package dev.molasses.core.stats
 import dev.molasses.core.stats.DayUsage.Kind
 import dev.molasses.core.stats.DayUsage.Transition
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,7 +24,7 @@ class DayUsageTest {
             midnight, now,
         )
         assertEquals(20 * minute, r.totalMs)
-        assertEquals(listOf(DayUsage.Entry("a", 20 * minute)), r.apps)
+        assertEquals(listOf(DayUsage.Entry("a", 20 * minute, opens = 1)), r.apps)
     }
 
     @Test
@@ -194,5 +195,114 @@ class DayUsageTest {
     @Test(expected = IllegalArgumentException::class)
     fun `a window that ends before it starts is rejected`() {
         DayUsage.replay(emptyList(), now, midnight)
+    }
+}
+
+class DayUsageOpensTest {
+
+    private val midnight = 1_700_000_000_000L
+    private val hour = 3_600_000L
+    private val minute = 60_000L
+    private val now = midnight + 12 * hour
+
+    private fun on(pkg: String, at: Long) = Transition(pkg, Kind.RESUMED, at)
+    private fun off(pkg: String, at: Long) = Transition(pkg, Kind.PAUSED, at)
+
+    private fun opens(events: List<Transition>, pkg: String = "a"): Int =
+        DayUsage.replay(events, midnight, now).entry(pkg)?.opens ?: 0
+
+    @Test
+    fun `one visit is one open`() {
+        assertEquals(1, opens(listOf(on("a", midnight + hour), off("a", midnight + 2 * hour))))
+    }
+
+    @Test
+    fun `a visit still open at the end counts`() {
+        assertEquals(1, opens(listOf(on("a", now - minute))))
+    }
+
+    @Test
+    fun `two separated visits are two opens`() {
+        assertEquals(
+            2,
+            opens(
+                listOf(
+                    on("a", midnight + hour), off("a", midnight + hour + minute),
+                    on("a", midnight + 3 * hour), off("a", midnight + 3 * hour + minute),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `an activity transition inside one visit is not a second open`() {
+        // The reason the visit gap exists. A multi-activity app pauses and
+        // resumes crossing between its own screens, and counting those would
+        // report six opens for two.
+        assertEquals(
+            1,
+            opens(
+                listOf(
+                    on("a", midnight + hour),
+                    off("a", midnight + hour + 30_000L),
+                    on("a", midnight + hour + 30_500L),
+                    off("a", midnight + hour + 90_000L),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a gap of exactly the visit threshold is a new open`() {
+        assertEquals(
+            2,
+            opens(
+                listOf(
+                    on("a", midnight + hour),
+                    off("a", midnight + hour + minute),
+                    on("a", midnight + hour + minute + DayUsage.VISIT_GAP_MS),
+                    off("a", midnight + hour + 2 * minute + DayUsage.VISIT_GAP_MS),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a duplicate resume inside an open interval is not an open`() {
+        assertEquals(
+            1,
+            opens(
+                listOf(
+                    on("a", midnight + hour),
+                    on("a", midnight + hour + 5 * minute),
+                    off("a", midnight + hour + 6 * minute),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a visit that began before the window counts once inside it`() {
+        assertEquals(1, opens(listOf(off("a", midnight + 20 * minute))))
+    }
+
+    @Test
+    fun `opens are counted per package`() {
+        val events = listOf(
+            on("a", midnight + hour), off("a", midnight + hour + minute),
+            on("b", midnight + 2 * hour), off("b", midnight + 2 * hour + minute),
+            on("b", midnight + 4 * hour), off("b", midnight + 4 * hour + minute),
+        )
+        assertEquals(1, opens(events, "a"))
+        assertEquals(2, opens(events, "b"))
+    }
+
+    @Test
+    fun `an excluded package has no row to read opens from`() {
+        val r = DayUsage.replay(
+            listOf(on("x", midnight), off("x", midnight + hour)),
+            midnight, now, exclude = setOf("x"),
+        )
+        assertNull(r.entry("x"))
     }
 }

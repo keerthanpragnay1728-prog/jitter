@@ -3,6 +3,7 @@ package dev.molasses.overlay
 import android.content.Context
 import android.graphics.PixelFormat
 import android.util.Log
+import android.view.KeyEvent
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
@@ -84,7 +85,17 @@ class OverlayHost(
      *   frame never reaches the display, so the user is bounced with no
      *   explanation and it reads as a crash.
      */
-    fun show(onFirstDraw: (() -> Unit)? = null, content: @Composable () -> Unit) {
+    fun show(
+        onFirstDraw: (() -> Unit)? = null,
+        /**
+         * Fired on the back key. The window is focusable, so back would
+         * otherwise be swallowed with no effect at all, which reads as a
+         * frozen phone. A gate that offers a way out has to honour the
+         * system's own way out, or the way out is a lie.
+         */
+        onBackPressed: (() -> Unit)? = null,
+        content: @Composable () -> Unit,
+    ) {
         if (destroyed) {
             Log.w(TAG, "show() on a dismissed host; build a new OverlayHost instead")
             return
@@ -119,7 +130,29 @@ class OverlayHost(
         isShowing = true
         registry.currentState = Lifecycle.State.RESUMED
 
+        if (onBackPressed != null) attachBack(view, onBackPressed)
         if (onFirstDraw != null) attachFirstDraw(view, onFirstDraw)
+    }
+
+    /**
+     * Route the back key to [callback].
+     *
+     * The view has to take focus in touch mode for key events to reach it at
+     * all; a `TYPE_ACCESSIBILITY_OVERLAY` that is focusable but unfocused
+     * receives none. ACTION_UP rather than ACTION_DOWN so a long press does
+     * not fire it repeatedly.
+     */
+    private fun attachBack(view: ComposeView, callback: () -> Unit) {
+        view.isFocusableInTouchMode = true
+        view.requestFocus()
+        view.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                callback()
+                true
+            } else {
+                false
+            }
+        }
     }
 
     /**

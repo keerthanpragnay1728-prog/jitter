@@ -8,7 +8,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.media.AudioManager
 import android.os.Build
 import android.os.SystemClock
 import android.telephony.PhoneStateListener
@@ -103,7 +102,7 @@ class ShutterOverlayManager(
 
     private var telephonyCallback: Any? = null
 
-    private val audio: AudioManager? = service.getSystemService(AudioManager::class.java)
+    private val calls = CallDetector(service)
 
     /**
      * Set when the telephony callback could not be registered, which is the
@@ -116,21 +115,11 @@ class ShutterOverlayManager(
         private set
 
     /**
-     * Primary call check, and permission-free.
-     *
-     * `AudioManager.getMode()` needs no grant and also catches VoIP, which
-     * `TelephonyCallback.CallStateListener` misses entirely. It is checked
-     * before every arm and again on each disarm tick.
-     *
-     * MODE_IN_COMMUNICATION is also set by some assistant and voice recording
-     * flows, so this can occasionally refuse to arm with no call in progress.
-     * That is the correct direction to fail: a stall that survives a call is a
-     * much worse outcome than a stall that declines to start.
+     * Primary call check, and permission-free. Checked before every arm and
+     * again on each disarm tick. See [CallDetector] for why this one and not
+     * telephony, and why a false positive is the safe direction.
      */
-    private fun callInProgress(): Boolean {
-        val mode = audio?.mode ?: return false
-        return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
-    }
+    private fun callInProgress(): Boolean = calls.inProgress()
 
     // ------------------------------------------------------------- lifecycle
 
