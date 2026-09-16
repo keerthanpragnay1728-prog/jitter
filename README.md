@@ -912,6 +912,35 @@ product.
 
 ---
 
+## Proposed and rejected
+
+Both of these were specified, examined and dropped. They are recorded here as
+answered rather than deferred, so neither returns as an open question.
+
+**A monochrome mode.** Rejected. The version that would do anything is
+unreachable and the version that is reachable does nothing. Draining colour
+from the *device* means writing a secure display setting, which needs
+`WRITE_SECURE_SETTINGS`: signature or privileged only, granted by adb and not
+by a user tap. Draining it from Jitter's own surfaces is all an ordinary app
+can do, and those surfaces are already a single-hue phosphor palette on black.
+The feature would therefore ship as a switch that greys out the one screen
+that is already grey, while Instagram stays in full colour, which is the
+screen the whole idea was aimed at.
+
+**A short-form shield**, meaning friction aimed specifically at Reels, Shorts
+and TikTok's feed rather than at the app containing them. Rejected, because
+knowing which surface is in front means reading the other app's window
+content, and this app does not have that and must not acquire it.
+`canRetrieveWindowContent` is `false` and `accessibilityFlags` omits
+`flagRetrieveInteractiveWindows`, both deliberately: a banking or UPI app
+reads the declared profile of every enabled service and decides whether to run
+on what it finds. Buying short-form detection with either attribute would
+trade a payment app that works for a heuristic. The alternative, inferring the
+surface from scroll rhythm, is a guess, and a guess that fires wrongly inside
+a messaging thread is worse than no feature. The friction curve already treats
+twenty-five minutes as twenty-five minutes whichever surface inside the app
+produced it, which is the behaviour the shield was asked for anyway.
+
 ## Known limitations
 
 **Known incompatibility**
