@@ -81,14 +81,30 @@ object PowerBar {
     }
 
     /**
-     * Capacity in hex, upper case, always two characters.
+     * The whole line: `BAT[####......] 86%`.
      *
-     * 100 is 0x64, so two characters covers the whole range and the field
-     * never changes width. Values outside 0 to 100 are clamped rather than
-     * rendered, because a three character field would reflow the header.
+     * ## What this replaced
+     * It used to print the raw level as hex between the bracket and the
+     * percent: `BAT[########  ]56 86%`. The hex was there to keep the field
+     * two characters wide at every charge level, which it did, but it read as
+     * a second number that had run into the first. Two renderings of the same
+     * value on one line, and the one nobody could read was the one with no
+     * space before it.
+     *
+     * The bar is the glanceable version and the percent is the quotable one.
+     * The hex was neither.
+     *
+     * The label is here rather than only in `strings.xml` so this formatter
+     * can be tested as a whole; `PowerBarResourcesTest` asserts the resource
+     * and this constant agree.
      */
-    fun hexCapacity(percent: Int): String =
-        percent.coerceIn(0, 100).toString(16).uppercase().padStart(2, '0')
+    const val LABEL = "BAT"
+
+    fun readout(percent: Int, glyphs: Glyphs = Glyphs.BLOCK): String =
+        LABEL + bar(percent, glyphs) + suffix(percent)
+
+    /** The trailing percent, with its leading space. Always clamped. */
+    fun suffix(percent: Int): String = " ${percent.coerceIn(0, 100)}%"
 
     fun isLow(percent: Int): Boolean = percent.coerceIn(0, 100) < LOW_PERCENT
 

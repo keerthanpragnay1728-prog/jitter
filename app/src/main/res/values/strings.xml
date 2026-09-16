@@ -234,8 +234,12 @@
     <!-- The bar itself is drawn cell by cell so the charging cell can be
          brightened individually, so the line is three pieces rather than one
          template. All translatable="false": this is a fixed-width readout. -->
-    <string name="launcher_pwr_label" translatable="false">PWR </string>
-    <string name="launcher_pwr_suffix_fmt" translatable="false"> %1$s %2$s%%</string>
+    <!-- The bar is assembled per character in Kotlin so one cell can brighten
+         while charging, so these are the two ends of it. PowerBarResourcesTest
+         asserts they agree with PowerBar.readout, which is what the formatter
+         is actually tested against. -->
+    <string name="launcher_bat_label" translatable="false">BAT</string>
+    <string name="launcher_bat_suffix_fmt" translatable="false"> %1$s%%</string>
     <string name="launcher_clock_fmt" translatable="false">%1$s  %2$s</string>
     <string name="launcher_cursor" translatable="false">\u2588</string>
     <string name="launcher_cfg">[CFG]</string>
