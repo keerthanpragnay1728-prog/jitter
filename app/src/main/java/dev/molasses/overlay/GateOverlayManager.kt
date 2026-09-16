@@ -46,8 +46,8 @@ class GateOverlayManager(
 
     /**
      * One resolution per session. Without it a duplicate outcome, or a timeout
-     * racing a pass, would clear the same gate twice and increment
-     * `gatesCleared` twice.
+     * racing a pass, would clear the same gate twice and put the lease panel
+     * up twice.
      */
     private var resolved = false
 
@@ -116,11 +116,12 @@ class GateOverlayManager(
         resolved = true
         val tier = currentTier
 
-        // GATE_PASSED belongs to FrictionEngine, which writes it from
-        // onGateCleared along with the tier accounting. Logging it here too
-        // would put two rows in the ledger for one event. The per-tick detail
-        // is in the GATE_EVAL logcat stream, and every ledger row already
-        // carries the sensing path.
+        // No row for the walk itself. Clearing it does not buy anything on
+        // its own: it puts the lease panel up, and LEASE_TAKEN is written by
+        // FrictionEngine when a duration is actually chosen. A row here would
+        // say a toll was paid at a moment when it might still be declined.
+        // The per-tick detail is in the GATE_EVAL logcat stream, and every
+        // ledger row already carries the sensing path.
         if (outcome is GateOutcome.BypassedForDebug) {
             ledger.log(
                 pkg,

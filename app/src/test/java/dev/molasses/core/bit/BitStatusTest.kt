@@ -12,15 +12,15 @@ class BitStatusTest {
 
     private fun app(
         accumulatedMs: Long,
-        tierUnlockedUntilMs: Long,
+        leaseUntilAccumulatedMs: Long,
         penaltyMs: Long = 0L,
+        leasesTaken: Int = 1,
     ) = AppSnapshot(
         pkg = "com.instagram.android",
         accumulatedMs = accumulatedMs,
         tierIndex = 0,
-        gatesCleared = 0,
-        tierUnlockedUntilMs = tierUnlockedUntilMs,
-        gatePending = false,
+        leasesTaken = leasesTaken,
+        leaseUntilAccumulatedMs = leaseUntilAccumulatedMs,
         penaltyMs = penaltyMs,
     )
 
@@ -87,8 +87,8 @@ class BitStatusTest {
         // The ledger reports one app's time, tier and penalty on one line.
         // Three fields describing two different apps would be worse than
         // showing none of them.
-        val a = AppSnapshot("com.a", 10 * minute, 2, 0, 10 * minute, false, 0)
-        val b = AppSnapshot("com.b", 10 * minute, 3, 0, 10 * minute, false, 0)
+        val a = AppSnapshot("com.a", 10 * minute, 2, 0, 10 * minute, 0)
+        val b = AppSnapshot("com.b", 10 * minute, 3, 0, 10 * minute, 0)
         assertEquals("com.a", BitStatus.deepest(listOf(a, b))?.pkg)
         assertEquals("com.a", BitStatus.deepest(listOf(b, a))?.pkg)
     }

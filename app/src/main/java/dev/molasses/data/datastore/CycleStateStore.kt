@@ -12,6 +12,9 @@ import dev.molasses.CycleState
 import dev.molasses.core.command.CommandHistory
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
+import dev.molasses.core.lease.GatePolicy
+import dev.molasses.core.lease.LeaseLadder
+import dev.molasses.core.lease.LeaseManager
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.model.AppSnapshot
@@ -128,9 +131,12 @@ class CycleStateStore(context: Context) {
                         // tier_index is monotonic: raise it to match the new
                         // total, never lower it.
                         .setTierIndex(maxOf(existing.tierIndex, TierPolicy.indexFor(total)))
-                        .setTierUnlockedUntilMs(
-                            maxOf(existing.tierUnlockedUntilMs, TierPolicy.TIER_WIDTH_MS),
-                        )
+                        // The lease mark is deliberately left alone. It is
+                        // where a lease the user took runs out, and replaying
+                        // lost foreground time does not hand out a lease. The
+                        // old code raised this to one tier width here, which
+                        // made sense when the field was a free-usage ceiling
+                        // and would now be a lease nobody took.
                         .build(),
                 )
             }
@@ -326,6 +332,79 @@ class CycleStateStore(context: Context) {
         }
     }
 
+    val leases: Flow<LeaseManager> =
+        store.data.map { state -> LeaseManager.of(state.leasesList.map { it.toLease() }) }
+
+    /**
+     * Grant a lease on [pkg].
+     *
+     * ## Why the read and the write are in the same block
+     * Exactly the reason `armLock` gives, pointed the other way. The rule that
+     * makes a lease safe is that a live one is never lengthened, and it is
+     * only worth anything if it holds against what is on disk. Doing the
+     * comparison inside `updateData` means two taps racing, or a second code
+     * path, cannot read an expired lease, be descheduled, and write a fresh
+     * fifteen minutes over a live five.
+     *
+     * Expired entries are pruned on the way through, which is the only place
+     * that happens.
+     */
+    suspend fun grantLease(
+        pkg: String,
+        now: StampedInstant,
+        durationMs: Long,
+        accumulatedMs: Long,
+    ) {
+        if (pkg.isEmpty() || durationMs <= 0L) return
+        // A duration the app does not offer can only be a bug or a replayed
+        // value from somewhere else. Refusing is the direction that costs a
+        // gate rather than hands one out.
+        if (!LeaseLadder.isOffered(durationMs)) return
+        store.updateData { state ->
+            val next = LeaseManager.of(state.leasesList.map { it.toLease() })
+                .grant(pkg, now, durationMs, accumulatedMs)
+                .prune(now)
+            state.toBuilder()
+                .clearLeases()
+                .addAllLeases(next.snapshot().map { it.toProto() })
+                .build()
+        }
+    }
+
+    /**
+     * End every lease. Called on cycle rollover, where everything else about
+     * a package starts over too.
+     *
+     * There is no single-package revoke reachable from the UI, and there must
+     * not be: a lease the user can cancel early is a lease that costs nothing,
+     * and the gate it bought past has already been paid for.
+     */
+    suspend fun clearLeases() {
+        store.updateData { state ->
+            if (state.leasesCount == 0) return@updateData state
+            state.toBuilder().clearLeases().build()
+        }
+    }
+
+    /** Housekeeping. No lease changes state because of it. */
+    suspend fun pruneLeases(now: StampedInstant) {
+        store.updateData { state ->
+            val next = LeaseManager.of(state.leasesList.map { it.toLease() }).prune(now)
+            if (next.snapshot().size == state.leasesCount) return@updateData state
+            state.toBuilder()
+                .clearLeases()
+                .addAllLeases(next.snapshot().map { it.toProto() })
+                .build()
+        }
+    }
+
+    val gateMode: Flow<GatePolicy.GateMode> =
+        store.data.map { gateModeFromOrdinal(it.gateModeOrdinal) }
+
+    suspend fun setGateMode(mode: GatePolicy.GateMode) {
+        store.updateData { it.toBuilder().setGateModeOrdinal(mode.ordinal).build() }
+    }
+
     suspend fun setAlternativeChallenge(enabled: Boolean) {
         store.updateData { it.toBuilder().setAlternativeChallenge(enabled).build() }
     }
@@ -387,11 +466,15 @@ class CycleStateStore(context: Context) {
                     existing.toBuilder()
                         .setAccumulatedMs(accumulatedMs.coerceAtLeast(0))
                         .setTierIndex(tierIndex.coerceAtLeast(0))
-                        // Unlock up to the start of the tier being set, so the
-                        // next scroll lands on that tier's stall rather than
-                        // immediately re-gating.
-                        .setTierUnlockedUntilMs(
-                            TierPolicy.entryAtMs(tierIndex.coerceAtLeast(0) + 1),
+                        // Grant a lease mark past the accumulated total being
+                        // set, so the editor does not leave the app instantly
+                        // overdue and ratcheting. A debug build putting a
+                        // package at tier 4 wants to see tier 4's stall, not
+                        // tier 4 plus whatever the ratchet adds in the time it
+                        // takes to look.
+                        .setLeasesTaken(maxOf(existing.leasesTaken, 1))
+                        .setLeaseUntilAccumulatedMs(
+                            accumulatedMs.coerceAtLeast(0) + LeaseLadder.MAX_MS,
                         )
                         .build(),
                 )
@@ -449,11 +532,21 @@ fun CycleResetPolicyProto.toModel(): CycleResetPolicy = when (this) {
     else -> CycleResetPolicy.ABSTINENCE_6H
 }
 
+/**
+ * Stored as an ordinal, resolved here and nowhere else.
+ *
+ * An out of range value is COUNTDOWN rather than a throw: a file written by a
+ * newer build must still open, and the default is the mode that asks least, so
+ * falling back to it cannot lock a user out of an app by accident.
+ */
+fun gateModeFromOrdinal(ordinal: Int): GatePolicy.GateMode =
+    GatePolicy.GateMode.entries.getOrElse(ordinal) { GatePolicy.GateMode.COUNTDOWN }
+
 fun AppSnapshot.toProto(): AppState = AppState.newBuilder()
     .setAccumulatedMs(accumulatedMs)
     .setTierIndex(tierIndex)
-    .setGatesCleared(gatesCleared)
-    .setTierUnlockedUntilMs(tierUnlockedUntilMs)
+    .setLeasesTaken(leasesTaken)
+    .setLeaseUntilAccumulatedMs(leaseUntilAccumulatedMs)
     .setPenaltyMs(penaltyMs)
     .build()
 
@@ -463,16 +556,12 @@ fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
             pkg = pkg,
             accumulatedMs = a.accumulatedMs,
             tierIndex = a.tierIndex,
-            gatesCleared = a.gatesCleared,
-            tierUnlockedUntilMs = if (a.tierUnlockedUntilMs == 0L) {
-                TierPolicy.TIER_WIDTH_MS
-            } else {
-                a.tierUnlockedUntilMs
-            },
-            // Not persisted: a gate owed at the moment of a crash is re-derived
-            // on the next scroll, which is both simpler and correct -- the
-            // accumulated total is what decides whether a gate is owed.
-            gatePending = false,
+            leasesTaken = a.leasesTaken,
+            // Zero is read as zero here, unlike the field it replaced. A
+            // stored 0 now means "no lease taken this cycle", which is the
+            // correct reading for a fresh app, and substituting a tier width
+            // would hand every restored package a lease it never took.
+            leaseUntilAccumulatedMs = a.leaseUntilAccumulatedMs,
             penaltyMs = a.penaltyMs,
         )
     },

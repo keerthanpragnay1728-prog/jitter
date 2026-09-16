@@ -30,21 +30,28 @@ internal class MutableAppState(
     val pkg: String,
     var accumulatedMs: Long = 0,
     tierIndex: Int = 0,
-    var gatesCleared: Int = 0,
+    var leasesTaken: Int = 0,
     /**
-     * Accumulated-time ceiling the user has already paid for. Starts at one
-     * tier width: the first five minutes are free.
-     */
-    var tierUnlockedUntilMs: Long = TierPolicy.TIER_WIDTH_MS,
-    var gatePending: Boolean = false,
-    /**
-     * Extra time added to the curve lookup for ignoring a checkpoint.
+     * Accumulated-time mark where the last lease taken runs out.
      *
-     * A ratchet. It accrues while a checkpoint is overdue and **never
-     * decreases**, so clearing a gate stops it growing rather than refunding
-     * it. That is what keeps "clearing a gate never lowers the stall
-     * duration" true: a plain double-rate model would break that invariant
-     * the moment the toll was paid.
+     * Zero when none has been taken this cycle, which is the state a fresh
+     * app starts in and is not the same as a lease that expired at zero. With
+     * none taken nothing is overdue and [penaltyMs] does not run.
+     *
+     * This field used to be `tierUnlockedUntilMs`, the ceiling paid for by
+     * clearing a checkpoint gate. Same units and same role in the ratchet;
+     * what changed is what buys it.
+     */
+    var leaseUntilAccumulatedMs: Long = 0,
+    /**
+     * Extra time added to the curve lookup for sitting past your lease.
+     *
+     * A ratchet. It accrues while the lease is overdue and **never
+     * decreases**, so taking a new lease stops it growing rather than
+     * refunding it. That is what keeps "a lease never lowers the stall
+     * duration" true, and it is the same sentence the checkpoint version
+     * carried: a plain double-rate model would break the invariant the moment
+     * the toll was paid.
      *
      * Deliberately not folded into [accumulatedMs]. The ledger reports true
      * time; this is a separate number and is shown separately.
@@ -60,9 +67,8 @@ internal class MutableAppState(
         pkg = pkg,
         accumulatedMs = liveAccumulatedMs,
         tierIndex = tier.value,
-        gatesCleared = gatesCleared,
-        tierUnlockedUntilMs = tierUnlockedUntilMs,
-        gatePending = gatePending,
+        leasesTaken = leasesTaken,
+        leaseUntilAccumulatedMs = leaseUntilAccumulatedMs,
         penaltyMs = penaltyMs,
     )
 }
@@ -88,10 +94,18 @@ internal class MutableAppState(
  * cheapest bypass in the app.
  *
  * ## The invariant
- * Clearing a gate is a toll, not a refund. [onGateCleared] writes exactly two
- * fields, `tierUnlockedUntilMs` and `gatesCleared`, and nothing else. It cannot
+ * A lease is a toll, not a refund. [onLeaseGranted] writes exactly two fields,
+ * `leaseUntilAccumulatedMs` and `leasesTaken`, and nothing else. It cannot
  * touch `accumulatedMs` (time already spent) or `tier` (which physically
  * refuses to decrease). `FrictionEngineTest` asserts this directly.
+ *
+ * ## The two systems do not meet here
+ * This engine knows nothing about [dev.molasses.core.lease.LeaseManager]. It
+ * is told a lease was granted and for how long, and that is the whole of the
+ * contact: no call goes the other way, and nothing here reads whether a lease
+ * is currently live. Buying time does not buy friction, and the cheapest way
+ * to keep that true is for the code that hands out time to have no way to
+ * reach the code that charges for it.
  */
 class FrictionEngine(
     initial: EngineSnapshot,
@@ -112,6 +126,19 @@ class FrictionEngine(
     private val monotonicClock: MonotonicClock,
     private val bootIdProvider: BootIdProvider,
     private val scope: CoroutineScope,
+    /**
+     * Fired after a cycle rollover, on the calling thread.
+     *
+     * The rollover resets every per-app counter this engine holds, and the
+     * leases live in the store where this engine cannot reach them. Without
+     * this, a lease taken before the rollover would outlive the cycle it was
+     * escalating against, and the first gate of the new cycle would not
+     * appear until it expired.
+     *
+     * A callback rather than a call into the store, because the engine having
+     * a way to reach persistence is how it stops being pure.
+     */
+    private val onCycleRolled: () -> Unit = {},
 ) {
     private val apps: MutableMap<String, MutableAppState> = initial.perApp
         .mapValues { (pkg, s) ->
@@ -119,9 +146,8 @@ class FrictionEngine(
                 pkg = pkg,
                 accumulatedMs = s.accumulatedMs,
                 tierIndex = s.tierIndex,
-                gatesCleared = s.gatesCleared,
-                tierUnlockedUntilMs = s.tierUnlockedUntilMs,
-                gatePending = s.gatePending,
+                leasesTaken = s.leasesTaken,
+                leaseUntilAccumulatedMs = s.leaseUntilAccumulatedMs,
                 penaltyMs = s.penaltyMs,
             )
         }
@@ -215,28 +241,21 @@ class FrictionEngine(
         val live = liveAccumulatedMs(app, nowMs)
         accruePenalty(app, live)
 
-        // tierIndex and the checkpoint schedule both run on TRUE time. The
-        // penalty offsets the *stall lookup* and nothing else.
+        // tierIndex runs on TRUE time. The penalty offsets the *stall lookup*
+        // and nothing else.
         //
         // Letting it drive tierIndex as well was wrong, and six existing
-        // tests caught it: it would have pushed the checkpoint schedule
-        // forward too, so ignoring a gate would have made the next gate
-        // arrive later. That is the opposite of the intent, and it also made
-        // the ledger's tier column stop describing time the user had spent.
+        // tests caught it: it made the ledger's tier column stop describing
+        // time the user had spent. It matters again now that the tier decides
+        // whether the walking gate is in force, which is a question about how
+        // long they have really been in the app.
         val index = TierPolicy.indexFor(live)
         app.tier.raiseTo(index)
 
         val effective = live + app.penaltyMs
         val friction = FrictionCurve.frictionAt(effective, floorMs)
 
-        val checkpointDue = live >= app.tierUnlockedUntilMs
-        if (checkpointDue && !app.gatePending) {
-            app.gatePending = true
-            ledger.log(pkg, EventType.GATE_SHOWN, "tier=$index live=$live")
-            publish()
-        }
-
-        if (!friction.stalls && !checkpointDue) return FrictionDecision.NONE
+        if (!friction.stalls) return FrictionDecision.NONE
 
         // Ledgered from tier 1 on only. Scroll events arrive in bursts of
         // dozens per second and normal (tier 0) usage is the common case, so
@@ -244,13 +263,9 @@ class FrictionEngine(
         // the accumulated total does not already say.
         if (index > 0) ledger.log(pkg, EventType.SCROLL, "tier=$index")
 
-        // The stall is unconditional. An unresolved checkpoint adds friction
-        // through the penalty above; it never suspends it. That inversion is
-        // the whole point of this design: a gate a user walks away from used
-        // to switch friction off, which rewarded ignoring it.
         // Probability is Bernoulli per scroll event. A miss is not "no
-        // friction": the checkpoint below is unaffected, and the curve has
-        // already been read, so the accounting is identical either way.
+        // friction": the curve has already been read and the ratchet has
+        // already run, so the accounting is identical either way.
         val stallMs = if (FrictionCurve.shouldStall(friction, roll())) {
             friction.stallMs.toLong()
         } else {
@@ -259,10 +274,25 @@ class FrictionEngine(
 
         return FrictionDecision(
             stallMs = stallMs,
-            gate = if (checkpointDue) index else null,
             terminal = effective >= FrictionCurve.TERMINAL_MS,
         )
     }
+
+    /**
+     * Has the curve saturated for [pkg].
+     *
+     * Asked at the launch, where a scroll decision does not exist yet, to
+     * decide whether the walking gate is in force. Reads exactly what
+     * [onScroll] would read, so the answer cannot drift from the one on the
+     * stall marker.
+     */
+    fun isTerminal(pkg: String, nowMs: Long): Boolean {
+        val app = apps[pkg] ?: return false
+        return liveAccumulatedMs(app, nowMs) + app.penaltyMs >= FrictionCurve.TERMINAL_MS
+    }
+
+    /** Leases granted on [pkg] in the current cycle. Drives the escalation. */
+    fun leasesTakenThisCycle(pkg: String): Int = apps[pkg]?.leasesTaken ?: 0
 
     /**
      * Grow [MutableAppState.penaltyMs] while a checkpoint is overdue.
@@ -277,51 +307,61 @@ class FrictionEngine(
      * is only ever added to.
      */
     private fun accruePenalty(app: MutableAppState, liveMs: Long) {
-        // Charge only the part of this interval that was actually overdue,
-        // not the whole interval because it happened to end overdue.
-        //
-        // The naive version charged from the previous sample whenever the
-        // current one was past the boundary, which over-charges by however
-        // long the interval started before the checkpoint came due. With a
-        // 15 s checkpoint tick that error is bounded and easy to miss; the
-        // ladder walk caught it by jumping five minutes between scrolls and
-        // landing two tiers high.
-        val overdueSince = maxOf(app.penaltyAnchorMs, app.tierUnlockedUntilMs)
-        if (liveMs > overdueSince) {
-            app.penaltyMs += liveMs - overdueSince
+        // No lease taken, nothing overdue. This guard is the whole difference
+        // between the ratchet charging for time past a toll the user chose to
+        // ignore and charging every user who has the gate suppressed, which
+        // is what anchoring to a boundary nothing clears would have meant.
+        if (app.leasesTaken > 0) {
+            // Charge only the part of this interval that was actually
+            // overdue, not the whole interval because it happened to end
+            // overdue.
+            //
+            // The naive version charged from the previous sample whenever the
+            // current one was past the mark, which over-charges by however
+            // long the interval started before the lease ran out. With a 15 s
+            // checkpoint tick that error is bounded and easy to miss; the
+            // ladder walk caught it by jumping five minutes between scrolls
+            // and landing two tiers high.
+            val overdueSince = maxOf(app.penaltyAnchorMs, app.leaseUntilAccumulatedMs)
+            if (liveMs > overdueSince) {
+                app.penaltyMs += liveMs - overdueSince
+            }
         }
         app.penaltyAnchorMs = liveMs
     }
 
     /**
-     * The toll was paid. Unlocks usage up to the *next* tier boundary.
+     * A lease was taken. Moves the overdue mark [durationMs] of *accumulated*
+     * time forward from here.
      *
-     * Writes `tierUnlockedUntilMs` and `gatesCleared` only. Deliberately does
-     * not touch `accumulatedMs` or `tier` -- see the class doc.
+     * Accumulated rather than wall time, deliberately, and this is the one
+     * place the two systems are close enough together to get confused. The
+     * lease itself is fifteen real minutes and expires on the clock whether
+     * the user is in the app or not; the ratchet's mark is where those
+     * minutes land if they are all spent inside it. A user who takes fifteen
+     * minutes and spends five of them in a different app comes back with the
+     * lease nearly gone and the mark barely touched, which is correct: the
+     * ratchet charges for time in the app past what was paid for, and they
+     * have not spent it.
+     *
+     * Writes `leaseUntilAccumulatedMs` and `leasesTaken` only. Deliberately
+     * does not touch `accumulatedMs` or `tier` -- see the class doc.
      */
-    fun onGateCleared(pkg: String, nowMs: Long) {
+    fun onLeaseGranted(pkg: String, durationMs: Long, nowMs: Long) {
         val app = appState(pkg)
-        val nextBoundary = TierPolicy.entryAtMs(app.tier.value + 1)
-        // max() so a late or duplicated clear can never lower the ceiling.
-        app.tierUnlockedUntilMs = maxOf(app.tierUnlockedUntilMs, nextBoundary)
-        app.gatesCleared += 1
-        app.gatePending = false
+        val live = liveAccumulatedMs(app, nowMs)
+        // Close out whatever was overdue before moving the mark, or the
+        // interval between the lease running out and the new one being taken
+        // would be forgiven rather than charged.
+        accruePenalty(app, live)
+        // max() so a late or duplicated grant can never lower the mark.
+        app.leaseUntilAccumulatedMs = maxOf(app.leaseUntilAccumulatedMs, live + durationMs)
+        app.leasesTaken += 1
         ledger.log(
             pkg,
-            EventType.GATE_PASSED,
-            "tier=${app.tier.value} unlockedUntil=${app.tierUnlockedUntilMs}",
+            EventType.LEASE_TAKEN,
+            "duration=${durationMs}ms until=${app.leaseUntilAccumulatedMs} n=${app.leasesTaken}",
         )
-        publish()
-    }
-
-    /**
-     * The gate was left unresolved (user went HOME, screen off, timeout).
-     * Changes no accounting at all: `gatePending` stays true, so the next
-     * scroll in the target app re-gates at the same tier.
-     */
-    fun onGateAbandoned(pkg: String, nowMs: Long) {
-        val app = appState(pkg)
-        ledger.log(pkg, EventType.GATE_ABANDONED, "tier=${app.tier.value}")
         publish()
     }
 
@@ -459,6 +499,7 @@ class FrictionEngine(
             EventType.RECONCILED,
             "cycle rollover policy=$resetPolicy age=${ageMs}ms open=${openPkg ?: "-"}",
         )
+        onCycleRolled()
     }
 
     /**
