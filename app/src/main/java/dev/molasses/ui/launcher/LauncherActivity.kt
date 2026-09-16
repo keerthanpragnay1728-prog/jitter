@@ -535,12 +535,19 @@ fun MainLauncherWorkspace(
 
         Spacer(Modifier.height(14.dp))
 
+        // Above the pager on purpose. The pager disposes the off-screen page,
+        // so an origin captured inside the console restarted every time the
+        // user swiped to the ledger and back, taking Bit's blink schedule
+        // with it. Remembered here, it outlives the page.
+        val bitOrigin = remember { SystemClock.elapsedRealtime() }
+
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
         ) { page ->
             when (page) {
                 PAGE_CONSOLE -> TerminalHomeView(
+                    bitOrigin = bitOrigin,
                     apps = apps,
                     actions = actions,
                     history = history,
@@ -570,6 +577,11 @@ fun MainLauncherWorkspace(
 
 @Composable
 fun TerminalHomeView(
+    /**
+     * Origin for Bit's tick, held above the pager so swiping to the ledger
+     * and back does not restart the blink schedule.
+     */
+    bitOrigin: Long,
     apps: List<LaunchableApp>,
     actions: LauncherActions,
     history: List<String>,
@@ -615,11 +627,20 @@ fun TerminalHomeView(
     // blink timing. The tick is the monotonic clock so the phase is
     // reproducible and so a wall-clock change cannot freeze a frame.
     var bitTickMs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) {
-        val origin = SystemClock.elapsedRealtime()
+    // Carried rather than re-derived. The pure derivation walks every cycle
+    // since zero to find the current one, which is a few hundred iterations
+    // per frame after an hour on the launcher and hundreds of thousands after
+    // a day. Stepping the cycle forward is one comparison.
+    var blinkCycle by remember { mutableStateOf(BitStateMachine.BlinkCycle()) }
+    var blinking by remember { mutableStateOf(false) }
+    LaunchedEffect(bitOrigin) {
         while (true) {
-            bitTickMs = SystemClock.elapsedRealtime() - origin
-            delay(BIT_FRAME_MS)
+            val tick = SystemClock.elapsedRealtime() - bitOrigin
+            bitTickMs = tick
+            val next = BitStateMachine.advanceBlink(blinkCycle, tick)
+            blinkCycle = next
+            blinking = BitStateMachine.isBlinking(next, tick)
+            delay(BitStateMachine.TICK_MS)
         }
     }
 
@@ -770,7 +791,7 @@ fun TerminalHomeView(
                 // after nine minutes is a separate thing that stays separate.
                 react(BitStateMachine.Reaction.Absorbed)
             }
-            delay(BIT_FRAME_MS)
+            delay(BitStateMachine.TICK_MS)
         }
     }
 
@@ -850,7 +871,7 @@ fun TerminalHomeView(
                 reaction = BitStateMachine.Reaction.None
                 return@LaunchedEffect
             }
-            delay(BIT_FRAME_MS)
+            delay(BitStateMachine.TICK_MS)
         }
     }
 
@@ -1023,7 +1044,7 @@ fun TerminalHomeView(
             frame = if (display is BitDisplay.Speech) {
                 BitStateMachine.BitFrame(face = "")
             } else {
-                BitStateMachine.frame(display, reactionAgeMs, bitTickMs)
+                BitStateMachine.frame(display, reactionAgeMs, bitTickMs, blinking)
             },
             onInteract = { lastBitTouchMs = SystemClock.elapsedRealtime() },
             onTap = { taps ->
@@ -1117,7 +1138,7 @@ fun TerminalHomeView(
         if (speaking != null) {
             ConsoleSpeechRow(
                 face = BitGlyph.pad(
-                    BitStateMachine.frame(speaking, reactionAgeMs, bitTickMs).face,
+                    BitStateMachine.frame(speaking, reactionAgeMs, bitTickMs, blinking).face,
                 ),
                 // Resolved through the context rather than stringResource so
                 // the format call can be guarded. A persisted line carries
@@ -2225,10 +2246,7 @@ private fun AppDrawerOverlay(
     }
 }
 
-/** Bit's frame interval. 25 fps is well above the 12 fps glitch floor. */
 private const val TAG_LAUNCHER = "Molasses.Launcher"
-
-private const val BIT_FRAME_MS = 40L
 
 /**
  * How long each placeholder suggestion holds.

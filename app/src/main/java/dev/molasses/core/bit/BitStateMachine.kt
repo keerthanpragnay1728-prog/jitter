@@ -256,7 +256,29 @@ object BitStateMachine {
 
     const val BLINK_MIN_INTERVAL_MS = 3_000L
     const val BLINK_MAX_INTERVAL_MS = 7_000L
-    const val BLINK_HALF_MS = 75L
+
+    /**
+     * How long the eyes stay shut.
+     *
+     * Was 75 ms, and that was the spasm. The host samples this at [TICK_MS],
+     * so a 75 ms closure is caught by one tick or two depending on where the
+     * two phases happen to line up: the eyes shut for a single frame, or for
+     * two, and which one you got drifted. A single frame is not a blink, it
+     * is a flicker, and the inconsistency is what made it read as a twitch.
+     *
+     * 120 ms is three ticks at every phase, and it is inside the 100 to 150
+     * a human blink actually takes.
+     */
+    const val BLINK_HALF_MS = 120L
+
+    /**
+     * The host's frame period.
+     *
+     * Here rather than only in the launcher because two durations in this
+     * file are only correct relative to it, and a constant that lives beside
+     * the thing it constrains is a constant a test can hold to account.
+     */
+    const val TICK_MS = 40L
 
     // ------------------------------------------------------------------- api
 
@@ -300,7 +322,12 @@ object BitStateMachine {
      * `BitDisplay.resolve`; this only renders, which is what keeps the
      * ordering in one place rather than half here and half at the call site.
      */
-    fun frame(display: BitDisplay, reactionAgeMs: Long, tickMs: Long): BitFrame =
+    fun frame(
+        display: BitDisplay,
+        reactionAgeMs: Long,
+        tickMs: Long,
+        blinking: Boolean = blinkPhaseMs(tickMs) < BLINK_HALF_MS,
+    ): BitFrame =
         when (display) {
             // reactionActive is false so the host's expiry loop does not treat
             // a readout as a reaction and tear it down on the next tick. The
@@ -310,8 +337,9 @@ object BitStateMachine {
             // The speech row draws the line itself; this is the face beside
             // it, so Bit is in one place rather than two.
             is BitDisplay.Speech ->
-                frame(BitDisplay.Face(display.mood, Reaction.None), 0L, tickMs)
-            is BitDisplay.Face -> frame(display.mood, display.reaction, reactionAgeMs, tickMs)
+                frame(BitDisplay.Face(display.mood, Reaction.None), 0L, tickMs, blinking)
+            is BitDisplay.Face ->
+                frame(display.mood, display.reaction, reactionAgeMs, tickMs, blinking)
         }
 
     /**
@@ -319,21 +347,27 @@ object BitStateMachine {
      *
      * @param reactionAgeMs milliseconds since the reaction started. Ignored
      *   when [reaction] is [Reaction.None].
-     * @param tickMs a monotonic clock, used only for the idle blink phase.
+     * @param tickMs a monotonic clock, used only for the glitch phase and as
+     *   the fallback blink derivation.
+     * @param blinking whether the eyes are shut. Defaults to deriving it from
+     *   [tickMs], which is correct but walks every blink cycle since zero;
+     *   a host that runs for hours passes a scheduled answer from
+     *   [advanceBlink] instead. See [blinkPhaseMs].
      */
     fun frame(
         mood: Mood,
         reaction: Reaction,
         reactionAgeMs: Long,
         tickMs: Long,
+        blinking: Boolean = blinkPhaseMs(tickMs) < BLINK_HALF_MS,
     ): BitFrame = when (reaction) {
-        Reaction.None -> idleFrame(mood, tickMs)
+        Reaction.None -> idleFrame(mood, tickMs, blinking)
 
         is Reaction.Confirm -> phased(
             ageMs = reactionAgeMs,
             total = CONFIRM_TOTAL_MS,
             line = reaction.ack,
-            expired = { idleFrame(mood, tickMs).copy(line = null, reactionActive = false) },
+            expired = { idleFrame(mood, tickMs, blinking).copy(line = null, reactionActive = false) },
         ) { age ->
             when {
                 age < CONFIRM_RISE_MS -> NEUTRAL
@@ -346,14 +380,14 @@ object BitStateMachine {
             ageMs = reactionAgeMs,
             total = FAILED_TOTAL_MS,
             line = reaction.message,
-            expired = { idleFrame(mood, tickMs).copy(line = null, reactionActive = false) },
+            expired = { idleFrame(mood, tickMs, blinking).copy(line = null, reactionActive = false) },
         ) { DRY }
 
         is Reaction.Unavailable -> phased(
             ageMs = reactionAgeMs,
             total = UNAVAILABLE_TOTAL_MS,
             line = reaction.message,
-            expired = { idleFrame(mood, tickMs).copy(line = null, reactionActive = false) },
+            expired = { idleFrame(mood, tickMs, blinking).copy(line = null, reactionActive = false) },
         ) { FLAT }
 
         Reaction.Absorbed -> phased(
@@ -361,7 +395,7 @@ object BitStateMachine {
             total = ABSORBED_TOTAL_MS,
             // Never a line. Not "usually" and not "for now".
             line = null,
-            expired = { idleFrame(mood, tickMs).copy(reactionActive = false) },
+            expired = { idleFrame(mood, tickMs, blinking).copy(reactionActive = false) },
         ) { ASYMMETRIC }
 
         Reaction.Glitching -> phased(
@@ -369,21 +403,21 @@ object BitStateMachine {
             total = GLITCH_BURST_MS,
             // Silent. The convulsion is the message.
             line = null,
-            expired = { idleFrame(mood, tickMs).copy(reactionActive = false) },
+            expired = { idleFrame(mood, tickMs, blinking).copy(reactionActive = false) },
         ) { age -> glitchFace(Math.floorDiv(age, MIN_GLITCH_FRAME_MS)) }
 
         Reaction.Poked -> phased(
             ageMs = reactionAgeMs,
             total = POKE_TOTAL_MS,
             line = null,
-            expired = { idleFrame(mood, tickMs).copy(reactionActive = false) },
+            expired = { idleFrame(mood, tickMs, blinking).copy(reactionActive = false) },
         ) { HAPPY }
 
         Reaction.Irritated -> phased(
             ageMs = reactionAgeMs,
             total = IRRITATED_TOTAL_MS,
             line = null,
-            expired = { idleFrame(mood, tickMs).copy(reactionActive = false) },
+            expired = { idleFrame(mood, tickMs, blinking).copy(reactionActive = false) },
         ) { IRRITATED }
 
         Reaction.TurnedAway -> phased(
@@ -391,7 +425,7 @@ object BitStateMachine {
             total = TURNED_AWAY_TOTAL_MS,
             line = null,
             ignoresInput = true,
-            expired = { idleFrame(mood, tickMs).copy(reactionActive = false) },
+            expired = { idleFrame(mood, tickMs, blinking).copy(reactionActive = false) },
         ) { TURNED_AWAY }
     }
 
@@ -433,7 +467,7 @@ object BitStateMachine {
      * it is testable and so it does not settle into the even rhythm that reads
      * as a loading spinner.
      */
-    private fun idleFrame(mood: Mood, tickMs: Long): BitFrame {
+    private fun idleFrame(mood: Mood, tickMs: Long, blinking: Boolean): BitFrame {
         // Neither of these blinks. A blink reads as idling, and both of them
         // are states: one says the sink is live right now, the other says the
         // phone is meant to be asleep.
@@ -452,13 +486,54 @@ object BitStateMachine {
             return BitFrame(glitchFace(Math.floorDiv(tickMs, MIN_GLITCH_FRAME_MS)))
         }
 
-        val face = if (blinkPhaseMs(tickMs) < BLINK_HALF_MS) BLINK_HALF else NEUTRAL
-        return BitFrame(face)
+        return BitFrame(if (blinking) BLINK_HALF else NEUTRAL)
     }
 
     /** Even frames are broken, odd frames are composed. */
     private fun glitchFace(frame: Long): String =
         if (frame % 2L == 0L) WARDEN else NEUTRAL
+
+    /**
+     * One blink cycle: which one, and when it began.
+     *
+     * ## Why the host carries this
+     * [blinkPhaseMs] is correct and deterministic, and it walks every cycle
+     * from zero to find the current one. That is fine for a test and wrong
+     * for a launcher: the cost grows with how long the host has been running,
+     * so at twenty five frames a second it is a few hundred iterations after
+     * an hour and hundreds of thousands after a day.
+     *
+     * Carrying the cycle forward makes it one comparison in the steady state
+     * and one increment when a blink lands. It also stops the schedule
+     * restarting every time the composable is disposed, which the pager does
+     * on every swipe to the ledger and back.
+     */
+    data class BlinkCycle(val index: Long = 0L, val startedAtMs: Long = 0L)
+
+    /** The cycle containing [tickMs], stepping from [cycle]. */
+    fun advanceBlink(cycle: BlinkCycle, tickMs: Long): BlinkCycle {
+        // A tick before the cycle started can only be a host that reset its
+        // clock. Start again rather than looping forever looking for it.
+        if (tickMs < cycle.startedAtMs) return BlinkCycle(0L, 0L)
+        var current = cycle
+        var guard = 0
+        while (tickMs - current.startedAtMs >= blinkIntervalMs(current.index)) {
+            current = BlinkCycle(
+                index = current.index + 1,
+                startedAtMs = current.startedAtMs + blinkIntervalMs(current.index),
+            )
+            // Only reachable when a host skips a long way forward, which a
+            // resumed launcher does. Bounded so it cannot become the stall.
+            if (++guard > MAX_BLINK_STEPS) return BlinkCycle(0L, tickMs)
+        }
+        return current
+    }
+
+    /** True while the eyes are shut in [cycle]. */
+    fun isBlinking(cycle: BlinkCycle, tickMs: Long): Boolean =
+        tickMs - cycle.startedAtMs in 0 until BLINK_HALF_MS
+
+    private const val MAX_BLINK_STEPS = 10_000
 
     /**
      * Milliseconds into the current blink cycle.
