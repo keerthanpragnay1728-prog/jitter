@@ -703,13 +703,6 @@ private fun SensitivePrefixEditor(
 }
 
 /**
- * Font scale to its label.
- *
- * A plain function returning a @StringRes rather than a `when` inside the
- * composable, per the repo rule: the mapping stays pure and the resource is
- * resolved at the call site.
- */
-/**
  * State to copy, as a plain function resolved at the call site. Keeps the
  * mapping pure and the strings in the resource file, per CLAUDE.md.
  */
@@ -727,6 +720,13 @@ private fun gateModeBody(mode: GatePolicy.GateMode): Int = when (mode) {
     GatePolicy.GateMode.TYPING_ONLY -> R.string.settings_gate_mode_type_body
 }
 
+/**
+ * Font scale to its label.
+ *
+ * A plain function returning a @StringRes rather than a `when` inside the
+ * composable, per the repo rule: the mapping stays pure and the resource is
+ * resolved at the call site.
+ */
 @StringRes
 private fun fontScaleLabel(scale: FontScale): Int = when (scale) {
     FontScale.VERY_SMALL -> R.string.settings_font_very_small
