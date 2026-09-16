@@ -135,6 +135,9 @@ message ConsoleQueued {
   bool is_prompt = 3;
   // Opaque to everything but the launcher, which maps it to an effect.
   string action = 4;
+  // A greeting is charged to its own counter and is exempt from the
+  // once-per-cycle rule. See ConsoleLine.Category.
+  bool is_greeting = 5;
 }
 
 // What Bit has already spent. Counts renders, never attempts: a line counted
@@ -146,6 +149,8 @@ message ConsoleBudget {
   // button.
   repeated int64 delivered_at_wall_ms = 1;
   repeated string seen_ids = 2;
+  // Greetings are capped separately: three a day, over their own window.
+  repeated int64 greeted_at_wall_ms = 4;
   // The cycle seen_ids belongs to, so the set expires itself on a rollover
   // rather than needing something to remember to clear it.
   int64 cycle_anchor_wall_ms = 3;

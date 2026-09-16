@@ -19,8 +19,20 @@ package dev.molasses.core.console
  */
 sealed interface ConsoleLine {
 
+    /**
+     * Which budget a line is charged to.
+     *
+     * An observation is earned and a greeting is arrival, and they are capped
+     * separately because sharing would mean a morning greeting costing the
+     * day one of its three remarks, or a day spent scrolling silencing the
+     * greeting entirely.
+     */
+    enum class Category { OBSERVATION, GREETING }
+
     /** Stable across builds. The copy key and the dedupe key, one thing. */
     val id: String
+
+    val category: Category
 
     /** Format arguments, already rendered to strings so they can persist. */
     val args: List<String>
@@ -35,6 +47,7 @@ sealed interface ConsoleLine {
     data class Notice(
         override val id: String,
         override val args: List<String> = emptyList(),
+        override val category: Category = Category.OBSERVATION,
     ) : ConsoleLine
 
     /**
@@ -53,5 +66,6 @@ sealed interface ConsoleLine {
         override val id: String,
         override val args: List<String> = emptyList(),
         val action: String,
+        override val category: Category = Category.OBSERVATION,
     ) : ConsoleLine
 }

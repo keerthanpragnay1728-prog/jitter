@@ -417,6 +417,14 @@
       by the time anyone saw it.
     -->
     <string name="console_scrolled">You scrolled %1$s in %2$s.</string>
+    <!--
+      Arrival, on the first launcher visit after an unlock. Lower case on
+      purpose: the rest of the console shouts in caps because it is reporting
+      state, and this is the one line that is not.
+    -->
+    <string name="console_greeting_morning">good morning, architect</string>
+    <string name="console_greeting_afternoon">afternoon, architect</string>
+    <string name="console_greeting_late">still up, architect</string>
     <string name="console_do_it">[DO IT]</string>
     <string name="console_nah">[NAH]</string>
     <!-- App drawer -->

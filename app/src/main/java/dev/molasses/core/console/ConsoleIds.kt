@@ -22,5 +22,21 @@ object ConsoleIds {
      */
     const val SCROLLED = "scrolled"
 
-    val ALL: List<String> = listOf(SCROLLED)
+    /**
+     * Arrival, on the first launcher visit after an unlock.
+     *
+     * Three of them rather than one with a time argument, because the copy
+     * differs by more than a word and a format string that had to switch
+     * greeting on an argument would put the branch in the resource.
+     */
+    const val GREETING_MORNING = "greeting_morning"
+    const val GREETING_AFTERNOON = "greeting_afternoon"
+    const val GREETING_LATE = "greeting_late"
+
+    val ALL: List<String> = listOf(
+        SCROLLED,
+        GREETING_MORNING,
+        GREETING_AFTERNOON,
+        GREETING_LATE,
+    )
 }

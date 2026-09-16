@@ -61,6 +61,14 @@ object ConsoleSpeech {
         /** Ids rendered in [cycleAnchorWallMs]'s cycle. Never the same twice. */
         val seenIds: Set<String> = emptySet(),
         /**
+         * Wall times of rendered greetings, pruned to the day window.
+         *
+         * Its own list rather than a flag on the shared one, because the two
+         * caps are different sizes over different windows and a greeting is
+         * not an observation. See [ConsoleLine.Category].
+         */
+        val greetedAtWallMs: List<Long> = emptyList(),
+        /**
          * The cycle [seenIds] belongs to.
          *
          * Carried rather than cleared by a rollover hook, so the set expires
@@ -96,6 +104,9 @@ object ConsoleSpeech {
         OUTRANKED,
         HOURLY_CAP,
         DAILY_CAP,
+
+        /** Three greetings today already. Its own counter; see [Greeting]. */
+        GREETING_CAP,
     }
 
     sealed interface Verdict {
@@ -122,7 +133,11 @@ object ConsoleSpeech {
         // one do not apply.
         val sameCycle = budget.cycleAnchorWallMs == cycleAnchorWallMs
         val seen = if (sameCycle) budget.seenIds else emptySet()
-        if (queued.id in seen) return Verdict.Held(Hold.ALREADY_SEEN)
+        val greeting = queued.category == ConsoleLine.Category.GREETING
+        // A greeting is exempt from the once-per-cycle rule. It is the same
+        // line every morning by design, and a cycle is six hours, so keying
+        // it on the id would silence the second greeting of most days.
+        if (!greeting && queued.id in seen) return Verdict.Held(Hold.ALREADY_SEEN)
 
         // Delivery-time suppression, in the order a person would rank the
         // reasons. None of these spends anything.
@@ -132,16 +147,25 @@ object ConsoleSpeech {
         if (gate.outranked) return Verdict.Held(Hold.OUTRANKED)
 
         val recent = budget.deliveredAtWallMs.filter { nowWallMs - it in 0 until DAY_MS }
-        if (recent.count { nowWallMs - it < HOUR_MS } >= MAX_PER_HOUR) {
-            return Verdict.Held(Hold.HOURLY_CAP)
+        val greeted = budget.greetedAtWallMs.filter { nowWallMs - it in 0 until DAY_MS }
+
+        if (greeting) {
+            if (greeted.size >= Greeting.MAX_PER_DAY) return Verdict.Held(Hold.GREETING_CAP)
+        } else {
+            if (recent.count { nowWallMs - it < HOUR_MS } >= MAX_PER_HOUR) {
+                return Verdict.Held(Hold.HOURLY_CAP)
+            }
+            if (recent.size >= MAX_PER_DAY) return Verdict.Held(Hold.DAILY_CAP)
         }
-        if (recent.size >= MAX_PER_DAY) return Verdict.Held(Hold.DAILY_CAP)
 
         return Verdict.Render(
             line = queued,
             budget = Budget(
-                deliveredAtWallMs = (recent + nowWallMs).takeLast(MAX_PER_DAY),
-                seenIds = seen + queued.id,
+                deliveredAtWallMs =
+                    if (greeting) recent else (recent + nowWallMs).takeLast(MAX_PER_DAY),
+                seenIds = if (greeting) seen else seen + queued.id,
+                greetedAtWallMs =
+                    if (greeting) (greeted + nowWallMs).takeLast(Greeting.MAX_PER_DAY) else greeted,
                 cycleAnchorWallMs = cycleAnchorWallMs,
             ),
         )
