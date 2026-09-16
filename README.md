@@ -67,17 +67,50 @@ witness that one is in front. While any overlay of ours is on the glass the
 foreground poll tightens from 2 s to 400 ms, which bounds how long a stall
 sink can sit over an app the user has just switched to.
 
-**Pause Jitter (15m).** Settings has a one-tap pause with a countdown. It
-suppresses every overlay for fifteen minutes. It does **not** pause
-accumulation: foreground time keeps counting and `tierIndex` keeps climbing,
-so a pause is an escape hatch and not a clean slate. It is measured on
-`elapsedRealtime` rather than the wall clock, so winding the system clock back
-cannot hold it open.
+### Tested on a device, September 2026
 
-**Honestly:** some banks warn regardless. The warning is driven by heuristics
-we do not control, and any enabled accessibility service can trip some of
-them. If that happens, the pause is the answer, and disabling the service from
-the system accessibility page always works.
+| app | with Jitter enabled |
+| --- | --- |
+| Google Pay | payments complete normally |
+| PhonePe | payments complete normally |
+| **Paytm** (`net.one97.paytm`) | **blocks the transaction** |
+
+Paytm shows "Important Security Alert / Suspicious App Detected", names
+Jitter, and says "Remove the app or disable its Accessibility permission to
+continue". The payment does not go through.
+
+**This one cannot be fixed from inside Jitter, and it is worth being precise
+about why.** Paytm calls `getEnabledAccessibilityServiceList()` and blocks on
+the *presence* of any enabled service that is not on its allowlist. It never
+asks what that service observes. So every mitigation above is invisible to it:
+the scoped `packageNames`, `canRetrieveWindowContent` being false, the removed
+`flagRetrieveInteractiveWindows`, and the refusal to draw anything at all over
+a payment app. None of them change the one thing Paytm checks.
+
+The only mechanism that does is `AccessibilityService.disableSelf()`.
+
+**Disable for payments.** Settings, under SAFETY. It turns the accessibility
+service off. Friction stops completely: no stalls, no checkpoints, no locks
+enforced. There is no timer, and nothing inside Jitter can switch it back on,
+because `disableSelf()` cannot be reversed programmatically by platform
+guarantee. To undo it you go into Android Settings, Accessibility, and enable
+Jitter again by hand. The permission checklist at the top of settings will
+read "Not running" until you do.
+
+That guarantee is the point rather than an inconvenience. A control that could
+quietly switch friction back on is a control you cannot trust at a till, and
+one that switched it back on *for* you would be the bypass every other defence
+here exists to prevent, running in reverse.
+
+**The overlay suppression set stays exactly as it is.** It prevents a
+different failure, the tapjacking check that sets
+`FLAG_WINDOW_IS_OBSCURED`, and GPay and PhonePe would both hit that without
+it. Disabling for payments is the answer to Paytm specifically, not a
+replacement for never drawing over a payment screen.
+
+**Honestly:** one blocker out of three is a documented limitation rather than
+an architecture problem, and the workaround is two taps plus a trip back
+through Settings. If another app turns up, that changes.
 
 **What the removal cost.** `getWindows()` now returns an empty list. Bit's
 planned fullscreen auto-retract loses `getBoundsInScreen()` entirely and will
@@ -880,6 +913,14 @@ product.
 ---
 
 ## Known limitations
+
+**Known incompatibility**
+- **Paytm (`net.one97.paytm`) blocks payments while Jitter's accessibility
+  service is enabled.** It checks for the presence of any enabled service, not
+  for what that service does, so no amount of scoping or suppression reaches
+  it. Workaround: Settings, SAFETY, "Disable for payments", then re-enable
+  Jitter from Android Settings afterwards. Google Pay and PhonePe are
+  unaffected and complete payments normally. See "Banking and UPI apps".
 
 **Verification**
 - The Android layer has never been compiled. See "Build status".

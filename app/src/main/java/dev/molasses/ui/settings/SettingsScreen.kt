@@ -74,7 +74,6 @@ fun SettingsScreen(
     val policy by vm.resetPolicy.collectAsStateWithLifecycle()
     val altChallenge by vm.alternativeChallenge.collectAsStateWithLifecycle()
     val sensitivePrefixes by vm.sensitivePrefixes.collectAsStateWithLifecycle()
-    val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
     val fontScale by vm.fontScale.collectAsStateWithLifecycle()
     val diag by vm.engineDiagnostics.collectAsStateWithLifecycle()
 
@@ -371,13 +370,7 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.secondary,
             )
         }
-        item {
-            PauseControl(
-                remainingMs = pauseRemainingMs,
-                onPause = { vm.setPaused(true) },
-                onResume = { vm.setPaused(false) },
-            )
-        }
+        item { DisableControl(onDisable = { vm.requestDisable() }) }
         item {
             SensitivePrefixEditor(
                 userPrefixes = sensitivePrefixes,
@@ -518,49 +511,57 @@ private fun PolicyRow(
 }
 
 /**
- * "Pause Jitter (15m)" and its countdown.
+ * The one way out of Jitter.
  *
- * The countdown is minutes and seconds rather than a progress bar because the
- * situation it exists for is standing at a till with a card reader waiting,
- * and a number answers "can I pay yet" in one glance.
+ * ## Why this replaced the fifteen minute pause
+ * The pause suppressed overlays. That is enough for GPay and PhonePe, which
+ * refuse to run under a window drawn over them, and both complete payments
+ * normally with Jitter enabled.
  *
- * Recomposes from the store rather than from a timer, so the digits step when
- * the state changes rather than once a second. A per-second recomposition of
- * a settings screen is not worth the wakeups, and the user is looking at the
- * payment app, not at this.
+ * Paytm is a different check and the pause cannot reach it. It calls
+ * `getEnabledAccessibilityServiceList()` and blocks on the *presence* of any
+ * enabled service that is not on its allowlist. It never asks what the
+ * service observes, so scoping `packageNames`, holding
+ * `canRetrieveWindowContent` false, dropping `flagRetrieveInteractiveWindows`
+ * and refusing every overlay are all invisible to it. The only thing that
+ * changes what Paytm sees is the service not being enabled.
+ *
+ * ## Why it has no timer and nothing re-arms it
+ * `disableSelf()` cannot be reversed from code, by platform guarantee. That
+ * is the mechanism rather than a limitation: a control that could quietly
+ * switch friction back on would be a control the user could not trust at a
+ * till, and a control that could switch it back on *for* them would be the
+ * bypass every other defence here exists to prevent, inverted.
+ *
+ * So the path back is the permission checklist at the top of this screen,
+ * which will read "Not running" the moment this fires.
  */
 @Composable
-private fun PauseControl(
-    remainingMs: Long,
-    onPause: () -> Unit,
-    onResume: () -> Unit,
-) {
-    val active = remainingMs > 0
+private fun DisableControl(onDisable: () -> Unit) {
+    var armed by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
-        if (active) {
-            val totalSeconds = remainingMs / 1000
+        Text(
+            stringResource(R.string.settings_disable_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = { if (armed) onDisable() else armed = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             Text(
                 stringResource(
-                    R.string.settings_pause_active,
-                    (totalSeconds / 60).toString(),
-                    (totalSeconds % 60).toString().padStart(2, '0'),
+                    if (armed) R.string.settings_disable_confirm
+                    else R.string.settings_disable_start,
                 ),
-                style = MaterialTheme.typography.bodyLarge,
             )
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onResume, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.settings_pause_resume))
-            }
-        } else {
-            Button(onClick = onPause, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.settings_pause_start))
-            }
+        }
+        if (armed) {
             Spacer(Modifier.height(4.dp))
-            Text(
-                stringResource(R.string.settings_pause_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary,
-            )
+            OutlinedButton(onClick = { armed = false }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_disable_cancel))
+            }
         }
     }
 }

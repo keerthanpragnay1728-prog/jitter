@@ -114,6 +114,7 @@ class MolassesAccessibilityService : AccessibilityService() {
     private var bootId = 0
     private var debugOverrideNonce = 0L
     private var previewStallNonce = 0L
+    private var disableRequestNonce = 0L
 
     /**
      * Built lazily: `Context.getPackageName()` is not usable from a field
@@ -258,6 +259,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             cycleStore.current().let {
                 debugOverrideNonce = it.debugOverrideNonce
                 previewStallNonce = it.previewStallNonce
+                disableRequestNonce = it.disableRequestNonce
             }
             buildEngine(outcome.snapshot, outcome.bootId)
             observeSettings()
@@ -364,6 +366,23 @@ class MolassesAccessibilityService : AccessibilityService() {
                         withContext(Dispatchers.Main.immediate) {
                             shutter.setCurrentPackage(null)
                             shutter.arm(PREVIEW_STALL_MS)
+                        }
+                    }
+                }
+
+                // "Disable for payments". The one path out of the whole app,
+                // and it is deliberately one way: disableSelf cannot be
+                // undone from code, so the user goes back through Android
+                // Settings. Checked against the nonce captured at connect so
+                // a restart cannot replay an old request.
+                if (state.disableRequestNonce != disableRequestNonce) {
+                    disableRequestNonce = state.disableRequestNonce
+                    if (ready) {
+                        Log.i(TAG, "disabling self on user request")
+                        withContext(Dispatchers.Main.immediate) {
+                            tearDownOverlays("disabling")
+                            runCatching { disableSelf() }
+                                .onFailure { Log.w(TAG, "disableSelf failed", it) }
                         }
                     }
                 }

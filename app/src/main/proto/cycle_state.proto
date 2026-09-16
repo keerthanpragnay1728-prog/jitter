@@ -112,6 +112,15 @@ message CycleState {
   ConsoleQueued console_live = 30;
 
   ConsoleBudget console_budget = 31;
+
+  // Bumped by "Disable for payments". The settings Activity cannot call
+  // AccessibilityService.disableSelf(); only the service can, so the request
+  // crosses here the same way the stall preview does.
+  //
+  // There is deliberately no matching enable nonce. disableSelf cannot be
+  // reversed programmatically, by platform guarantee, and that guarantee is
+  // the entire value of the control.
+  int64 disable_request_nonce = 32;
 }
 
 // One line of Bit's speech, in the form that survives a process death.

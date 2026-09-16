@@ -192,6 +192,23 @@ class CycleStateStore(context: Context) {
         }
     }
 
+    /**
+     * Ask the accessibility service to turn itself off.
+     *
+     * One way. `disableSelf()` cannot be reversed from code, by platform
+     * guarantee, and the user must re-enable from Android Settings by hand.
+     * That is not a limitation being worked around; it is the mechanism.
+     * Paytm blocks on the *presence* of any enabled accessibility service
+     * that is not on its allowlist, and never asks what that service
+     * observes, so nothing short of the service being gone changes what it
+     * sees.
+     */
+    suspend fun requestDisable() {
+        store.updateData {
+            it.toBuilder().setDisableRequestNonce(System.currentTimeMillis()).build()
+        }
+    }
+
     // ---------------------------------------------------------------- console
 
     /** The queue, the live prompt and the budget, in one emission. */

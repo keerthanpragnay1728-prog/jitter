@@ -74,7 +74,16 @@
     <string name="settings_gate_unavoidable_body">Walking away from a checkpoint used to switch friction off until you cleared it. It no longer does. Scroll delays run continuously from six minutes onward, and an unpaid checkpoint makes them arrive sooner rather than stopping them. Clearing one buys time before the next; ignoring one costs you. There is no setting that turns friction off, and the typing task is the lightest way to pay.</string>
     <string name="settings_section_gate">Movement gate</string>
     <string name="settings_section_safety">Safety</string>
-    <string name="settings_safety_body">Banking and UPI apps refuse to run when something is drawn over them, and some warn about accessibility services regardless. Jitter never draws over the apps listed here, and you can silence it entirely for fifteen minutes.</string>
+    <string name="settings_safety_body">Banking and UPI apps refuse to run when something is drawn over them, and some block on the presence of an accessibility service regardless of what it does. Jitter never draws over the apps listed here. Google Pay and PhonePe work normally. Paytm blocks payments and cannot be satisfied any other way, so there is a switch below that turns Jitter off entirely.</string>
+    <!--
+      Paytm blocks payments on the presence of any enabled accessibility
+      service, not on what it observes, so nothing short of the service being
+      off changes what it sees. GPay and PhonePe both complete normally.
+    -->
+    <string name="settings_disable_start">Disable for payments</string>
+    <string name="settings_disable_body">Turns the accessibility service off. Friction stops completely: no stalls, no checkpoints, no locks enforced. There is no timer and nothing in Jitter can switch it back on. To undo it you go into Android Settings, Accessibility, and enable Jitter again yourself.</string>
+    <string name="settings_disable_confirm">Disable now</string>
+    <string name="settings_disable_cancel">Cancel</string>
     <string name="settings_pause_start">Pause Jitter (15m)</string>
     <!-- %1$s is minutes, %2$s is zero padded seconds. Both are strings, not
          %d: several strings in this file take Double thresholds and a %d
