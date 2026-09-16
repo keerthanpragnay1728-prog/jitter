@@ -13,7 +13,50 @@ class PowerBarTest {
     @Test
     fun `the documented example renders exactly`() {
         assertEquals("[####......]", PowerBar.bar(49, ascii))
-        assertEquals("31", PowerBar.hexCapacity(49))
+    }
+
+    // ------------------------------------------------------------ the line
+
+    @Test
+    fun `the readout at the five levels`() {
+        assertEquals("BAT[..........] 0%", PowerBar.readout(0, ascii))
+        assertEquals("BAT[#.........] 5%", PowerBar.readout(5, ascii))
+        assertEquals("BAT[#####.....] 56%", PowerBar.readout(56, ascii))
+        assertEquals("BAT[########..] 86%", PowerBar.readout(86, ascii))
+        assertEquals("BAT[##########] 100%", PowerBar.readout(100, ascii))
+    }
+
+    @Test
+    fun `the raw level no longer prints inside the line`() {
+        // The defect: BAT[########  ]56 86% put the level between the bracket
+        // and the percent with no space, so it read as one number that had
+        // run into another. Two renderings of the same value, and the
+        // unreadable one had no separator.
+        for (p in 0..100) {
+            val line = PowerBar.readout(p, ascii)
+            assertEquals("at $p%", "]", line.substring(line.indexOf(']'), line.indexOf(']') + 1))
+            assertTrue("at $p%", line.substringAfter("]").startsWith(" "))
+        }
+    }
+
+    @Test
+    fun `the readout is the label, the bar and the suffix`() {
+        // The composable assembles the bar per character so one cell can
+        // brighten while charging, so it cannot call readout directly. This
+        // is what ties the three pieces it does render to the tested whole.
+        for (p in 0..100) {
+            assertEquals(
+                "at $p%",
+                PowerBar.readout(p, ascii),
+                PowerBar.LABEL + PowerBar.bar(p, ascii) + PowerBar.suffix(p),
+            )
+        }
+    }
+
+    @Test
+    fun `an out of range level is clamped in the suffix too`() {
+        assertEquals(" 0%", PowerBar.suffix(-5))
+        assertEquals(" 100%", PowerBar.suffix(500))
     }
 
     @Test
@@ -61,19 +104,6 @@ class PowerBarTest {
     fun `out of range input is clamped rather than overflowing the bar`() {
         assertEquals("[..........]", PowerBar.bar(-50, ascii))
         assertEquals("[##########]", PowerBar.bar(500, ascii))
-        assertEquals("00", PowerBar.hexCapacity(-1))
-        assertEquals("64", PowerBar.hexCapacity(101))
-    }
-
-    @Test
-    fun `hex capacity is always two characters so the header never reflows`() {
-        for (p in 0..100) {
-            assertEquals("at $p%", 2, PowerBar.hexCapacity(p).length)
-        }
-        assertEquals("00", PowerBar.hexCapacity(0))
-        assertEquals("0A", PowerBar.hexCapacity(10))
-        assertEquals("5C", PowerBar.hexCapacity(92))
-        assertEquals("64", PowerBar.hexCapacity(100))
     }
 
     @Test

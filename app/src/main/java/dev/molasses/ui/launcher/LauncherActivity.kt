@@ -11,6 +11,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -325,14 +326,7 @@ class LauncherActivity : ComponentActivity() {
                             },
                             onOpenMessaging = ::openMessaging,
                             onLaunchIntent = ::launchIntent,
-                            onOpenWellbeingSettings = {
-                                try {
-                                    val dw = Intent("com.google.android.apps.wellbeing.action.WELLBEING_DASHBOARD")
-                                    startActivity(dw)
-                                } catch (e: Exception) {
-                                    startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                                }
-                            },
+                            onOpenWellbeingSettings = ::openWellbeing,
                         )
 
                         // Slide-Over Notification Inbox (Minimalist Phone style)
@@ -384,6 +378,30 @@ class LauncherActivity : ComponentActivity() {
     private fun launchIntent(action: String, category: String?) {
         val intent = Intent(action).apply { category?.let { addCategory(it) } }
         runCatching { startActivity(intent) }
+    }
+
+    /**
+     * Digital Wellbeing, by the most specific route this device answers.
+     *
+     * Each is resolved before it is launched rather than launched inside a
+     * try. A `startActivity` that throws has already torn down the touch that
+     * caused it, and the catch lands the user somewhere they did not ask for
+     * with no way to tell that anything went wrong. Resolving first means the
+     * fallback is a decision rather than a recovery.
+     *
+     * The last rung is raw usage-access settings, which is where this used to
+     * go every time: it is the right answer only on a device with no Wellbeing
+     * at all, and it was the answer on every device.
+     */
+    private fun openWellbeing() {
+        val candidates = listOf(
+            Intent("com.google.android.apps.wellbeing.action.DIGITAL_WELLBEING"),
+            Intent("android.settings.DIGITAL_WELLBEING_SETTINGS"),
+            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS),
+        )
+        val resolved = candidates.firstOrNull { canResolve(it) } ?: return
+        runCatching { startActivity(resolved) }
+            .onFailure { Log.w(TAG_LAUNCHER, "wellbeing intent refused", it) }
     }
 
     private fun openMessaging() {
@@ -572,6 +590,20 @@ fun TerminalHomeView(
     onLaunchIntent: (String, String?) -> Unit,
 ) {
     val context = LocalContext.current
+
+    /**
+     * The filter and the prompt are the same field.
+     *
+     * Held in `remember`, which survives for as long as this composable is in
+     * composition, and launching an app does not take it out of composition:
+     * the Activity is stopped, not destroyed. So the text the user typed to
+     * find WhatsApp was still there when they came back from WhatsApp, along
+     * with the filtered list it produced, and it survived the screen going
+     * off for the same reason.
+     *
+     * Cleared on resume below, and on every launch, rather than made
+     * `rememberSaveable`, which would have made it survive *more*.
+     */
     var query by remember { mutableStateOf("") }
     var timeText by remember { mutableStateOf("") }
     var dateText by remember { mutableStateOf("") }
@@ -740,6 +772,38 @@ fun TerminalHomeView(
             }
             delay(BIT_FRAME_MS)
         }
+    }
+
+    /**
+     * Back to the empty state.
+     *
+     * The prompt, the filter, a pending lock confirmation and the manual are
+     * one surface, so they clear together. Command history is deliberately
+     * not touched: it is persisted, and an empty prompt is exactly when it is
+     * meant to show.
+     */
+    fun clearPrompt() {
+        query = ""
+        pending = null
+        showManual = false
+    }
+
+    /** Launch, and leave the prompt empty behind it. */
+    fun launchAndClear(pkg: String) {
+        clearPrompt()
+        onLaunchPackage(pkg)
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            // Belt to the launch path's braces. A launch clears it directly,
+            // and this catches every other way back: recents, the system back
+            // gesture, the screen coming on.
+            if (event == Lifecycle.Event.ON_RESUME) clearPrompt()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Bit's readout. The step advances on a tap and never on a timer: a
@@ -1195,8 +1259,7 @@ fun TerminalHomeView(
                                 }
                                 DispatchResult.NotACommand ->
                                     if (filteredApps.isNotEmpty()) {
-                                        onLaunchPackage(filteredApps.first().packageName)
-                                        query = ""
+                                        launchAndClear(filteredApps.first().packageName)
                                     }
                             }
                         },
@@ -1297,7 +1360,7 @@ fun TerminalHomeView(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onLaunchPackage(app.packageName) }
+                            .clickable { launchAndClear(app.packageName) }
                             .padding(vertical = 7.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
@@ -2163,6 +2226,8 @@ private fun AppDrawerOverlay(
 }
 
 /** Bit's frame interval. 25 fps is well above the 12 fps glitch floor. */
+private const val TAG_LAUNCHER = "Molasses.Launcher"
+
 private const val BIT_FRAME_MS = 40L
 
 /**
@@ -2268,7 +2333,7 @@ private fun PowerLine(
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = stringResource(R.string.launcher_pwr_label),
+                text = stringResource(R.string.launcher_bat_label),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
@@ -2288,9 +2353,8 @@ private fun PowerLine(
             }
             Text(
                 text = stringResource(
-                    R.string.launcher_pwr_suffix_fmt,
-                    PowerBar.hexCapacity(percent),
-                    percent.toString(),
+                    R.string.launcher_bat_suffix_fmt,
+                    percent.coerceIn(0, 100).toString(),
                 ),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
