@@ -405,10 +405,6 @@ class CycleStateStore(context: Context) {
         store.updateData { it.toBuilder().setGateModeOrdinal(mode.ordinal).build() }
     }
 
-    suspend fun setAlternativeChallenge(enabled: Boolean) {
-        store.updateData { it.toBuilder().setAlternativeChallenge(enabled).build() }
-    }
-
     /**
      * Extra never-draw-over prefixes. The shipped defaults are applied on top
      * of whatever is stored here, so this list can only widen the set.

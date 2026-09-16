@@ -23,7 +23,14 @@ message CycleState {
   int64 open_session_start_elapsed_ms = 9;
   CycleResetPolicyProto reset_policy = 10;
   repeated string target_packages = 11;
-  bool alternative_challenge = 12;     // accessibility escape hatch (SS8)
+  // Retired. The accessibility escape hatch is now a value of
+  // gate_mode_ordinal (GateMode.TYPING_ONLY) rather than a flag beside the
+  // walking gate, because the walking gate itself became optional and a
+  // boolean would have taken the escape hatch away with it.
+  //
+  // Left declared rather than reserved: nothing reads it, and removing the
+  // field from a message that has shipped is a change no stored file needs.
+  bool alternative_challenge = 12;
 
   // Bumped by the debug state editor. The accessibility service watches it and
   // rebuilds the engine from this file when it changes. Without that the

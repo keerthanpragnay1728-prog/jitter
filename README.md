@@ -825,7 +825,8 @@ dev.molasses
 ├── di/                           Hilt module  (added; not in the brief's tree)
 ├── engine/ FrictionEngine, TierPolicy, MonotonicInt
 ├── monitor/ MolassesAccessibilityService, ForegroundReconciler, ForegroundProbe
-├── overlay/ ShutterOverlayManager, OverlayHost, GateOverlayManager
+├── overlay/ ShutterOverlayManager, OverlayHost, GateOverlayManager,
+│            LeaseGateOverlayManager, LockOverlayManager, CallDetector
 ├── sensing/ MovementDetector, CadenceAnalyzer, StepGate, FallbackImuGate
 └── ui/     settings/ gate/ theme/
 ```
@@ -833,6 +834,40 @@ dev.molasses
 Two additions to the brief's tree, both noted in place: `di/` (Hilt needs a
 module, and putting it in `data/` would make a DI concern look like a storage
 one) and `monitor/ForegroundProbe.kt` (see bug 3).
+
+### Two systems, and they do not talk
+
+**System A is the lease**: permission to be in an app, measured in real elapsed
+time. **System B is friction**: accumulated foreground time, which decides what
+a scroll costs. `LeaseManager` and `FrictionEngine` share no state and neither
+reads the other.
+
+One number crosses, in one direction: the accumulated total at the moment of
+the grant, carried on the lease so the engine can find where "past the lease
+you took" begins in its own timebase. The engine reads it; the lease never
+reads the engine.
+
+The consequence is the load-bearing part: **a lease buys no friction relief.**
+Fifteen minutes buys fifteen minutes without the launch gate, and the scrolling
+inside them costs exactly what it would have cost anyway. A lease that also
+bought friction would be the one purchase that makes the ladder negotiable, and
+there would then be no reason for anyone not to buy it every time.
+
+The gate used to fire on crossing a tier boundary, part way through a session.
+It moved to the launch for two reasons. A gate eleven minutes in arrives after
+the decision it was meant to inform, and the honest answer to "do you want to
+keep going" at that point is always yes. And a checkpoint gate could be waited
+out: leaving the app left the gate owed and changed nothing else, so the user
+came back to the same gate, but they also came back to the same app, which is
+what they wanted.
+
+A lease measures on `elapsedRealtime` alone, with no wall-clock reading at all.
+It is **relief**, so its failure mode has to be expiring early rather than
+late; a bare wall clock held open by a backward wind would be a lease that
+never ends. A reboot therefore ends every lease, which is correct rather than a
+limitation: the longest one on offer is fifteen minutes and a reboot outlasts
+it. This is the opposite answer from a lock, which has to span reboots to mean
+anything. See "Which clock a deadline is measured on" in CLAUDE.md.
 
 ### Timebase
 
@@ -961,9 +996,10 @@ produced it, which is the behaviour the shield was asked for anyway.
 
 **Platform ceilings**
 - **HOME and RECENTS cannot be blocked from an overlay.** This is intentional,
-  not a gap: leaving the app *pauses* the gate rather than clearing it, and the
-  gate returns on the next scroll. Pretending otherwise would mean a gate that
-  vanishes on a home press and grants free usage on return.
+  not a gap: leaving takes the gate down without buying anything, and the gate
+  returns on the next entry or the next scroll. Pretending otherwise would mean
+  a gate that vanishes on a home press and grants free usage on return, which
+  is why the launch check runs on scroll as well as on entry.
 - The gate has no way to stop a user from disabling the accessibility service
   in Settings. Nothing on Android can prevent that, and a friction tool that
   tried would be malware.
@@ -1050,18 +1086,35 @@ releases when the screen turns off, when you leave the app, and when a phone
 call arrives. And it is never armed for more than eight continuous seconds, at
 any tier, no matter how much you scroll.
 
-**It will ask you to get up and walk.** At each five-minute mark a full-screen
-gate appears and will not go away until you have walked for a bit. That is
-about twelve steps, or eight seconds of walking-shaped motion if your phone has
-no step sensor. You can always leave with HOME or RECENTS; that pauses the gate
-instead of clearing it, and it comes back when you next scroll. **If walking is
-not something you can or should do, turn on Settings → Movement gate →
-Alternative challenge**, which replaces it with a 25-second untimed typing
-task. No sensors run in that mode.
+**It will stop you at the door.** Opening one of your target apps puts a
+full-screen black page in front of it: a face, the app's name, how long you
+have spent in it today, how long this cycle, how many times you have opened it,
+and a countdown. Eight seconds the first time. There is nothing to do but wait,
+and there is no sentence on the screen telling you what to think about the
+numbers.
 
-**Clearing a gate buys you five more minutes and nothing else.** It does not
-reset your time and it does not make the blackouts shorter. Within a cycle the
+**Then you choose how long you are staying.** At zero the countdown is replaced
+by four answers: 5m, 10m, 15m, or TAKE ME OUT, which sends you home. There is
+no unlimited option, and pressing back does the same thing as TAKE ME OUT.
+
+**Each lease makes the next gate longer.** Eight seconds, then twelve, sixteen,
+twenty, up to thirty, for as long as the cycle lasts. Backing out costs nothing
+extra: only leases you actually take lengthen it. The count resets when the
+cycle does.
+
+**A lease buys time and nothing else.** It does not reset your accumulated
+time, does not lower a tier, and does not make the blackouts shorter. Staying
+in the app past the lease you took makes them arrive sooner. Within a cycle the
 friction only ever increases.
+
+**It can ask you to get up and walk instead,** but only if you turn that on,
+and only past twenty five minutes in one app in one cycle. Settings → The gate
+→ What the gate asks for. That replaces the countdown with the movement gate:
+about twelve steps, or eight seconds of walking-shaped motion if your phone has
+no step sensor. **If walking is not something you can or should do,** the same
+setting offers a 25 second untimed typing task in its place. No sensors run in
+that mode. You can always leave with HOME or RECENTS; that takes the gate down
+without buying anything, and it comes back when you next scroll.
 
 **The only way out is to stop.** By default the counter resets after six
 continuous hours with no time in any of your target apps. You can switch it to

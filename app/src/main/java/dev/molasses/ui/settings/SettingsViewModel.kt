@@ -8,6 +8,7 @@ import dev.molasses.core.diag.RouteTally
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
+import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
@@ -100,8 +101,12 @@ class SettingsViewModel @Inject constructor(
     val resetPolicy: StateFlow<CycleResetPolicy> = repo.resetPolicy
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CycleResetPolicy.DEFAULT)
 
-    val alternativeChallenge: StateFlow<Boolean> = repo.alternativeChallenge
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val gateMode: StateFlow<GatePolicy.GateMode> = repo.gateMode
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            GatePolicy.GateMode.COUNTDOWN,
+        )
 
     /** The user's additions only. The shipped defaults are not editable. */
     val sensitivePrefixes: StateFlow<List<String>> = repo.sensitivePrefixes
@@ -270,8 +275,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repo.setResetPolicy(policy) }
     }
 
-    fun setAlternativeChallenge(enabled: Boolean) {
-        viewModelScope.launch { repo.setAlternativeChallenge(enabled) }
+    fun setGateMode(mode: GatePolicy.GateMode) {
+        viewModelScope.launch { repo.setGateMode(mode) }
     }
 
     /**
