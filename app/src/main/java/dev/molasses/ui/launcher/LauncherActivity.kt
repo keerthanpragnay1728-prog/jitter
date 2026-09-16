@@ -130,6 +130,7 @@ import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.BezelSnap
+import dev.molasses.core.stats.DayUsage
 import dev.molasses.core.ui.CycleLine
 import dev.molasses.core.ui.FontScale
 import dev.molasses.core.ui.PowerBar
@@ -150,8 +151,10 @@ import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class LaunchableApp(
     val label: String,
@@ -1743,36 +1746,37 @@ fun TextualWellbeingView(
         val now = System.currentTimeMillis()
 
         // ------------------------------------------------------ screen time
-        try {
-            val statsMap = usm.queryAndAggregateUsageStats(startOfDay, now)
-            if (!statsMap.isNullOrEmpty()) {
-                val valid = statsMap.values
-                    .filter { it.totalTimeInForeground > 60_000L }
-                    .sortedByDescending { it.totalTimeInForeground }
-                    .take(5)
-
-                val sumMillis = valid.sumOf { it.totalTimeInForeground }
-                if (sumMillis > 0) {
-                    screenTimeMs = sumMillis
-                    val allMins = sumMillis / 60_000L
-                    val pm = context.packageManager
-                    usageRecords = valid.map { stat ->
-                        val label = try {
-                            pm.getApplicationLabel(pm.getApplicationInfo(stat.packageName, 0)).toString()
-                        } catch (e: Exception) {
-                            stat.packageName.substringAfterLast('.')
-                        }
-                        val mins = stat.totalTimeInForeground / 60_000L
-                        val pct = ((mins * 100) / allMins.coerceAtLeast(1)).toInt()
-                        val filled = (pct / 5).coerceIn(0, 20)
-                        val empty = (20 - filled).coerceAtLeast(0)
-                        val bar = "[" + "=".repeat(filled) + " ".repeat(empty) + "] $pct%"
-                        AppUsageRecord(label, mins, bar)
-                    }
+        // A replay of the raw event stream, not queryAndAggregateUsageStats.
+        // See DayUsage for why that call reported a number this page could
+        // not defend against Digital Wellbeing's.
+        //
+        // Off the main thread: a full day of ACTIVITY_RESUMED and
+        // ACTIVITY_PAUSED is thousands of events, and this composes on the
+        // first frame of the ledger page. The previous call was a single
+        // aggregate read and got away with running here.
+        val day = withContext(Dispatchers.Default) {
+            readDayUsage(usm, startOfDay, now, exclude = setOf(context.packageName))
+        }
+        if (day != null && day.apps.isNotEmpty()) {
+            // The headline is every app. The list below it is the leaders,
+            // which is a different question and must not decide the total.
+            screenTimeMs = day.totalMs
+            val pm = context.packageManager
+            usageRecords = day.top(DISTRIBUTION_ROWS, DISTRIBUTION_MIN_MS).map { entry ->
+                val label = try {
+                    pm.getApplicationLabel(pm.getApplicationInfo(entry.pkg, 0)).toString()
+                } catch (e: Exception) {
+                    entry.pkg.substringAfterLast('.')
                 }
+                // A share of the whole day, so five rows reading 19% each do
+                // not have to add up. They are five of however many apps
+                // there were, and the headline is all of them.
+                val pct = ((entry.foregroundMs * 100) / day.totalMs.coerceAtLeast(1)).toInt()
+                val filled = (pct / 5).coerceIn(0, 20)
+                val empty = (20 - filled).coerceAtLeast(0)
+                val bar = "[" + "=".repeat(filled) + " ".repeat(empty) + "] $pct%"
+                AppUsageRecord(label, entry.foregroundMs / 60_000L, bar)
             }
-        } catch (e: Exception) {
-            // Leaves screenTimeMs null, which renders as unknown.
         }
 
         // ---------------------------------------------------------- unlocks
@@ -1941,6 +1945,54 @@ fun TextualWellbeingView(
                 .padding(vertical = 4.dp),
         )
     }
+}
+
+/** Rows in the distribution list. The headline is not capped; this is. */
+private const val DISTRIBUTION_ROWS = 5
+
+/** A row shorter than this carries no information and costs a real one. */
+private const val DISTRIBUTION_MIN_MS = 60_000L
+
+/**
+ * Today's foreground milliseconds per package, from the raw event stream.
+ *
+ * This is the Android half of [DayUsage]: pull `queryEvents`, map the two
+ * activity transitions onto [DayUsage.Transition], hand the pairing to the
+ * pure function. `UsageEvents.Event` has no public constructor, so the
+ * arithmetic lives on the other side of this boundary where it is testable.
+ *
+ * [exclude] carries the launcher's own package. Jitter is the home screen, so
+ * counting it adds every glance at the console to the day.
+ *
+ * Returns null on a missing grant or a failed query, which renders as
+ * unknown. It must never collapse to 0.
+ */
+private fun readDayUsage(
+    usm: UsageStatsManager,
+    startMs: Long,
+    endMs: Long,
+    exclude: Set<String>,
+): DayUsage.Result? = try {
+    val events = usm.queryEvents(startMs, endMs)
+    val event = UsageEvents.Event()
+    val transitions = mutableListOf<DayUsage.Transition>()
+    while (events.hasNextEvent()) {
+        events.getNextEvent(event)
+        val kind = when (event.eventType) {
+            UsageEvents.Event.ACTIVITY_RESUMED -> DayUsage.Kind.RESUMED
+            UsageEvents.Event.ACTIVITY_PAUSED -> DayUsage.Kind.PAUSED
+            else -> null
+        }
+        val pkg = event.packageName
+        if (kind != null && pkg != null) {
+            transitions += DayUsage.Transition(pkg, kind, event.timeStamp)
+        }
+    }
+    DayUsage.replay(transitions, startMs, endMs, exclude)
+} catch (e: SecurityException) {
+    null
+} catch (e: Exception) {
+    null
 }
 
 /**
