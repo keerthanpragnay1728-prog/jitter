@@ -115,6 +115,7 @@ import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.BitTap
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
+import dev.molasses.core.console.Greeting
 import dev.molasses.core.bit.HudStep
 import dev.molasses.core.command.AppTokenResolver
 import dev.molasses.core.command.CommandParser
@@ -279,6 +280,9 @@ class LauncherActivity : ComponentActivity() {
                             },
                             onAnswerConsolePrompt = {
                                 scope.launch { settingsRepository.clearConsolePrompt() }
+                            },
+                            onEnqueueConsoleLine = { line ->
+                                scope.launch { settingsRepository.enqueueConsoleLine(line) }
                             },
                             onRecordCommand = { line, confirmation ->
                                 scope.launch {
@@ -477,6 +481,7 @@ fun MainLauncherWorkspace(
     console: ConsoleState,
     onDeliverConsoleLine: (ConsoleLine, ConsoleSpeech.Budget) -> Unit,
     onAnswerConsolePrompt: () -> Unit,
+    onEnqueueConsoleLine: (ConsoleLine) -> Unit,
     onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -558,6 +563,7 @@ fun MainLauncherWorkspace(
                     console = console,
                     onDeliverConsoleLine = onDeliverConsoleLine,
                     onAnswerConsolePrompt = onAnswerConsolePrompt,
+                    onEnqueueConsoleLine = onEnqueueConsoleLine,
                     onOpenNotifInbox = onOpenNotifInbox,
                     onOpenDrawer = onOpenDrawer,
                     onLaunchPackage = onLaunchPackage,
@@ -594,6 +600,7 @@ fun TerminalHomeView(
     console: ConsoleState,
     onDeliverConsoleLine: (ConsoleLine, ConsoleSpeech.Budget) -> Unit,
     onAnswerConsolePrompt: () -> Unit,
+    onEnqueueConsoleLine: (ConsoleLine) -> Unit,
     onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onLaunchPackage: (String) -> Unit,
@@ -622,6 +629,18 @@ fun TerminalHomeView(
     var batteryPercent by remember { mutableIntStateOf(100) }
     var charging by remember { mutableStateOf(false) }
     var lastKeystrokeMs by remember { mutableLongStateOf(0L) }
+
+    /**
+     * The screen has been off since the last time the console was resumed.
+     *
+     * This is what makes the greeting fire on the first launcher visit after
+     * an unlock rather than on every return to home. Coming back from
+     * Instagram is not an arrival; waking the phone is.
+     *
+     * Seeded true so a cold start greets. Opening to a grey slit with nothing
+     * to say was the first thing anyone saw.
+     */
+    var sleptSinceLastVisit by remember { mutableStateOf(true) }
 
     // Bit's resting face comes from the pure state machine, which owns the
     // blink timing. The tick is the monotonic clock so the phase is
@@ -661,6 +680,10 @@ fun TerminalHomeView(
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, intent: Intent?) {
+                if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                    sleptSinceLastVisit = true
+                    return
+                }
                 val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
                 val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
                 // Never assume scale is 100. Some devices report 255.
@@ -673,6 +696,11 @@ fun TerminalHomeView(
             }
         }
         val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED).apply {
+            // The unlock signal for the greeting. SCREEN_OFF rather than
+            // USER_PRESENT, because USER_PRESENT never fires on a phone with
+            // no secure lock screen, and the greeting would be dead on
+            // exactly the devices most likely to run a launcher like this.
+            addAction(Intent.ACTION_SCREEN_OFF)
             // ACTION_TIME_TICK alone fires once a minute and never reports a
             // date rollover or a timezone move, so the date goes stale.
             addAction(Intent.ACTION_DATE_CHANGED)
@@ -821,7 +849,19 @@ fun TerminalHomeView(
             // Belt to the launch path's braces. A launch clears it directly,
             // and this catches every other way back: recents, the system back
             // gesture, the screen coming on.
-            if (event == Lifecycle.Event.ON_RESUME) clearPrompt()
+            if (event != Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
+            clearPrompt()
+            if (sleptSinceLastVisit) {
+                sleptSinceLastVisit = false
+                // Queued rather than shown, so it takes exactly the same
+                // delivery path as everything else Bit says: the same
+                // suppression rules, the same row, the same eight seconds.
+                // Its own counter is the only difference, and that lives
+                // inside ConsoleSpeech.
+                val c = Calendar.getInstance()
+                Greeting.lineFor(c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE))
+                    ?.let(onEnqueueConsoleLine)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }

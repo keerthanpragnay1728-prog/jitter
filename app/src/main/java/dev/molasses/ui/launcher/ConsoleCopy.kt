@@ -22,6 +22,9 @@ object ConsoleCopy {
     @StringRes
     fun textRes(id: String): Int? = when (id) {
         ConsoleIds.SCROLLED -> R.string.console_scrolled
+        ConsoleIds.GREETING_MORNING -> R.string.console_greeting_morning
+        ConsoleIds.GREETING_AFTERNOON -> R.string.console_greeting_afternoon
+        ConsoleIds.GREETING_LATE -> R.string.console_greeting_late
         // An unknown id can only come from a file written by a newer build.
         // Rendering nothing is right; spending a line on it is not, so the
         // caller drops it rather than delivering it.

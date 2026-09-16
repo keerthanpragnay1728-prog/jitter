@@ -231,4 +231,105 @@ class ConsoleSpeechTest {
             ),
         )
     }
+
+    // ------------------------------------------------- the greeting counter
+
+    private val greeting = ConsoleLine.Notice(
+        ConsoleIds.GREETING_MORNING,
+        category = ConsoleLine.Category.GREETING,
+    )
+
+    @Test
+    fun `a greeting does not spend an observation`() {
+        // Sharing the budget would mean a morning greeting costing the day
+        // one of its three remarks.
+        val r = evaluate(queued = greeting) as ConsoleSpeech.Verdict.Render
+        assertTrue(r.budget.deliveredAtWallMs.isEmpty())
+        assertEquals(listOf(t0), r.budget.greetedAtWallMs)
+    }
+
+    @Test
+    fun `an observation does not spend a greeting`() {
+        val r = evaluate() as ConsoleSpeech.Verdict.Render
+        assertTrue(r.budget.greetedAtWallMs.isEmpty())
+    }
+
+    @Test
+    fun `a day spent scrolling does not silence the greeting`() {
+        // The other half, and the one that matters: the observation caps are
+        // the ones that fill up.
+        var budget = ConsoleSpeech.Budget(cycleAnchorWallMs = anchor)
+        for (i in 1..ConsoleSpeech.MAX_PER_DAY) {
+            val at = t0 + i * 2 * ConsoleSpeech.HOUR_MS
+            val r = evaluate(queued = ConsoleLine.Notice("line$i"), budget = budget, nowWallMs = at)
+            budget = (r as ConsoleSpeech.Verdict.Render).budget
+        }
+        val hello = evaluate(
+            queued = greeting,
+            budget = budget,
+            nowWallMs = t0 + 17 * ConsoleSpeech.HOUR_MS,
+        )
+        assertTrue(hello is ConsoleSpeech.Verdict.Render)
+    }
+
+    @Test
+    fun `three greetings a day`() {
+        var budget = ConsoleSpeech.Budget(cycleAnchorWallMs = anchor)
+        for (i in 1..Greeting.MAX_PER_DAY) {
+            val r = evaluate(queued = greeting, budget = budget, nowWallMs = t0 + i * minute)
+            budget = (r as ConsoleSpeech.Verdict.Render).budget
+        }
+        assertEquals(
+            ConsoleSpeech.Hold.GREETING_CAP,
+            held(evaluate(queued = greeting, budget = budget, nowWallMs = t0 + 4 * minute)),
+        )
+    }
+
+    @Test
+    fun `the same greeting twice in a cycle is allowed`() {
+        // A cycle is six hours and the morning line is the same line every
+        // morning. Keying it on the id would silence the second greeting of
+        // most days.
+        val r = evaluate(queued = greeting) as ConsoleSpeech.Verdict.Render
+        val again = evaluate(queued = greeting, budget = r.budget, nowWallMs = t0 + minute)
+        assertTrue(again is ConsoleSpeech.Verdict.Render)
+    }
+
+    @Test
+    fun `a greeting still obeys every suppression rule`() {
+        // It is Bit commenting, so silence during a call, over a payment app,
+        // under a gate, and behind anything that outranks it.
+        val gates = listOf(
+            ConsoleSpeech.Gate(callInProgress = true),
+            ConsoleSpeech.Gate(sensitiveForeground = true),
+            ConsoleSpeech.Gate(gateActive = true),
+            ConsoleSpeech.Gate(outranked = true),
+        )
+        for (gate in gates) {
+            val v = evaluate(queued = greeting, gate = gate)
+            assertTrue("$gate", v is ConsoleSpeech.Verdict.Held)
+        }
+    }
+
+    @Test
+    fun `a suppressed greeting spends nothing either`() {
+        val v = evaluate(queued = greeting, gate = ConsoleSpeech.Gate(gateActive = true))
+        assertTrue(v is ConsoleSpeech.Verdict.Held)
+        val later = evaluate(queued = greeting)
+        assertEquals(
+            listOf(t0),
+            (later as ConsoleSpeech.Verdict.Render).budget.greetedAtWallMs,
+        )
+    }
+
+    @Test
+    fun `the greeting counter never grows without bound`() {
+        var budget = ConsoleSpeech.Budget(cycleAnchorWallMs = anchor)
+        for (i in 1..40) {
+            val at = t0 + i * 3 * ConsoleSpeech.HOUR_MS
+            val v = evaluate(queued = greeting, budget = budget, nowWallMs = at)
+            if (v is ConsoleSpeech.Verdict.Render) budget = v.budget
+            assertTrue(budget.greetedAtWallMs.size <= Greeting.MAX_PER_DAY)
+        }
+    }
 }

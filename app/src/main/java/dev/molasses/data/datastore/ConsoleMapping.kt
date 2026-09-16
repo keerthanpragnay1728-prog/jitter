@@ -34,23 +34,29 @@ fun ConsoleLine.toProto(): ConsoleQueued = ConsoleQueued.newBuilder()
     .addAllArgs(args)
     .setIsPrompt(this is ConsoleLine.Prompt)
     .setAction(if (this is ConsoleLine.Prompt) action else "")
+    .setIsGreeting(category == ConsoleLine.Category.GREETING)
     .build()
 
-fun ConsoleQueued.toLine(): ConsoleLine =
-    if (isPrompt) {
-        ConsoleLine.Prompt(id = id, args = argsList.toList(), action = action)
+fun ConsoleQueued.toLine(): ConsoleLine {
+    val category =
+        if (isGreeting) ConsoleLine.Category.GREETING else ConsoleLine.Category.OBSERVATION
+    return if (isPrompt) {
+        ConsoleLine.Prompt(id, argsList.toList(), action, category)
     } else {
-        ConsoleLine.Notice(id = id, args = argsList.toList())
+        ConsoleLine.Notice(id, argsList.toList(), category)
     }
+}
 
 fun ConsoleSpeech.Budget.toProto(): ConsoleBudget = ConsoleBudget.newBuilder()
     .addAllDeliveredAtWallMs(deliveredAtWallMs)
     .addAllSeenIds(seenIds)
+    .addAllGreetedAtWallMs(greetedAtWallMs)
     .setCycleAnchorWallMs(cycleAnchorWallMs)
     .build()
 
 fun ConsoleBudget.toBudget(): ConsoleSpeech.Budget = ConsoleSpeech.Budget(
     deliveredAtWallMs = deliveredAtWallMsList.toList(),
     seenIds = seenIdsList.toSet(),
+    greetedAtWallMs = greetedAtWallMsList.toList(),
     cycleAnchorWallMs = cycleAnchorWallMs,
 )

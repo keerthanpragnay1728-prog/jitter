@@ -153,6 +153,8 @@ class SettingsRepository(
 
     suspend fun clearConsolePrompt() = store.clearConsolePrompt()
 
+    suspend fun enqueueConsoleLine(line: ConsoleLine) = store.enqueueConsoleLine(line)
+
     /** The last twenty submitted command lines, newest first. */
     val commandHistory: Flow<List<String>> =
         store.data.map { it.commandHistoryList.toList() }
