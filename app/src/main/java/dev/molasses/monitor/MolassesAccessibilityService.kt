@@ -170,7 +170,7 @@ class MolassesAccessibilityService : AccessibilityService() {
      */
     private var sensitivePrefixes: Set<String> = SensitivePackages.DEFAULT_PREFIXES
 
-    /** When the user last hit "Pause Jitter". [StampedInstant.UNSET] if never. */
+    /** When the user last hit "Pause friction". [StampedInstant.UNSET] if never. */
     private var pauseStartedAt: StampedInstant = StampedInstant.UNSET
 
     private val probe by lazy { ForegroundProbe(this) }
@@ -556,7 +556,7 @@ class MolassesAccessibilityService : AccessibilityService() {
      *    `FLAG_WINDOW_IS_OBSCURED` on that app's touches and a hardened
      *    banking or UPI app is entitled to refuse the transaction. Adding
      *    friction is never worth costing someone a payment at a till.
-     * 2. The user hit "Pause Jitter". That is the escape hatch for the case
+     * 2. The user hit "Pause friction". That is the escape hatch for the case
      *    where a bank warns anyway and they need us quiet right now.
      *
      * Read on the accessibility callback thread, so both halves are plain
