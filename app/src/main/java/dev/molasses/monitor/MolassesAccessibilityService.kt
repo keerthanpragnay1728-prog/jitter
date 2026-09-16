@@ -120,13 +120,6 @@ class MolassesAccessibilityService : AccessibilityService() {
     private var gateMode: GatePolicy.GateMode = GatePolicy.GateMode.COUNTDOWN
 
     private var targets: Set<String> = emptySet()
-    /**
-     * The old typing escape hatch flag, kept only so the stored value still
-     * has a reader. The gate mode supersedes it: see
-     * [GatePolicy.GateMode.TYPING_ONLY], which is how a user who cannot walk
-     * on demand reaches the same screen now.
-     */
-    private var alternativeChallenge = false
 
     /** Package we currently believe is in the foreground, target or not. */
     private var foregroundPkg: String? = null
@@ -376,7 +369,6 @@ class MolassesAccessibilityService : AccessibilityService() {
                     ServiceDiagnostics.usedTargetFallback = false
                 }
                 val next = TargetScope.resolve(stored, DEFAULT_TARGETS)
-                alternativeChallenge = state.alternativeChallenge
                 if (next != targets) {
                     targets = next
                     applyTargets(next)

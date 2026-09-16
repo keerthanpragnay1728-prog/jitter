@@ -17,6 +17,7 @@ import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
+import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
@@ -99,7 +100,11 @@ class SettingsRepository(
 
     val targets: Flow<List<String>> = store.data.map { it.targetPackagesList.toList() }
     val resetPolicy: Flow<CycleResetPolicy> = store.data.map { it.resetPolicy.toModel() }
-    val alternativeChallenge: Flow<Boolean> = store.data.map { it.alternativeChallenge }
+    /**
+     * What the gate asks for at the terminal tier. Below it, always the
+     * countdown. See [dev.molasses.core.lease.GatePolicy].
+     */
+    val gateMode: Flow<GatePolicy.GateMode> = store.gateMode
 
     /**
      * The persisted locks.
@@ -182,8 +187,7 @@ class SettingsRepository(
 
     suspend fun setTargets(packages: List<String>) = store.setTargets(packages)
     suspend fun setResetPolicy(policy: CycleResetPolicy) = store.setResetPolicy(policy)
-    suspend fun setAlternativeChallenge(enabled: Boolean) =
-        store.setAlternativeChallenge(enabled)
+    suspend fun setGateMode(mode: GatePolicy.GateMode) = store.setGateMode(mode)
 
     suspend fun setSensitivePrefixes(prefixes: List<String>) =
         store.setSensitivePrefixes(prefixes)

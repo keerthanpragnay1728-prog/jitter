@@ -21,7 +21,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
+import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.command.CommandRegistry
 import dev.molasses.core.command.CommandRender
@@ -72,7 +72,7 @@ fun SettingsScreen(
     val installed by vm.installed.collectAsStateWithLifecycle()
     val targets by vm.targets.collectAsStateWithLifecycle()
     val policy by vm.resetPolicy.collectAsStateWithLifecycle()
-    val altChallenge by vm.alternativeChallenge.collectAsStateWithLifecycle()
+    val gateMode by vm.gateMode.collectAsStateWithLifecycle()
     val sensitivePrefixes by vm.sensitivePrefixes.collectAsStateWithLifecycle()
     val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
     val fontScale by vm.fontScale.collectAsStateWithLifecycle()
@@ -300,9 +300,10 @@ fun SettingsScreen(
         }
 
         item { SectionHeader(R.string.settings_section_gate) }
-        // Condition of the precedence flip: the promise changed, so the copy
-        // has to change with it. Nobody should discover that ignoring a gate
-        // no longer avoids friction by being trapped by it.
+        // Condition of the precedence flip, and of the move to the launch:
+        // the promise changed twice, so the copy changed with it. Nobody
+        // should discover what a lease does and does not buy by being caught
+        // out by it.
         item {
             Column {
                 Text(
@@ -316,26 +317,29 @@ fun SettingsScreen(
                 )
             }
         }
+        // Three choices rather than a switch, and that shape is the point.
+        // The walking gate became optional and defaults off; collapsing this
+        // to on/off would have taken the typing task away with it, and the
+        // typing task is the accessibility requirement, not the preference.
         item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stringResource(R.string.settings_alt_challenge_title),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        stringResource(R.string.settings_alt_challenge_body),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary,
+            Column {
+                Text(
+                    stringResource(R.string.settings_gate_mode_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    stringResource(R.string.settings_gate_mode_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                GatePolicy.GateMode.entries.forEach { mode ->
+                    PolicyRow(
+                        selected = gateMode == mode,
+                        title = gateModeLabel(mode),
+                        subtitle = gateModeBody(mode),
+                        onSelect = { vm.setGateMode(mode) },
                     )
                 }
-                Switch(
-                    checked = altChallenge,
-                    onCheckedChange = { vm.setAlternativeChallenge(it) },
-                )
             }
         }
 
@@ -705,6 +709,24 @@ private fun SensitivePrefixEditor(
  * composable, per the repo rule: the mapping stays pure and the resource is
  * resolved at the call site.
  */
+/**
+ * State to copy, as a plain function resolved at the call site. Keeps the
+ * mapping pure and the strings in the resource file, per CLAUDE.md.
+ */
+@StringRes
+private fun gateModeLabel(mode: GatePolicy.GateMode): Int = when (mode) {
+    GatePolicy.GateMode.COUNTDOWN -> R.string.settings_gate_mode_countdown
+    GatePolicy.GateMode.WALK -> R.string.settings_gate_mode_walk
+    GatePolicy.GateMode.TYPING_ONLY -> R.string.settings_gate_mode_type
+}
+
+@StringRes
+private fun gateModeBody(mode: GatePolicy.GateMode): Int = when (mode) {
+    GatePolicy.GateMode.COUNTDOWN -> R.string.settings_gate_mode_countdown_body
+    GatePolicy.GateMode.WALK -> R.string.settings_gate_mode_walk_body
+    GatePolicy.GateMode.TYPING_ONLY -> R.string.settings_gate_mode_type_body
+}
+
 @StringRes
 private fun fontScaleLabel(scale: FontScale): Int = when (scale) {
     FontScale.VERY_SMALL -> R.string.settings_font_very_small

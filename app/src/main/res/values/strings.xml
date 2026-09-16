@@ -91,9 +91,17 @@
     <string name="settings_lock_arm">Lock</string>
     <string name="settings_lock_confirm_fmt">Confirm %1$s</string>
     <string name="settings_lock_no_unlock">A lock can only be extended. There is no unlock, and nothing here will cancel one.</string>
-    <string name="settings_gate_unavoidable_title">Checkpoints cannot be skipped</string>
-    <string name="settings_gate_unavoidable_body">Walking away from a checkpoint used to switch friction off until you cleared it. It no longer does. Scroll delays run continuously from six minutes onward, and an unpaid checkpoint makes them arrive sooner rather than stopping them. Clearing one buys time before the next; ignoring one costs you. There is no setting that turns friction off, and the typing task is the lightest way to pay.</string>
-    <string name="settings_section_gate">Movement gate</string>
+    <string name="settings_gate_unavoidable_title">The gate cannot be skipped</string>
+    <string name="settings_gate_unavoidable_body">Opening a target app puts a countdown in front of it. When it reaches zero you choose how long you are staying, or you leave. Taking a lease buys time and nothing else: scroll delays run exactly as they would have, and staying past the lease you took makes them arrive sooner. There is no setting that turns friction off.</string>
+    <string name="settings_section_gate">The gate</string>
+    <string name="settings_gate_mode_title">What the gate asks for</string>
+    <string name="settings_gate_mode_body">Applies at the terminal tier only, which is twenty five minutes in one app in one cycle. Below that it is always the countdown, whatever is chosen here.</string>
+    <string name="settings_gate_mode_countdown">Wait it out</string>
+    <string name="settings_gate_mode_countdown_body">A countdown, eight seconds the first time and four seconds longer each time you take another lease in the same cycle, up to thirty. Nothing to do but read the numbers.</string>
+    <string name="settings_gate_mode_walk">Walk</string>
+    <string name="settings_gate_mode_walk_body">Replaces the countdown with the movement gate: actual walking, measured by the accelerometer. Then you choose the lease as usual.</string>
+    <string name="settings_gate_mode_type">Type a phrase</string>
+    <string name="settings_gate_mode_type_body">Replaces the countdown with a 25 second untimed typing task. For anyone who cannot or should not be made to walk on demand.</string>
     <string name="settings_section_safety">Safety</string>
     <string name="settings_safety_body">Banking and UPI apps refuse to run when something is drawn over them, and some block on the presence of an accessibility service regardless of what it does. Jitter never draws over the apps listed here. Google Pay and PhonePe work normally, and the pause below is enough for anything else that objects to an overlay. Paytm is the exception: it blocks on the service existing, which only the second button changes.</string>
     <!--
@@ -148,8 +156,6 @@
     <string name="settings_policy_fixed_title">Every 6 hours (default)</string>
     <string name="settings_policy_fixed_body">The cycle resets six hours after it started, whether or not you kept using the apps.</string>
 
-    <string name="settings_alt_challenge_title">Alternative challenge</string>
-    <string name="settings_alt_challenge_body">Replaces the physical gate with a 25-second untimed typing task. For anyone who cannot or should not be made to walk. Checkpoints still have to be paid either way.</string>
 
     <string name="settings_ladder_normal">0-5 min, normal</string>
     <string name="settings_ladder_terminal">%1$s min+ (terminal), gate every 5 min, %2$s ms stall</string>
