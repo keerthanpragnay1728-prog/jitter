@@ -412,8 +412,15 @@
     <string name="cmd_na_privileged">Android does not let an app do that. Use the power button.</string>
     <string name="cmd_na_no_panel">This device has no settings panel for that.</string>
     <string name="cmd_na_no_clock_app">No clock app on this device handles that.</string>
-    <string name="cmd_na_wifi_toggle">Android does not let an app switch wifi. Try $ wifi to open the panel.</string>
-    <string name="cmd_na_dnd_toggle">Setting DND needs a permission Jitter does not request. Try $ dnd to open settings.</string>
+    <!--
+      Confirmations rather than refusals. The panel did open, so the command
+      did something; the modifier could not be honoured, so it is answered
+      rather than ignored. Two strings and not one because the reasons differ,
+      and claiming a platform limit for our own choice would be a lie the user
+      cannot check.
+    -->
+    <string name="cmd_ack_wifi_panel_no_toggle">WIFI PANEL. Android does not let an app switch wifi, so flip it here.</string>
+    <string name="cmd_ack_dnd_panel_no_toggle">DND SETTINGS. Setting DND needs a permission Jitter does not request, so set it here.</string>
     <string name="cmd_na_relief_needs_monitor">The monitor is not running, so nothing would read the lease.</string>
     <!-- A wiring bug rather than a condition the user is in. It has to render
          as something rather than crash the launcher. -->
