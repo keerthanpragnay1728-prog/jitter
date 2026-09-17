@@ -152,6 +152,39 @@ Removing the last one means `getWindows()` returns an empty list. If a feature
 needs to know about another window, route it through `UsageStatsManager` or
 drop the feature. Do not add the flag back.
 
+### What dropping the flag costs, in full
+
+Three things have broken because of this and each was found by debugging
+rather than by reading. The list exists so the fourth is found by reading.
+
+1. **`getWindows()` returns an empty list.** No enumeration of any window,
+   including our own. The Phase 0.1 overlay collision guard used it to
+   register our window ids up front and had to be rewritten to learn them from
+   events instead.
+2. **`getBoundsInScreen()` on another window is unavailable.** Bit's planned
+   fullscreen auto-retract has no geometry to read and needs a proxy signal.
+3. **`AccessibilityEvent.getWindowId()` is not dependable.** It returns `-1`
+   when the platform declines to say, which under this profile can be every
+   event. The learned-id guard treated `-1` as a real id, learned it from one
+   of our own events, and then matched it against every event from every
+   package. The whole app routed nothing on a device where the service was
+   bound, ready, correctly scoped and reporting healthy. See
+   `ForegroundEventRouter` and `IgnoreReason.OWN_WINDOW`.
+
+The pattern behind all three: **this profile withholds window identity and
+window geometry, not just window contents.** `canRetrieveWindowContent` is the
+attribute that sounds like it covers only the second, and it does not.
+
+So, before writing anything that depends on which window an event came from,
+where a window is, or what else is on screen, assume the answer is unavailable
+and check. An API that compiles and returns a plausible value is not evidence:
+`getWindowId()` returns an `Int` either way, and `-1` is a perfectly good `Int`
+until it is used as a set key.
+
+Where a value can be absent, reject the absent form at the boundary rather
+than downstream. A sentinel that reaches a comparison is a sentinel that
+matches something.
+
 Jitter must never draw any overlay over a package in
 `core/safety/SensitivePackages`. An overlay sets `FLAG_WINDOW_IS_OBSCURED` on
 that app's touches and a hardened payment app is entitled to refuse the
