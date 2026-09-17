@@ -231,6 +231,26 @@ class AccessibilityConfigTest {
         )
     }
 
+    @Test
+    fun `both activities declare a cutout mode, and it is not the overlays'`() {
+        // Inherited window geometry is geometry nobody decided, and this is
+        // the one of these that bites on a device shape rather than a device
+        // setting, so it cannot be checked by looking at the phone on the
+        // desk. The value is the status quo; the test is what stops it
+        // becoming "always" by analogy with the overlays, which want the
+        // opposite thing for a reason the manifest comment spells out.
+        val manifest = repoFile("app/src/main/AndroidManifest.xml").readText()
+        for (name in listOf("LauncherActivity", "SettingsActivity")) {
+            val activity = Regex(
+                """<activity[^>]*$name[\s\S]*?>""",
+            ).find(manifest)?.value ?: error("$name is not declared")
+            assertTrue(
+                "$name must declare windowLayoutInDisplayCutoutMode. Found: $activity",
+                activity.contains("windowLayoutInDisplayCutoutMode=\"default\""),
+            )
+        }
+    }
+
     private fun repoFile(relative: String): File {
         var dir: File? = File(System.getProperty("user.dir")!!).absoluteFile
         while (dir != null) {

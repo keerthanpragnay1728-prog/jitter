@@ -88,11 +88,17 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Molasses">
 
+        <!--
+        windowLayoutInDisplayCutoutMode is declared here and on
+        LauncherActivity, and it is deliberately not the value the overlays
+        use. See the comment on LauncherActivity for the whole of why.
+        -->
         <activity
             android:name=".ui.settings.SettingsActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:windowLayoutInDisplayCutoutMode="default">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -144,13 +150,40 @@
             when the user left is not restored when they come home. Neither
             touches the explicit show path, so tapping the prompt still raises
             the keyboard.
+
+            windowLayoutInDisplayCutoutMode is declared for the same reason
+            the soft input mode is: inherited window geometry is geometry
+            nobody decided. The value is the one the activity already had, so
+            this changes no pixels; it states it and lets a test hold it.
+
+            It is deliberately NOT the overlays' value, and the difference is
+            the point rather than an oversight. OverlayHost and
+            ShutterOverlayManager set LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            because they are full screen scrims that have to cover the whole
+            display, a scrim that letterboxes leaves a visible strip down one
+            side, and their content is vertically centred so it cannot land
+            under anything. The activities are the opposite case: their
+            content is top anchored and positioned by a constant, 44dp
+            vertical and 18dp horizontal, that is read from no inset at all.
+            For them always would be strictly worse, because default is what
+            currently letterboxes the window away from a cutout in landscape,
+            and that letterbox is the only thing protecting the 18dp.
+
+            never was considered and rejected. It would inset the window below
+            a portrait cutout and so make the 44dp safe on punch hole devices,
+            which is a real improvement, but it changes geometry on hardware
+            nobody here has and it is the wrong end state: once the constants
+            are replaced by real inset consumption, always plus safeDrawing is
+            correct and never would have to be undone. A temporary fix that
+            has to be reverted is worse than a declared status quo.
             -->
             <activity
             android:name=".ui.launcher.LauncherActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:stateNotNeeded="true"
-            android:windowSoftInputMode="stateAlwaysHidden|adjustResize">
+            android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
+            android:windowLayoutInDisplayCutoutMode="default">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
