@@ -99,15 +99,21 @@ class LeaseGateOverlayManager(
 
     val isShowing: Boolean get() = host?.isShowing == true
 
-    /** Idempotent: a second call for the package already gated is a no-op. */
+    /**
+     * Idempotent: a second call for the package already gated is a no-op.
+     *
+     * @return whether a window is genuinely on the glass afterwards. False
+     *   means the app is uncovered and the caller must not treat the gate as
+     *   having happened. See `LaunchGate.Outcome`.
+     */
     fun show(
         pkg: String,
         label: String,
         countdownMs: Long,
         expired: Boolean,
         stats: GateStats,
-    ) {
-        if (isShowing && currentPkg == pkg) return
+    ): Boolean {
+        if (isShowing && currentPkg == pkg) return true
         if (isShowing) dismissInternal()
 
         currentPkg = pkg
@@ -142,14 +148,15 @@ class LeaseGateOverlayManager(
         }
 
         if (!h.isShowing) {
-            // addView failed. Let the user into the app rather than bouncing
-            // them from a gate they were never shown: an unexplained bounce
-            // reads as a crash, and a gate that cannot draw has not been
-            // refused, it has not happened.
-            Log.w(TAG, "lease gate addView failed for $pkg; letting it through")
+            // addView failed. The app is uncovered, so this did not happen
+            // and must not be reported as though it did: the caller falls
+            // through to ordinary friction on a false return. Bouncing the
+            // user from a gate they were never shown is not the alternative,
+            // because an unexplained bounce reads as a crash.
+            Log.e(TAG, "lease gate window could not be added for $pkg; friction falls through")
             host = null
             currentPkg = null
-            return
+            return false
         }
 
         onWindowsChanged()
@@ -188,6 +195,7 @@ class LeaseGateOverlayManager(
                 }
             }
         }
+        return true
     }
 
     /**

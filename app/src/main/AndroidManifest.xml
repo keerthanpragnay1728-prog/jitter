@@ -57,6 +57,25 @@
         <intent>
             <action android:name="android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS"/>
         </intent>
+        <!--
+          Digital Wellbeing, for the ledger's "open system wellbeing" link.
+
+          Both entries, because they cover different devices. The package
+          entry makes Google's Wellbeing visible, which is what lets
+          resolveActivity see its settings Activity by ComponentName; on a
+          Pixel that Activity is the only thing that actually starts, and
+          the action below fails with "No activity found". The action entry
+          covers an OEM implementation in some other package, which a
+          package entry naming Google's would miss entirely.
+
+          Without these, resolveActivity returns null on API 30+ even where
+          Wellbeing is installed, and the link fell through to raw Usage
+          Access on every device.
+        -->
+        <package android:name="com.google.android.apps.wellbeing"/>
+        <intent>
+            <action android:name="android.settings.DIGITAL_WELLBEING_SETTINGS"/>
+        </intent>
     </queries>
 
     <application

@@ -59,6 +59,17 @@ object ServiceDiagnostics {
      */
     @Volatile var panicPathNote: String? = null
 
+    /**
+     * Set when a gate window could not be added, with the count.
+     *
+     * Its own field rather than folded into [startupNote], because it says
+     * something different and at a different time: startup says the service
+     * never began, this says the service is running correctly and the glass
+     * is refusing it. The two have completely different fixes and the one
+     * thing worse than neither being visible is reading one as the other.
+     */
+    @Volatile var overlayFailureNote: String? = null
+
     /** Whatever `packageNames` was last handed to `setServiceInfo`. */
     @Volatile var appliedPackageNames: List<String> = emptyList()
 
@@ -127,6 +138,7 @@ object ServiceDiagnostics {
         lastHeartbeatMs = 0L
         startupNote = null
         panicPathNote = null
+        overlayFailureNote = null
         tally.reset()
     }
 

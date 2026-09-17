@@ -3,6 +3,7 @@ package dev.molasses.ui.launcher
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -403,6 +404,20 @@ class LauncherActivity : ComponentActivity() {
      */
     private fun openWellbeing() {
         val candidates = listOf(
+            // The component first, because on the device this was tested on
+            // it is the only one that starts. Both actions below fail there
+            // with "No activity found": Wellbeing declares its settings
+            // Activity without advertising either action publicly, so an
+            // action lookup finds nothing however visible the package is.
+            //
+            // Hardcoding a ComponentName is ordinarily a thing to avoid, and
+            // it is safe here for one reason: it is tried through the same
+            // canResolve as everything else, so a device without that exact
+            // class falls straight through to the next candidate instead of
+            // throwing. It is a shortcut past a lookup, never a bypass of one.
+            Intent().setComponent(
+                ComponentName(WELLBEING_PACKAGE, WELLBEING_SETTINGS_CLASS),
+            ),
             Intent("com.google.android.apps.wellbeing.action.DIGITAL_WELLBEING"),
             Intent("android.settings.DIGITAL_WELLBEING_SETTINGS"),
             Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS),
@@ -971,21 +986,30 @@ fun TerminalHomeView(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(Unit) {
-                // Up opens the drawer, down opens the shade. The threshold is
-                // a drag distance rather than a velocity so a slow deliberate
-                // pull works as well as a flick.
+                // Up opens the drawer. Down does nothing, deliberately.
                 //
-                // Drags starting inside the status bar are not intercepted:
-                // that strip belongs to the system and this composable never
-                // receives those events anyway.
+                // It used to open a notification inbox overlay that has no
+                // source of notifications behind it, so the gesture led to an
+                // empty screen and, worse, consumed a downward drag on the
+                // home screen for it. Removing the branch is only half the
+                // point: `detectVerticalDragGestures` consumes the whole
+                // drag, so the handler now ends on a downward pull without
+                // acting, which is the honest behaviour for a feature that
+                // does not exist.
+                //
+                // It does not hand the notification shade a new way in, and
+                // nothing here could. The shade opens from a swipe inside the
+                // system gesture inset at the top edge, which this composable
+                // never receives; a mid-screen pull-down on the home screen is
+                // a launcher feature elsewhere, not a system one.
+                //
+                // The threshold is a drag distance rather than a velocity so a
+                // slow deliberate pull works as well as a flick.
                 var dragged = 0f
                 detectVerticalDragGestures(
                     onDragStart = { dragged = 0f },
                     onDragEnd = {
-                        when {
-                            dragged <= -SWIPE_THRESHOLD_PX -> onOpenDrawer()
-                            dragged >= SWIPE_THRESHOLD_PX -> onOpenNotifInbox()
-                        }
+                        if (dragged <= -SWIPE_THRESHOLD_PX) onOpenDrawer()
                     },
                 ) { _, amount -> dragged += amount }
             },
@@ -2372,6 +2396,17 @@ private val BIT_ROW_HEIGHT = 44.dp
  * open the drawer by accident.
  */
 private const val SWIPE_THRESHOLD_PX = 140f
+
+/**
+ * Digital Wellbeing's package and its top level settings Activity.
+ *
+ * Named constants rather than literals inside the candidate list, so the pair
+ * that has to match the `<queries>` entry is written once and is greppable
+ * from the manifest side.
+ */
+private const val WELLBEING_PACKAGE = "com.google.android.apps.wellbeing"
+private const val WELLBEING_SETTINGS_CLASS =
+    "com.google.android.apps.wellbeing.settings.TopLevelSettingsActivity"
 
 /** One favourite row. The brackets come from the string, not from here. */
 @Composable
