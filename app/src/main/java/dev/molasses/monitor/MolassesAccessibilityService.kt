@@ -161,31 +161,6 @@ class MolassesAccessibilityService : AccessibilityService() {
     }
     private val sessions = ForegroundSessionTracker()
 
-    /**
-     * Window ids belonging to windows this service added.
-     *
-     * Not a `Set<IBinder>`: an `AccessibilityEvent` exposes `getWindowId()`,
-     * an int, and there is no public route from an event to a window token.
-     * `View.getWindowToken()` gives us our own tokens but nothing on the event
-     * side to compare them against, so the id is the only key available.
-     *
-     * This used to be refreshed from `getWindows()`. That needs
-     * `flagRetrieveInteractiveWindows`, which is gone for banking-app
-     * compatibility, and without the flag `getWindows()` returns an empty
-     * list. So the set is now *learned*: any event wearing our own package
-     * name has its window id recorded here.
-     *
-     * That is circular only in appearance. The package check in
-     * [ForegroundEventRouter] already drops those events on its own; learning
-     * the id adds coverage for a later event from the same window that arrives
-     * without a usable package name. The guard degrades to the package check
-     * alone rather than to nothing, which is why the flag could be removed at
-     * all.
-     *
-     * Bounded and cleared on teardown so a long-lived service cannot grow it
-     * without limit.
-     */
-    private val ownWindowIds = mutableSetOf<Int>()
 
     /**
      * Debug builds only. Overrides the commanded stall with a constant.
@@ -524,26 +499,13 @@ class MolassesAccessibilityService : AccessibilityService() {
             else -> return
         }
 
-        // Learn our own window ids. The router drops these by package anyway;
-        // recording the id covers a later event from the same window that
-        // arrives without one. Bounded so the set cannot grow unbounded on a
-        // service that lives for weeks.
-        if (pkg == packageName && ownWindowIds.size < MAX_OWN_WINDOW_IDS) {
-            ownWindowIds += event.windowId
-            ServiceDiagnostics.ownWindowIds = ownWindowIds.toList()
-        }
-
         val windowEvent = WindowEvent(
             packageName = pkg,
             className = event.className?.toString(),
             windowId = event.windowId,
             kind = kind,
         )
-        val route = router.route(
-            windowEvent,
-            targets = targets,
-            ownWindowIds = ownWindowIds,
-        )
+        val route = router.route(windowEvent, targets = targets)
         // Counted before dispatch, and counted even when ignored. "No events"
         // and "every event ignored" look identical from outside and have
         // completely different fixes.
@@ -1035,29 +997,19 @@ class MolassesAccessibilityService : AccessibilityService() {
     /**
      * An overlay was added or removed.
      *
-     * This used to re-read `getWindows()`. Without
-     * `flagRetrieveInteractiveWindows` that returns an empty list, so there is
-     * nothing to re-read and the learned [ownWindowIds] set is cleared instead
-     * when the screen goes quiet. Clearing on the way down rather than on the
-     * way up matters: a window id is reused by the platform, so a stale id
-     * held after our overlay is gone would drop a real event from whatever
-     * inherits it.
+     * This used to re-read `getWindows()`, and then to clear a learned window
+     * id set. Both are gone: the flag that made `getWindows()` work was
+     * dropped for banking-app compatibility, and the id set that replaced it
+     * could never match a real window under this profile. See
+     * `ForegroundEventRouter`.
      *
-     * Also re-paces the watchdog. While anything of ours is on the glass the
+     * Re-paces the watchdog. While anything of ours is on the glass the
      * cost of being slow to notice a financial app is an overlay sitting over
      * a payment screen, so the poll tightens from 2 s to 400 ms for as long as
      * that lasts.
      */
     private fun onOverlayWindowsChanged() {
         ServiceDiagnostics.gateShowing = gate.isShowing || leaseGate.isShowing
-        // The lock flash is one of our windows too. Clearing the id set while
-        // it is up would make its own events look like a foreign package.
-        if (
-            !shutter.isAttached && !gate.isShowing && !lockOverlay.isShowing &&
-            !leaseGate.isShowing
-        ) {
-            ownWindowIds.clear()
-        }
         repaceWatchdog()
     }
 
@@ -1141,13 +1093,6 @@ class MolassesAccessibilityService : AccessibilityService() {
          * switched to.
          */
         const val OVERLAY_WATCHDOG_INTERVAL_MS = 400L
-
-        /**
-         * Cap on the learned own-window set. We show at most a handful of
-         * windows; anything beyond this is a leak, and dropping the surplus is
-         * safe because the package check carries the guard regardless.
-         */
-        const val MAX_OWN_WINDOW_IDS = 32
 
         /** Length of the settings-screen stall preview. */
         const val PREVIEW_STALL_MS = 1_000L

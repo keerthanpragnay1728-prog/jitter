@@ -2,6 +2,7 @@ package dev.molasses.core.session
 
 import dev.molasses.core.session.WindowEvent.Kind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -19,8 +20,7 @@ class ForegroundEventRouterTest {
     private val targets = setOf(ig, yt)
     private val router = ForegroundEventRouter(own, ForegroundEventRouter.LAUNCHER_CLASS_NAME)
 
-    private fun route(e: WindowEvent, ownWindows: Set<Int> = emptySet()) =
-        router.route(e, targets, ownWindows)
+    private fun route(e: WindowEvent) = router.route(e, targets)
 
     // ------------------------------------------- our own windows never exit
 
@@ -29,19 +29,19 @@ class ForegroundEventRouterTest {
         // The gate is a ComposeView in a TYPE_ACCESSIBILITY_OVERLAY window. It
         // has no activity class, so a class check alone would not catch it.
         val gate = WindowEvent(own, "android.widget.FrameLayout", 77, Kind.WINDOW_STATE_CHANGED)
-        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_WINDOW), route(gate, ownWindows = setOf(77)))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route(gate))
     }
 
     @Test
     fun `dragging the mascot does not read as leaving the app`() {
         val mascot = WindowEvent(own, null, 78, Kind.WINDOWS_CHANGED)
-        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_WINDOW), route(mascot, ownWindows = setOf(77, 78)))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route(mascot))
     }
 
     @Test
     fun `arming the shutter sink does not read as leaving the app`() {
         val sink = WindowEvent(own, "android.view.View", 79, Kind.WINDOW_STATE_CHANGED)
-        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_WINDOW), route(sink, ownWindows = setOf(79)))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route(sink))
     }
 
     @Test
@@ -50,17 +50,35 @@ class ForegroundEventRouterTest {
         // addView, so an event can arrive in the gap. The package check is the
         // second line of defence.
         val sink = WindowEvent(own, "android.view.View", 79, Kind.WINDOW_STATE_CHANGED)
-        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route(sink, ownWindows = emptySet()))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route(sink))
     }
 
     @Test
-    fun `the window id check runs before anything else`() {
-        // Even an event wearing the launcher class name is dropped if it came
-        // from a window we own. Nothing we add is ever the launcher.
-        val impostor = WindowEvent(
-            own, ForegroundEventRouter.LAUNCHER_CLASS_NAME, 77, Kind.WINDOW_STATE_CHANGED,
+    fun `the window id is not consulted at all`() {
+        // There was a rule above the package check that dropped any event
+        // whose window id was one we had added. It is gone: under this app's
+        // profile getWindowId() is -1 for every event, so the rule learned -1
+        // as ours and then matched it against the entire device.
+        //
+        // Same event, four different ids, one answer. If a window id ever
+        // decides a route again, this fails.
+        for (id in listOf(-1, 0, 77, Int.MAX_VALUE)) {
+            val gate = WindowEvent(own, "android.widget.FrameLayout", id, Kind.WINDOW_STATE_CHANGED)
+            assertEquals("id=$id", EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route(gate))
+            val scroll = WindowEvent(ig, null, id, Kind.VIEW_SCROLLED)
+            assertEquals("id=$id", EventRoute.Scroll(ig), route(scroll))
+        }
+    }
+
+    @Test
+    fun `an event wearing the launcher class name is an exit whatever its id`() {
+        // The old rule dropped this when the id matched one of ours. Nothing
+        // we add is ever the launcher, so the class name is sufficient and
+        // the id was never adding anything here.
+        val e = WindowEvent(
+            own, ForegroundEventRouter.LAUNCHER_CLASS_NAME, -1, Kind.WINDOW_STATE_CHANGED,
         )
-        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_WINDOW), route(impostor, ownWindows = setOf(77)))
+        assertEquals(EventRoute.ExitToHome, route(e))
     }
 
     // ------------------------------------------------------ the launcher
@@ -113,25 +131,23 @@ class ForegroundEventRouterTest {
     @Test
     fun `a package removed from the target list stops routing`() {
         val e = WindowEvent(ig, "x", 3, Kind.WINDOW_STATE_CHANGED)
-        assertEquals(EventRoute.Ignore(IgnoreReason.NOT_A_TARGET), router.route(e, setOf(yt), emptySet()))
+        assertEquals(EventRoute.Ignore(IgnoreReason.NOT_A_TARGET), router.route(e, setOf(yt)))
     }
 
     // ------------------------------------------- the degraded guard (no flag)
 
     /**
-     * `flagRetrieveInteractiveWindows` is gone for banking-app compatibility,
-     * so `getWindows()` returns an empty list and the service can no longer
-     * enumerate its own windows up front. The id set is learned from events
-     * instead, which means it is **empty for the very first event from a new
-     * overlay window**.
+     * The package check, carrying the collision guard alone.
      *
-     * These tests pin the behaviour in exactly that worst case: an empty id
-     * set, which is what the guard degrades to. If rule 2 (the package-name
-     * check) did not carry it alone, showing a gate would read as the user
-     * going home and close the session underneath.
+     * It always was. `flagRetrieveInteractiveWindows` is gone for banking-app
+     * compatibility, so `getWindows()` returns empty and the window-id rule
+     * that replaced it could never match: `getWindowId()` is -1 for every
+     * event under this profile. The rule is deleted, and these are what is
+     * left standing. If any of them regressed, showing a gate would read as
+     * the user going home and close the session underneath.
      *
-     * This is weaker than the token set it replaced and needs device
-     * verification. See the README.
+     * Device verified: the id rule was dropping every event from every
+     * package until it was removed.
      */
     @Test
     fun `an overlay event is ignored even when no window ids are known`() {
@@ -145,8 +161,7 @@ class ForegroundEventRouterTest {
                     windowId = 4242,
                     kind = kind,
                 ),
-                targets = targets,
-                ownWindowIds = emptySet(),
+            targets = targets,
             )
             assertEquals("kind=$kind", EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route)
         }
@@ -162,7 +177,6 @@ class ForegroundEventRouterTest {
                 kind = Kind.WINDOW_STATE_CHANGED,
             ),
             targets = targets,
-            ownWindowIds = emptySet(),
         )
         assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route)
     }
@@ -179,7 +193,6 @@ class ForegroundEventRouterTest {
                 kind = Kind.WINDOW_STATE_CHANGED,
             ),
             targets = targets,
-            ownWindowIds = emptySet(),
         )
         assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route)
     }
@@ -197,8 +210,90 @@ class ForegroundEventRouterTest {
                 kind = Kind.WINDOW_STATE_CHANGED,
             ),
             targets = targets,
-            ownWindowIds = emptySet(),
         )
         assertEquals(EventRoute.ExitToHome, route)
+    }
+}
+
+/**
+ * The one case where an event from our own overlay can wear someone else's
+ * package name, and what stops it doing damage.
+ *
+ * `TYPE_WINDOWS_CHANGED` is not sourced from a view. It is emitted because the
+ * window stack moved, and which package the platform attributes it to is
+ * version dependent. Adding the lease gate over Instagram can plausibly
+ * produce one attributed to `com.instagram.android` rather than to us, so the
+ * package check in rule 1 misses it and it reaches rule 2 as a target event.
+ *
+ * That is the only hole in resting the collision guard on the package name,
+ * and it is closed by where the event lands rather than by catching it:
+ * `WINDOWS_CHANGED` from a target routes to [EventRoute.ProbeForeground],
+ * which asks `UsageStatsManager` who is really in front. It opens no session,
+ * closes none, and attributes no time.
+ *
+ * Before this file, that was true by reading. These assert it.
+ */
+class WindowsChangedProbeTest {
+
+    private val own = "dev.molasses"
+    private val ig = "com.instagram.android"
+    private val yt = "com.google.android.youtube"
+    private val targets = setOf(ig, yt)
+    private val router = ForegroundEventRouter(own, ForegroundEventRouter.LAUNCHER_CLASS_NAME)
+
+    private fun route(e: WindowEvent) = router.route(e, targets)
+
+    @Test
+    fun `a windows-changed from a target probes and never enters`() {
+        // The damaging misread would be EnterTarget: it opens a session and
+        // starts accruing time against an app the user may not be in.
+        for (pkg in targets) {
+            val e = WindowEvent(pkg, null, -1, Kind.WINDOWS_CHANGED)
+            assertEquals("pkg=$pkg", EventRoute.ProbeForeground, route(e))
+        }
+    }
+
+    @Test
+    fun `a windows-changed from a target never reads as an exit`() {
+        // The other damaging misread: closing the session the gate is
+        // covering, which is the original Phase 0.1 collision.
+        val e = WindowEvent(ig, ForegroundEventRouter.LAUNCHER_CLASS_NAME, -1, Kind.WINDOWS_CHANGED)
+        assertEquals(EventRoute.ProbeForeground, route(e))
+    }
+
+    @Test
+    fun `the class name on a windows-changed cannot change the route`() {
+        // Whatever the platform puts in className when our overlay provokes
+        // the event, the route is the same. Only the kind decides.
+        val names = listOf(
+            null,
+            "android.widget.FrameLayout",
+            "androidx.compose.ui.platform.ComposeView",
+            ForegroundEventRouter.LAUNCHER_CLASS_NAME,
+            "com.instagram.android.MainActivity",
+        )
+        for (name in names) {
+            val e = WindowEvent(ig, name, -1, Kind.WINDOWS_CHANGED)
+            assertEquals("className=$name", EventRoute.ProbeForeground, route(e))
+        }
+    }
+
+    @Test
+    fun `probing is the only route a windows-changed can take`() {
+        // Stated over the whole input space this event kind can present, so a
+        // future branch cannot quietly give WINDOWS_CHANGED a second meaning.
+        val routes = buildList {
+            for (pkg in listOf(ig, yt, own, "com.android.chrome")) {
+                for (name in listOf(null, "x", ForegroundEventRouter.LAUNCHER_CLASS_NAME)) {
+                    add(route(WindowEvent(pkg, name, -1, Kind.WINDOWS_CHANGED)))
+                }
+            }
+        }
+        // A target probes; our own package and an untracked one are ignored.
+        // Nothing enters, nothing exits.
+        assertTrue(routes.none { it is EventRoute.EnterTarget })
+        assertTrue(routes.none { it == EventRoute.ExitToHome })
+        assertTrue(routes.none { it is EventRoute.Scroll })
+        assertEquals(6, routes.count { it == EventRoute.ProbeForeground })
     }
 }

@@ -164,12 +164,18 @@ rather than by reading. The list exists so the fourth is found by reading.
 2. **`getBoundsInScreen()` on another window is unavailable.** Bit's planned
    fullscreen auto-retract has no geometry to read and needs a proxy signal.
 3. **`AccessibilityEvent.getWindowId()` is not dependable.** It returns `-1`
-   when the platform declines to say, which under this profile can be every
-   event. The learned-id guard treated `-1` as a real id, learned it from one
-   of our own events, and then matched it against every event from every
-   package. The whole app routed nothing on a device where the service was
-   bound, ready, correctly scoped and reporting healthy. See
-   `ForegroundEventRouter` and `IgnoreReason.OWN_WINDOW`.
+   when the platform declines to say, and under this profile it declines for
+   every event: the device read `-1` and nothing else. The learned-id guard
+   treated `-1` as a real id, learned it from one of our own events, and then
+   matched it against every event from every package. The whole app routed
+   nothing on a device where the service was bound, ready, correctly scoped
+   and reporting healthy.
+
+   That guard is now **deleted**, not repaired. With ids stripped it could
+   never match a real window, so a narrower version of it would be a guard
+   that cannot fire, which is worse than none: the next reader takes it as
+   cover for a case the package check is carrying alone. The collision guard
+   is the package-name check in `ForegroundEventRouter` and nothing else.
 
 The pattern behind all three: **this profile withholds window identity and
 window geometry, not just window contents.** `canRetrieveWindowContent` is the

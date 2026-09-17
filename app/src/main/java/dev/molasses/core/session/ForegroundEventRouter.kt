@@ -13,17 +13,35 @@ package dev.molasses.core.session
  * in the middle of gating.
  *
  * ## The filter, in order
- * 1. Any event from a window this service added is dropped first, before
- *    anything else looks at it.
- * 2. Any other event from our own package is dropped unless it carries the
+ * 1. Any event from our own package is dropped unless it carries the
  *    launcher's class name. The mascot and the touch sink have no activity
- *    class, so a class check alone would catch the launcher case and miss both
- *    overlays. That is why the window-id check comes first and is not
- *    optional.
- * 3. Target packages route normally.
+ *    class, so this is what keeps them from reading as the user going home.
+ * 2. Target packages route normally.
  *
  * App-to-app switches never reach here at all, because the other app is not in
  * `packageNames`. Those are the `UsageStatsManager` watchdog's job.
+ *
+ * ## The window-id check that used to come first
+ * There was a rule above both of these: drop any event whose `windowId` is one
+ * this service added. It is gone, and its absence is the point.
+ *
+ * It could not work under this app's accessibility profile.
+ * `AccessibilityEvent.getWindowId()` returns `-1` when the platform declines
+ * to say, and without `flagRetrieveInteractiveWindows` it declines for every
+ * event. The service learned `-1` from one of its own events, then matched it
+ * against every event from every package, and the whole app routed nothing on
+ * a device that was bound, ready, correctly scoped and reporting healthy.
+ *
+ * With ids stripped, the rule can never match a real window, so it cannot come
+ * back as a narrower version of itself. A guard that cannot fire is worse than
+ * no guard: the next reader takes it as cover for a case the package check is
+ * actually carrying alone.
+ *
+ * Its stated extra value was covering an event that arrived without a usable
+ * package name. That case is unreachable anyway: the service returns on a null
+ * package before the router is called, so such an event never gets here.
+ *
+ * See CLAUDE.md, "What dropping the flag costs, in full".
  */
 class ForegroundEventRouter(
     private val ownPackage: String,
@@ -34,26 +52,11 @@ class ForegroundEventRouter(
      */
     private val launcherClassName: String,
 ) {
-    /**
-     * @param ownWindowIds window ids this service currently owns. See
-     *   [WindowEvent.windowId] for why this is not a token set.
-     */
     fun route(
         event: WindowEvent,
         targets: Set<String>,
-        ownWindowIds: Set<Int>,
     ): EventRoute {
-        // 1. Our own windows, dropped before any other handling.
-        //
-        // This branch runs before the package is even read, so when it
-        // misfires it hides every other explanation: a row of ignored events
-        // looks identical whether the target set is wrong or this guard is
-        // eating the device. That is why the reason is carried out.
-        if (event.windowId in ownWindowIds) {
-            return EventRoute.Ignore(IgnoreReason.OWN_WINDOW)
-        }
-
-        // 2. Anything else wearing our package name.
+        // 1. Anything wearing our package name.
         if (event.packageName == ownPackage) {
             val isLauncher = event.className == launcherClassName &&
                 event.kind == WindowEvent.Kind.WINDOW_STATE_CHANGED
@@ -64,7 +67,7 @@ class ForegroundEventRouter(
             }
         }
 
-        // 3. Target apps.
+        // 2. Target apps.
         if (event.packageName in targets) {
             return when (event.kind) {
                 WindowEvent.Kind.VIEW_SCROLLED -> EventRoute.Scroll(event.packageName)

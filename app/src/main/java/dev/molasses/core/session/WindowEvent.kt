@@ -24,6 +24,8 @@ data class WindowEvent(
 /**
  * Why an event was dropped.
  *
+ * `ForegroundEventRouter` no longer produces [OWN_WINDOW]; see its doc.
+ *
  * ## Why the reason is carried rather than inferred
  * A total of ignored events says the router rejected them and nothing about
  * which branch did it, and the three branches have completely different
@@ -35,9 +37,20 @@ data class WindowEvent(
  */
 enum class IgnoreReason {
     /**
-     * The event came from a window this service added. Dropped before
-     * anything else looks at it, which is why it is the one that can hide
-     * every other explanation.
+     * **No longer produced.** The window-id branch that returned this is gone;
+     * see [ForegroundEventRouter] for why it could never work under this app's
+     * accessibility profile.
+     *
+     * Retained for one release so a tally read on a build that still has the
+     * branch is interpreted with the same enum rather than a renumbered one.
+     * Delete it, and this comment, at the release after the one that removed
+     * the branch.
+     *
+     * Note for whoever does: the earlier claim that this kept "a stale build's
+     * tally readable" was wrong. The tally is in memory and does not survive a
+     * reinstall, so nothing crosses builds. What the value is actually worth
+     * is that a reader comparing two versions of this enum sees a removal
+     * rather than a silent shift in meaning.
      */
     OWN_WINDOW,
 

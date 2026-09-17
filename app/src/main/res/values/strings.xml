@@ -240,12 +240,9 @@
     <string name="debug_field_accumulated" translatable="false">accumulated</string>
     <string name="debug_field_tier_index" translatable="false">tierIndex</string>
     <string name="debug_field_stall" translatable="false">stall</string>
-    <string name="debug_field_own_windows" translatable="false">ownWindowIds</string>
     <!-- The ignore breakdown, under the row it belongs to. %1$s is the count
-         dropped as one of our own windows, %2$s as our own package, %3$s as
-         an untracked package. -->
-    <string name="debug_events_ignored_by" translatable="false">    own-window %1$s  own-pkg %2$s  not-target %3$s</string>
-    <string name="debug_warn_own_window_swallow">THE COLLISION GUARD IS DROPPING EVERYTHING. Events from packages that are not ours are being rejected as though they came from our own windows. Check ownWindowIds below for a value that cannot be one of ours.</string>
+         dropped as our own package, %2$s as an untracked package. -->
+    <string name="debug_events_ignored_by" translatable="false">    own-pkg %1$s  not-target %2$s</string>
     <string name="debug_field_leases_taken" translatable="false">leasesTaken</string>
     <string name="debug_field_lease_until" translatable="false">leaseUntil</string>
     <string name="debug_value_seconds" translatable="false">%1$s s</string>

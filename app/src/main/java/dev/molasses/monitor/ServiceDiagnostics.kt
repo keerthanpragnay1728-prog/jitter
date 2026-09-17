@@ -73,16 +73,6 @@ object ServiceDiagnostics {
     /** Whatever `packageNames` was last handed to `setServiceInfo`. */
     @Volatile var appliedPackageNames: List<String> = emptyList()
 
-    /**
-     * The window ids the service has learned as its own.
-     *
-     * Shown raw, because the failure mode is a value in this set that should
-     * never have been in it, and no summary of the set would say which. It is
-     * consulted before the package is even read, so anything wrong here drops
-     * every event from every app and looks exactly like a target set fault.
-     */
-    @Volatile var ownWindowIds: List<Int> = emptyList()
-
     /** True when the stored target list was empty and the defaults stood in. */
     @Volatile var usedTargetFallback: Boolean = false
 
@@ -149,7 +139,6 @@ object ServiceDiagnostics {
         startupNote = null
         panicPathNote = null
         overlayFailureNote = null
-        ownWindowIds = emptyList()
         tally.reset()
     }
 
