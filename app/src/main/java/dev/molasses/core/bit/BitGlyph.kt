@@ -14,6 +14,25 @@ package dev.molasses.core.bit
  * measured. The layout then cannot move, whatever is being shown, and the HUD
  * structurally cannot fight edge docking.
  *
+ * ## Why the padding is on the right and not both sides
+ * It used to centre, and that was a second bug wearing the first one's
+ * clothes. The slot stayed 7 wide, exactly as intended, but the ink inside it
+ * did not: `(o_o)` is five characters and centres to one leading space, while
+ * the blink `( -_- )` is seven and centres to none. So the face jumped one
+ * character cell left for the 120 ms of every blink and snapped back.
+ *
+ * That read as a twitchy blink and survived three fixes aimed at blink
+ * *timing*, all of which were correct and none of which could touch it. The
+ * eyes were closing on schedule the whole time; the face was also sliding
+ * sideways while they did it.
+ *
+ * Left-aligned, every glyph starts at column zero and only the trailing pad
+ * varies, which nothing can see. The invariant is now the whole of what it
+ * always claimed to be: the slot does not move, and neither do its contents.
+ *
+ * `BitGlyphTest` asserts the leading edge directly, so a future return to
+ * centring fails rather than looking tidier.
+ *
  * [WIDTH] is derived from the faces rather than written down, so a new face
  * cannot be added that quietly overflows the slot. `BitGlyphTest` asserts that
  * every string constant on [BitStateMachine] is either a face in
@@ -54,7 +73,10 @@ object BitGlyph {
     }
 
     /**
-     * [text] centred in a [WIDTH] slot.
+     * [text] in a [WIDTH] slot, left aligned.
+     *
+     * Left rather than centred: see the class doc. Padding on both sides
+     * moves the glyph whenever its length changes, which is every blink.
      *
      * Truncates rather than overflowing. Nothing this renders should ever be
      * too long, and `BitHudTest` sweeps the whole input range to prove it, but
@@ -63,8 +85,6 @@ object BitGlyph {
      */
     fun pad(text: String, width: Int = WIDTH): String {
         if (text.length >= width) return text.take(width)
-        val total = width - text.length
-        val left = total / 2
-        return " ".repeat(left) + text + " ".repeat(total - left)
+        return text + " ".repeat(width - text.length)
     }
 }
