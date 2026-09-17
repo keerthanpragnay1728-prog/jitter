@@ -789,7 +789,7 @@ fun TerminalHomeView(
     LaunchedEffect(cycle.deepestAppMs) {
         val previous = lastDeepestMs
         lastDeepestMs = cycle.deepestAppMs
-        if (BitStatus.crossedTerminal(previous, cycle.deepestAppMs)) {
+        if (BitStatus.crossedTerminal(previous, cycle.deepestAppMs, cycle.deepestHorizonMs)) {
             react(BitStateMachine.Reaction.Glitching)
         }
     }
@@ -1051,7 +1051,7 @@ fun TerminalHomeView(
         // glitch > HUD > reaction > mood.
         val display = BitDisplay.resolve(
             // The deepest app, never the sum. The curve is per package.
-            mood = BitStateMachine.moodFor(cycle.deepestAppMs),
+            mood = BitStateMachine.moodFor(cycle.deepestAppMs, cycle.deepestHorizonMs),
             reaction = reaction,
             hud = if (hudVisibleStep == HudStep.NONE) {
                 null

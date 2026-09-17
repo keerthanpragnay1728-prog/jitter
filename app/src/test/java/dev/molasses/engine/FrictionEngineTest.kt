@@ -219,32 +219,40 @@ class FrictionEngineTest {
     }
 
     @Test
-    fun `the curve onset is six minutes, not five`() {
-        // The one behavioural change the curve brings on its own, isolated so
-        // it is not mistaken for a consequence of the precedence flip.
+    fun `the curve onset is the default horizon's forty percent`() {
+        // Seven minutes twelve on the default eighteen minute horizon.
+        // Isolated so a change to the horizon shows up here rather than as a
+        // surprise somewhere downstream.
         val r = Rig()
         r.enter(ig, 0)
         // A lease covering the whole span, so no penalty accrues and this
         // measures the curve rather than the ratchet.
         r.lease(ig, 0, 15 * min)
 
-        assertEquals(0L, r.scroll(ig, 5 * min + 30_000).stallMs)
-        assertTrue(r.scroll(ig, 6 * min + 1_000).stalls)
+        assertEquals(7 * min + 12_000L, FrictionCurve.ONSET_MS)
+        assertEquals(0L, r.scroll(ig, 7 * min).stallMs)
+        assertTrue(r.scroll(ig, 7 * min + 30_000).stalls)
     }
 
     @Test
     fun `overstaying a lease pulls the onset forward`() {
         // The other side of the same coin, asserted rather than left
-        // implicit. Five minutes leased and thirty seconds overstayed is six
-        // minutes of effective time at five and a half of real time, which is
-        // the ratchet working exactly as intended.
+        // implicit. Five minutes leased and ninety seconds overstayed is
+        // eight minutes of effective time at six and a half of real time,
+        // which is past an onset that real time has not reached.
         val overstayed = Rig()
         overstayed.enter(ig, 0)
         overstayed.lease(ig, 0, 5 * min)
         assertTrue(
-            "thirty seconds overdue should reach the onset early",
-            overstayed.scroll(ig, 5 * min + 30_000).stalls,
+            "ninety seconds overdue should reach the onset early",
+            overstayed.scroll(ig, 6 * min + 30_000).stalls,
         )
+
+        // Without the overstay, the same real time earns nothing.
+        val covered = Rig()
+        covered.enter(ig, 0)
+        covered.lease(ig, 0, 15 * min)
+        assertEquals(0L, covered.scroll(ig, 6 * min + 30_000).stallMs)
     }
 
     @Test

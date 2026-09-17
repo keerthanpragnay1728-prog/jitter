@@ -29,28 +29,61 @@ class BitStateMachineTest {
         val onset = dev.molasses.core.friction.FrictionCurve.ONSET_MS
         val terminal = dev.molasses.core.friction.FrictionCurve.TERMINAL_MS
         val mid = BitStateMachine.MOOD_MIDPOINT_MS
+        val horizon = dev.molasses.core.friction.FrictionCurve.DEFAULT_HORIZON_MS
 
-        assertEquals(Mood.IDLE, BitStateMachine.moodFor(0))
-        assertEquals(Mood.IDLE, BitStateMachine.moodFor(onset - 1))
-        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(onset))
-        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(mid - 1))
-        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(mid))
-        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(terminal - 1))
-        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(terminal))
-        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(99 * min))
+        assertEquals(Mood.IDLE, BitStateMachine.moodFor(0, horizon))
+        assertEquals(Mood.IDLE, BitStateMachine.moodFor(onset - 1, horizon))
+        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(onset, horizon))
+        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(mid - 1, horizon))
+        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(mid, horizon))
+        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(terminal - 1, horizon))
+        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(terminal, horizon))
+        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(99 * min, horizon))
 
-        // The values those derivations actually produce today, so a change to
-        // the curve shows up here as a deliberate edit rather than silently.
-        assertEquals(6 * min, onset)
-        assertEquals(15 * min + 30_000L, mid)
-        assertEquals(25 * min, terminal)
+        // The values those derivations actually produce at the default
+        // horizon, so a change to the curve shows up here as a deliberate
+        // edit rather than silently.
+        assertEquals(7 * min + 12_000L, onset)
+        assertEquals(12 * min + 36_000L, mid)
+        assertEquals(18 * min, terminal)
 
-        // Bit stops being idle exactly when stalls begin. The old boundary
-        // was 7 minutes, so the first minute of friction had no tell at all.
-        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(6 * min))
-        // And the most alarming face no longer arrives five minutes before
-        // the worst friction.
-        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(20 * min))
+        // Bit stops being idle exactly when stalls begin, at every horizon.
+        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(onset, horizon))
+        // And the most alarming face no longer arrives before the worst
+        // friction with nowhere left to go.
+        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(20 * min, horizon))
+    }
+
+    @Test
+    fun `mood scales with the horizon it is read against`() {
+        // The defect this guards: a mood read against a fixed pair reports a
+        // friction level the engine is not producing. Twenty minutes is
+        // saturated on an eighteen minute horizon and has not started on a
+        // sixty minute one, and both are correct for the app they describe.
+        val short = 18L * min
+        val long = 60L * min
+        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(20 * min, short))
+        assertEquals(Mood.IDLE, BitStateMachine.moodFor(20 * min, long))
+        assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(25 * min, long))
+        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(45 * min, long))
+        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(60 * min, long))
+    }
+
+    @Test
+    fun `every horizon has all four moods in order`() {
+        // No horizon may collapse a mood out of existence, which a bad
+        // onset fraction or a bad midpoint would do silently.
+        for (h in listOf(10L, 18L, 30L, 60L).map { it * min }) {
+            val seen = (0..(h / 1000)).map {
+                BitStateMachine.moodFor(it * 1000, h)
+            }
+            assertEquals(
+                "horizon ${h / min}m",
+                listOf(Mood.IDLE, Mood.VIGILANT, Mood.ANNOYED, Mood.GLITCHED),
+                seen.distinct(),
+            )
+            assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(h, h))
+        }
     }
 
     // -------------------------------------------------------- CONFIRM

@@ -17,6 +17,7 @@ import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
+import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.time.CycleWindow
@@ -67,6 +68,20 @@ data class CycleReadout(
 ) {
     /** Zero when nothing has accumulated, which `moodFor` reads as idle. */
     val deepestAppMs: Long get() = deepest?.accumulatedMs ?: 0L
+
+    /**
+     * The deepest app's horizon, which is the one the mood must be read
+     * against.
+     *
+     * Off the same snapshot as [deepestAppMs] deliberately: a time from one
+     * app and a horizon from another would put Bit in a mood no app's friction
+     * justifies, which is the defect that shipped once when the summed cycle
+     * total was fed to a per app curve.
+     *
+     * The default when nothing has accumulated, because there is no app to ask
+     * and idle is idle at every horizon.
+     */
+    val deepestHorizonMs: Long get() = FrictionCurve.DEFAULT_HORIZON_MS
 
     /**
      * Milliseconds until the cycle resets, or null when none is anchored.
