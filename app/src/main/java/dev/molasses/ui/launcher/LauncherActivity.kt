@@ -134,6 +134,7 @@ import dev.molasses.core.stats.DayUsage
 import dev.molasses.core.ui.CycleLine
 import dev.molasses.core.ui.FontScale
 import dev.molasses.core.ui.PowerBar
+import dev.molasses.debug.BitTrace
 import dev.molasses.data.datastore.ConsoleState
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.repo.CycleReadout
@@ -661,7 +662,11 @@ fun TerminalHomeView(
             bitTickMs = tick
             val next = BitStateMachine.advanceBlink(blinkCycle, tick)
             blinkCycle = next
-            blinking = BitStateMachine.isBlinking(next, tick)
+            val shut = BitStateMachine.isBlinking(next, tick)
+            // Before the write, so the line describes the value about to be
+            // published rather than the previous one. Debug variant only.
+            BitTrace.tick(bitOrigin, tick, next, shut)
+            blinking = shut
             delay(BitStateMachine.TICK_MS)
         }
     }
@@ -1088,6 +1093,7 @@ fun TerminalHomeView(
                 BitStateMachine.BitFrame(face = "")
             } else {
                 BitStateMachine.frame(display, reactionAgeMs, bitTickMs, blinking)
+                    .also { BitTrace.drew(it.face) }
             },
             onInteract = { lastBitTouchMs = SystemClock.elapsedRealtime() },
             onTap = { taps ->

@@ -33,6 +33,13 @@ val pureTest = listOf(
     "dev/molasses/engine",
     "dev/molasses/sensing",
     "dev/molasses/legacy",
+    // Source-set split guards. They import nothing from the app: they read
+    // the debug and release variants as text and assert the split is intact,
+    // so they are pure and can run here. Without this line they ran only in
+    // the Android unit test task, which is the one that cannot run here, and
+    // a guard that only executes where the toolchain is unreachable is not
+    // guarding anything from this side.
+    "dev/molasses/debug",
 )
 
 sourceSets {
