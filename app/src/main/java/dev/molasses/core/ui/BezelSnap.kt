@@ -61,6 +61,50 @@ object BezelSnap {
         return if (clamped >= max / 2f) max else 0f
     }
 
+    /**
+     * Where a docked element must move to when its own measured width
+     * changes underneath it.
+     *
+     * ## Why this is needed at all
+     * Bit is rendered into a fixed-width slot precisely so this cannot
+     * happen, and for one state it now has two: the retreated slit gets a
+     * narrower slot so it can sit flush on the bezel. See `BitGlyph`.
+     *
+     * A narrower item makes [maxOffset] *larger*, so the old right-hand
+     * offset is still perfectly in bounds and nothing corrects it. Bit
+     * therefore stays where the wide slot put it, which is the difference
+     * between the two widths in from the edge. That is the docked-slit bug as
+     * reported: not off screen, just not flush.
+     *
+     * The mirror case is the dangerous one. A wider item makes [maxOffset]
+     * *smaller*, so the old offset is out of bounds, and an element outside
+     * its parent receives no touch events at all. That is the original right
+     * bezel lockup this file was written for, arriving by a second route.
+     *
+     * ## Why null in the middle
+     * Only an element already resting against a bezel is repositioned. One
+     * sitting anywhere else was put there by a drag or a decay that is
+     * probably still running, and moving it would be the layout wrestling the
+     * user's finger. Its bounds are still corrected by the caller; only the
+     * re-dock is declined.
+     *
+     * The return is always inside `[0, maxOffset(containerPx, toItemPx)]` by
+     * construction, so applying it cannot leave the element part way off
+     * screen at either width.
+     *
+     * @param fromItemPx the width the element was measured at, or 0 before
+     *   the first layout pass, which returns null.
+     */
+    fun reSnap(currentX: Float, containerPx: Int, fromItemPx: Int, toItemPx: Int): Float? {
+        if (!canSnap(containerPx, fromItemPx) || !canSnap(containerPx, toItemPx)) return null
+        val fromMax = maxOffset(containerPx, fromItemPx)
+        return when {
+            currentX <= 0f -> 0f
+            currentX >= fromMax -> maxOffset(containerPx, toItemPx)
+            else -> null
+        }
+    }
+
     /** Guard for the call site, so an out-of-bounds offset fails loudly. */
     fun isWithinBounds(value: Float, containerPx: Int, itemPx: Int): Boolean =
         value >= 0f && value <= maxOffset(containerPx, itemPx)

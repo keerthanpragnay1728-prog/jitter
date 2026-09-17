@@ -2,6 +2,7 @@ package dev.molasses.core.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -91,5 +92,89 @@ class BezelSnapTest {
     fun `bounds checking rejects what the bug produced`() {
         // containerPx as the right target, which is what shipped.
         assertFalse(BezelSnap.isWithinBounds(container.toFloat(), container, bit))
+    }
+
+    // ------------------------------------------- a width that changes
+
+    /** Bit's slot while a face is showing, and while the slit is. */
+    private val wide = 140
+    private val narrow = 60
+
+    @Test
+    fun `docking to a narrower glyph follows the right bezel`() {
+        // The docked-slit bug. A narrower item makes maxOffset larger, so the
+        // old offset is still in bounds and nothing corrects it. Bit sits the
+        // difference between the two widths in from the edge and looks
+        // dropped rather than docked.
+        val wasDocked = BezelSnap.maxOffset(container, wide)
+        assertEquals(940f, wasDocked)
+        assertEquals(
+            BezelSnap.maxOffset(container, narrow),
+            BezelSnap.reSnap(wasDocked, container, wide, narrow),
+        )
+        assertEquals(1020f, BezelSnap.reSnap(wasDocked, container, wide, narrow))
+    }
+
+    @Test
+    fun `un-docking to a wider glyph comes back inside the parent`() {
+        // The dangerous direction. A wider item makes maxOffset smaller, so
+        // the old offset is outside the parent, and Compose delivers no touch
+        // events to a child outside its parent. That is the original right
+        // bezel lockup arriving by a second route.
+        val wasDocked = BezelSnap.maxOffset(container, narrow)
+        val target = BezelSnap.reSnap(wasDocked, container, narrow, wide)
+        assertEquals(940f, target)
+        assertTrue(BezelSnap.isWithinBounds(target!!, container, wide))
+    }
+
+    @Test
+    fun `the left bezel stays at zero at either width`() {
+        assertEquals(0f, BezelSnap.reSnap(0f, container, wide, narrow))
+        assertEquals(0f, BezelSnap.reSnap(0f, container, narrow, wide))
+    }
+
+    @Test
+    fun `a Bit resting away from a bezel is not moved`() {
+        // It was put there by a drag or a decay that is probably still
+        // running. Repositioning it would be the layout wrestling the finger.
+        assertNull(BezelSnap.reSnap(400f, container, wide, narrow))
+        assertNull(BezelSnap.reSnap(400f, container, narrow, wide))
+    }
+
+    @Test
+    fun `no width transition leaves any part of Bit outside the parent`() {
+        // The property, swept rather than sampled: whatever the starting
+        // offset and whichever way the width moves, an applied re-snap is
+        // inside the bounds of the width it is moving to.
+        val widths = listOf(narrow, wide, bit, 1, container, container + 200)
+        for (from in widths) {
+            for (to in widths) {
+                for (x in listOf(-50f, 0f, 1f, 400f, 940f, 1020f, 5000f)) {
+                    val target = BezelSnap.reSnap(x, container, from, to) ?: continue
+                    assertTrue(
+                        "from=$from to=$to x=$x gave $target",
+                        BezelSnap.isWithinBounds(target, container, to),
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a missing measurement declines to move anything`() {
+        // Same rule as canSnap. A zero width is onSizeChanged not having
+        // fired, and snapping on it is how Bit ended up one full width
+        // outside the parent the first time.
+        assertNull(BezelSnap.reSnap(940f, container, 0, narrow))
+        assertNull(BezelSnap.reSnap(940f, container, wide, 0))
+        assertNull(BezelSnap.reSnap(940f, 0, wide, narrow))
+    }
+
+    @Test
+    fun `an unchanged width re-docks to the same edge`() {
+        // The container changed, not the glyph: a rotation. A docked Bit
+        // still follows its bezel.
+        assertEquals(940f, BezelSnap.reSnap(940f, container, wide, wide))
+        assertEquals(0f, BezelSnap.reSnap(0f, container, wide, wide))
     }
 }

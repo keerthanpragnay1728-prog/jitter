@@ -2106,6 +2106,11 @@ private fun BitCompanion(
     var bitWidth by remember { mutableIntStateOf(0) }
     var bitHeight by remember { mutableIntStateOf(0) }
 
+    // The width Bit was measured at last time, so a change can be told from a
+    // first measurement. Deliberately not a state: nothing renders off it, and
+    // making it one would recompose on every docking.
+    val lastBitWidth = remember { intArrayOf(0) }
+
     var tapCount by remember { mutableIntStateOf(0) }
     var lastTapMs by remember { mutableLongStateOf(0L) }
 
@@ -2118,8 +2123,26 @@ private fun BitCompanion(
     // come back, and Bit is untouchable for the whole excursion.
     LaunchedEffect(containerWidth, bitWidth) {
         if (BezelSnap.canSnap(containerWidth, bitWidth)) {
+            // Read before the bounds change, so the question asked is "was it
+            // docked at the old width", not "where did updateBounds leave it".
+            val was = offsetX.value
+            val from = lastBitWidth[0]
             offsetX.updateBounds(0f, BezelSnap.maxOffset(containerWidth, bitWidth))
+            // Bit's slot is narrower while it is retreated, so docking and
+            // un-docking both move the right-hand bezel. Follow it, or the
+            // slit draws four cells in from the edge on the way down and the
+            // face hangs outside the parent on the way back up. See
+            // BezelSnap.reSnap for both failures in full.
+            val target = BezelSnap.reSnap(was, containerWidth, from, bitWidth)
+            if (target != null) {
+                // snapTo rather than animateTo. The glyph has just changed
+                // character, so there is nothing to animate between, and an
+                // animation here would be racing the drag that un-docked Bit
+                // in the first place.
+                offsetX.snapTo(target)
+            }
         }
+        lastBitWidth[0] = bitWidth
     }
     LaunchedEffect(containerHeight, bitHeight) {
         if (BezelSnap.canSnap(containerHeight, bitHeight)) {
@@ -2137,12 +2160,13 @@ private fun BitCompanion(
             },
     ) {
         Text(
-            // Padded into a fixed slot. Bit's snap target is computed from its
-            // measured width, so a glyph two characters narrower than the last
-            // one would move the target, which moves Bit while nobody touched
-            // it. BezelSnap already carries the scar tissue from that
-            // arithmetic going wrong once.
-            text = BitGlyph.pad(frame.face),
+            // Padded into a fixed slot, of which there are two: faces and
+            // readouts get the wide one, the retreated slit gets a narrow one
+            // so it can sit flush on the bezel. Bit's snap target is computed
+            // from its measured width, so the change between them moves the
+            // target; the LaunchedEffect above follows it. BezelSnap carries
+            // the scar tissue from that arithmetic going wrong once already.
+            text = BitGlyph.padFor(frame.face),
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = 17.sp,

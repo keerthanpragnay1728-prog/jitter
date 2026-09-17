@@ -54,9 +54,23 @@ package dev.molasses.core.bit
  * Above the mood because a retreated Bit is meant to be a glyph rather than a
  * face. Below the armed tell because that is the one thing in this app that
  * is otherwise completely invisible, and hiding it behind a retreat would
- * lose it in exactly the moment it means something. Nothing moves either way:
- * every glyph occupies the same padded slot, so swapping between a slit and a
- * face cannot touch the snap target.
+ * lose it in exactly the moment it means something.
+ *
+ * This used to claim that nothing moves either way, because every glyph
+ * occupied the same padded slot. That is no longer true and was never quite
+ * the win it sounded like: a three character slit in a seven character slot
+ * drew four cells in from the right bezel, so the one state whose purpose is
+ * to be out of the way was the one state that could not reach the edge. The
+ * slit now has its own narrower slot, and the resulting change of snap target
+ * is handled in `BezelSnap.reSnap` rather than by pretending it does not
+ * happen.
+ *
+ * What makes a second width safe is this table, not the renderer: [Slit] is
+ * reachable only from step 8, every other step returns a [Face] or a [Hud],
+ * and [Speech] carries a mood rather than a glyph, so it renders a face too.
+ * A slit and a face therefore cannot share a frame. `BitGlyphTest` pins that
+ * over every case here, because it is now load bearing for the layout and not
+ * merely tidy.
  *
  * ## Where Bit's own speech sits
  * A PROMPT is second, under the glitch burst alone. It is a question waiting
