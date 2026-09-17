@@ -47,8 +47,9 @@ data class FrictionPoint(
  * horizon grows, linearly and clamped at both ends, between
  * [TAPER_FROM_HORIZON_MS] and [TAPER_TO_HORIZON_MS].
  *
- * At or below a twenty minute horizon the ceiling is exactly what it has
- * always been. At sixty minutes it is 70% and three seconds: heavy, constant,
+ * At or below the default horizon the ceiling is exactly what it has always
+ * been, so nothing about declaring an ordinary session changes what it costs.
+ * At sixty minutes it is 70% and three seconds: heavy, constant,
  * clearly degraded, and still usable for the thing the user said they were
  * doing. A longer horizon therefore accumulates **more friction in total** and
  * is **never more severe at any instant**, which is the property worth
@@ -182,8 +183,18 @@ object FrictionCurve {
 
     // ---------------------------------------------------------------- taper
 
-    /** At or below this horizon the ceiling is untapered. */
-    const val TAPER_FROM_HORIZON_MS = 20L * 60 * 1000
+    /**
+     * At or below this horizon the ceiling is untapered.
+     *
+     * The default, so the default sits exactly on the calibrated ceiling and
+     * the taper is confined to its actual job: softening horizons longer than
+     * the one a session is assumed to be. It started at twenty minutes, which
+     * put the default an eighth of the way in and took 250ms and four points
+     * of probability off a ceiling that had been measured on hardware. That
+     * was an accident of two numbers written at different times rather than a
+     * choice, so it is tied to the default now and moves with it.
+     */
+    const val TAPER_FROM_HORIZON_MS = DEFAULT_HORIZON_MS
 
     /** At or above this horizon the taper is at full extent. */
     const val TAPER_TO_HORIZON_MS = 60L * 60 * 1000

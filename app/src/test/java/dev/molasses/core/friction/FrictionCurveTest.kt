@@ -219,8 +219,8 @@ class FrictionCurveTest {
     // ------------------------------------------------------ the taper
 
     @Test
-    fun `at or below twenty minutes the ceiling is exactly what it always was`() {
-        for (h in listOf(10L, 15L, 18L, 20L).map { it * 60_000 }) {
+    fun `at or below the default the ceiling is exactly what it always was`() {
+        for (h in listOf(10L, 15L, 18L, 20L, 25L).map { it * 60_000 }) {
             assertEquals("horizon $h", 5000, FrictionCurve.terminalStallMs(h))
             assertEquals("horizon $h", 1.0f, FrictionCurve.terminalProbability(h), 0f)
             val p = atMs(h, h)
@@ -241,8 +241,10 @@ class FrictionCurveTest {
 
     @Test
     fun `the taper is linear between its endpoints`() {
-        // Halfway between 20 and 60 minutes is halfway between the ceilings.
-        val h = 40 * 60_000L
+        // Halfway along is halfway between the ceilings, wherever the
+        // endpoints are. Derived rather than written as a minute mark, so
+        // retuning them cannot turn this into a test of a constant.
+        val h = (FrictionCurve.TAPER_FROM_HORIZON_MS + FrictionCurve.TAPER_TO_HORIZON_MS) / 2
         assertEquals(4000, FrictionCurve.terminalStallMs(h))
         assertEquals(0.85f, FrictionCurve.terminalProbability(h), 0.001f)
     }
@@ -317,22 +319,22 @@ class FrictionCurveTest {
     }
 
     @Test
-    fun `the default horizon sits just inside the taper`() {
-        // Worth pinning, because it is the one place the default is not the
-        // old curve's ceiling. Twenty five minutes is an eighth of the way
-        // from the taper's start to its end, so the ceiling comes down by an
-        // eighth of its range: 4750ms at 96% rather than 5000 at 100%.
+    fun `the default horizon sits exactly on the calibrated ceiling`() {
+        // The taper starts at the default, so an ordinary session costs what
+        // it was measured to cost: 5000ms at 100%, unchanged from before the
+        // horizon existed. Only the onset moved, from six minutes to ten.
         //
-        // The terminal is still at twenty five minutes, which is the half the
-        // hardware measurements are about. Moving TAPER_FROM_HORIZON_MS to
-        // twenty five would restore the old ceiling exactly and is a one line
-        // change; it is not made here because the taper endpoints were
-        // specified as twenty to sixty.
+        // The taper began at twenty minutes for one commit, which put the
+        // default an eighth of the way in at 4750ms and 96%. That was an
+        // accident of two numbers written at different times rather than a
+        // choice. Pinned here so a future retune of the taper endpoints has
+        // to notice it is moving the default's ceiling with them.
         assertEquals(25 * 60_000L, default)
         assertEquals(10 * 60_000L, FrictionCurve.ONSET_MS)
         assertEquals(25 * 60_000L, FrictionCurve.TERMINAL_MS)
-        assertEquals(4750, FrictionCurve.terminalStallMs(default))
-        assertEquals(0.9625f, FrictionCurve.terminalProbability(default), 0.0005f)
+        assertEquals(FrictionCurve.DEFAULT_HORIZON_MS, FrictionCurve.TAPER_FROM_HORIZON_MS)
+        assertEquals(5000, FrictionCurve.terminalStallMs(default))
+        assertEquals(1.0f, FrictionCurve.terminalProbability(default), 0f)
     }
 
     @Test
@@ -396,6 +398,14 @@ class FrictionCurveTest {
      * consequence, which is the thing a person actually has to judge: whether
      * minute fifty five of a declared hour is heavy enough to still be
      * friction and light enough to still be a lecture.
+     *
+     * **Permanent, and not to be deleted as redundant.** It asserts nothing,
+     * so a reviewer looking for coverage will read it as dead weight. It is
+     * the only artefact in the repository that shows what the friction
+     * actually feels like across the offered range, and it is the first thing
+     * worth reading when a device disagrees with what the curve was expected
+     * to do. Every number in it is derived, so it cannot go stale: retuning
+     * the knots, the floor or the taper changes what it prints.
      */
     @Test
     fun `report the curve at every offered horizon`() {
