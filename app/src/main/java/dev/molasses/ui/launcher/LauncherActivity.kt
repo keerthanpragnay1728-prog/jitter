@@ -2200,6 +2200,33 @@ private fun BitCompanion(
         }
     }
 
+    // This Box is what "bezel" means, and it is not the glass.
+    //
+    // It fills the console column, which sits 18dp in from each screen edge,
+    // so a docked Bit rests 18dp from the physical edge rather than against
+    // it. That is deliberate and it is not the horizontal padding merely
+    // happening to be there.
+    //
+    // The glass edge belongs to the system. On gesture navigation the back
+    // swipe claims roughly the outer 20dp of each vertical edge, reported
+    // through the systemGestures insets. A Bit docked flush would sit inside
+    // that, so every attempt to pick it up would race the back gesture and
+    // usually lose. Modifier.systemGestureExclusion exists to claim it back,
+    // but exclusions are capped per side and OEM behaviour varies, so a flush
+    // Bit is a fight rather than a line of code. The 18dp is very nearly
+    // exactly the clearance that keeps Bit draggable.
+    //
+    // Two smaller reasons, in case the first one is ever solved. The slit is
+    // about 30dp of ink at 17sp, so at 18dp in it already reads as against
+    // the edge at arm's length. And every other element on this screen shares
+    // that 18dp, so a flush Bit would introduce a second margin into a layout
+    // whose whole look is one column.
+    //
+    // So: Bit docks to the layout edge, on purpose. If a future change wants
+    // it closer to the glass, trim the shared horizontal constant rather than
+    // giving this Box a width its siblings do not have. BezelSnap itself
+    // needs no change either way; it reads whatever container width it is
+    // handed.
     Box(
         modifier = Modifier
             .fillMaxWidth()
