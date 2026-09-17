@@ -51,10 +51,44 @@ class BitGlyphTest {
     }
 
     @Test
-    fun `padding centres, so a narrow glyph does not sit against the bezel`() {
-        assertEquals("  (o_o) ", " " + BitGlyph.pad("(o_o)"))
+    fun `padding is on the right, so the glyph's leading edge never moves`() {
+        // The bug this replaces: centring kept the slot 7 wide and moved the
+        // ink inside it. Five characters centred to one leading space, seven
+        // to none, so the face jumped a character cell left for every blink
+        // and back. It read as a twitchy blink and outlived three fixes aimed
+        // at blink timing, none of which could reach it.
+        assertEquals("(o_o)  ", BitGlyph.pad("(o_o)"))
         assertEquals(BitGlyph.WIDTH, BitGlyph.pad("(o_o)").length)
-        assertTrue(BitGlyph.pad("(o_o)").trim() == "(o_o)")
+        assertEquals("(o_o)", BitGlyph.pad("(o_o)").trim())
+    }
+
+    @Test
+    fun `every face starts at column zero, whatever its length`() {
+        // Stated over the whole set rather than on one pair, because the
+        // blink is only the transition that happens most often. Any two faces
+        // of different lengths would move the same way, and three of them are
+        // not five characters long.
+        for (face in BitStateMachine.FACES) {
+            val padded = BitGlyph.pad(face)
+            assertEquals("face $face", BitGlyph.WIDTH, padded.length)
+            assertEquals(
+                "face $face does not start at column zero",
+                0,
+                padded.indexOfFirst { !it.isWhitespace() },
+            )
+        }
+    }
+
+    @Test
+    fun `the blink transition moves nothing`() {
+        // The exact pair the spasm was made of.
+        val resting = BitGlyph.pad(BitStateMachine.NEUTRAL)
+        val shut = BitGlyph.pad(BitStateMachine.BLINK_HALF)
+        assertEquals(resting.length, shut.length)
+        assertEquals(
+            resting.indexOfFirst { !it.isWhitespace() },
+            shut.indexOfFirst { !it.isWhitespace() },
+        )
     }
 
     @Test
