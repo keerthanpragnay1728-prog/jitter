@@ -1,5 +1,8 @@
 package dev.molasses.core.model
 
+import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.friction.HorizonPolicy
+
 /** Per-package friction state, as the UI and debug screen see it. */
 data class AppSnapshot(
     val pkg: String,
@@ -22,6 +25,21 @@ data class AppSnapshot(
      * what they actually spent and what it is costing them.
      */
     val penaltyMs: Long = 0,
+    /**
+     * The declared session horizon this app's curve is scaled to.
+     *
+     * Per app rather than per session on purpose. Chosen on the lease panel it
+     * would be the largest button on the screen with no cost to pressing it,
+     * and everyone would be on sixty minutes inside a week. In settings it is
+     * a calm decision about what this app is for.
+     */
+    val horizonMs: Long = FrictionCurve.DEFAULT_HORIZON_MS,
+    /**
+     * A wider horizon waiting for the next cycle rollover, or 0 for none.
+     * Narrowing does not wait, so this only ever holds a widen. See
+     * [dev.molasses.core.friction.HorizonPolicy].
+     */
+    val pendingHorizonMs: Long = HorizonPolicy.NONE,
 ) {
     /**
      * Sitting in this app past the lease that was taken for it.

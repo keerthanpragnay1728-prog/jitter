@@ -57,4 +57,12 @@ enum class EventType {
      * timeout, and the user went home instead of into the app.
      */
     LEASE_DECLINED,
+
+    /**
+     * An app's declared session horizon changed.
+     *
+     * The detail carries both halves, because the interesting row is the one
+     * where the horizon did not move and a pending widen appeared instead.
+     */
+    HORIZON_SET,
 }

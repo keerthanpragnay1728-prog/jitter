@@ -59,6 +59,7 @@ class CycleWindowEngineTest {
         fun exit(pkg: String, ms: Long) { at(ms); engine.onForegroundExit(pkg, ms) }
         fun scroll(pkg: String, ms: Long) { at(ms); engine.onScroll(pkg, ms) }
         fun tick(ms: Long) { at(ms); engine.checkpoint(ms) }
+        fun setHorizon(pkg: String, ms: Long) { engine.setHorizon(pkg, ms) }
 
         /** Wall clock alone moves. This is the bypass under test. */
         fun warpWallForward(ms: Long) {
@@ -83,6 +84,99 @@ class CycleWindowEngineTest {
         fun state() = engine.state.value
 
         companion object { const val WALL_BASE = 1_700_000_000_000L }
+    }
+
+    // --------------------------------------------------------- the horizon
+
+    @Test
+    fun `a widened horizon waits for the rollover and then lands`() {
+        val r = Rig()
+        r.enter(ig, 0)
+        r.scroll(ig, 10 * min)
+        r.setHorizon(ig, 60 * min)
+
+        assertEquals("not yet", 18 * min, r.snap(ig).horizonMs)
+        assertEquals("waiting", 60 * min, r.snap(ig).pendingHorizonMs)
+
+        r.tick(window + min)
+
+        assertEquals("promoted", 60 * min, r.snap(ig).horizonMs)
+        assertEquals("nothing left waiting", 0L, r.snap(ig).pendingHorizonMs)
+    }
+
+    @Test
+    fun `a narrowed horizon does not wait`() {
+        val r = Rig()
+        r.enter(ig, 0)
+        r.setHorizon(ig, 10 * min)
+        assertEquals(10 * min, r.snap(ig).horizonMs)
+        assertEquals(0L, r.snap(ig).pendingHorizonMs)
+    }
+
+    @Test
+    fun `a horizon change refunds nothing`() {
+        // The rule the whole feature is under. Widening is a statement about
+        // what a session is for, not a reset, and the accumulated total and
+        // the tier it earned are untouched by it in both directions.
+        val r = Rig()
+        r.enter(ig, 0)
+        r.scroll(ig, 16 * min)
+        val before = r.snap(ig)
+
+        r.setHorizon(ig, 60 * min)
+        assertEquals(before.accumulatedMs, r.snap(ig).accumulatedMs)
+        assertEquals(before.tierIndex, r.snap(ig).tierIndex)
+
+        r.setHorizon(ig, 10 * min)
+        assertEquals(before.accumulatedMs, r.snap(ig).accumulatedMs)
+        assertEquals(before.tierIndex, r.snap(ig).tierIndex)
+    }
+
+    @Test
+    fun `a promoted horizon arrives at zero accumulated time`() {
+        // Why the rollover is the right moment to promote at: the total the
+        // new curve is read against starts over with it, so a wider horizon
+        // can never arrive part way up a ramp it did not scale.
+        val r = Rig()
+        r.enter(ig, 0)
+        r.scroll(ig, 16 * min)
+        r.setHorizon(ig, 60 * min)
+        r.exit(ig, 16 * min)
+
+        r.tick(window + min)
+
+        assertEquals(60 * min, r.snap(ig).horizonMs)
+        assertEquals(0L, r.snap(ig).accumulatedMs)
+        assertEquals(0, r.snap(ig).tierIndex)
+    }
+
+    @Test
+    fun `a pending widen survives a process death still pending`() {
+        // It is state, not an in-memory intention. A restart that promoted it
+        // would make killing the launcher the way to skip the wait.
+        val r = Rig()
+        r.enter(ig, 0)
+        r.setHorizon(ig, 60 * min)
+        r.exit(ig, min)
+        val persisted = r.engine.snapshot()
+
+        val r2 = Rig(initial = persisted)
+        assertEquals("still not in force", 18 * min, r2.snap(ig).horizonMs)
+        assertEquals("still waiting", 60 * min, r2.snap(ig).pendingHorizonMs)
+
+        r2.enter(ig, 0)
+        r2.tick(window + min)
+        assertEquals(60 * min, r2.snap(ig).horizonMs)
+    }
+
+    @Test
+    fun `an in force horizon survives a rollover it did not change at`() {
+        val r = Rig()
+        r.enter(ig, 0)
+        r.setHorizon(ig, 10 * min)
+        r.exit(ig, min)
+        r.tick(window + min)
+        assertEquals(10 * min, r.snap(ig).horizonMs)
     }
 
     // ------------------------------------------------- rollover on the tick

@@ -81,7 +81,7 @@ data class CycleReadout(
      * The default when nothing has accumulated, because there is no app to ask
      * and idle is idle at every horizon.
      */
-    val deepestHorizonMs: Long get() = FrictionCurve.DEFAULT_HORIZON_MS
+    val deepestHorizonMs: Long get() = deepest?.horizonMs ?: FrictionCurve.DEFAULT_HORIZON_MS
 
     /**
      * Milliseconds until the cycle resets, or null when none is anchored.
@@ -203,6 +203,12 @@ class SettingsRepository(
     suspend fun setTargets(packages: List<String>) = store.setTargets(packages)
     suspend fun setResetPolicy(policy: CycleResetPolicy) = store.setResetPolicy(policy)
     suspend fun setGateMode(mode: GatePolicy.GateMode) = store.setGateMode(mode)
+
+    /** The user's declared horizon per package. See [CycleStateStore.appHorizons]. */
+    val appHorizons: Flow<Map<String, Long>> = store.appHorizons
+
+    suspend fun setAppHorizon(pkg: String, horizonMs: Long) =
+        store.setAppHorizon(pkg, horizonMs)
 
     suspend fun setSensitivePrefixes(prefixes: List<String>) =
         store.setSensitivePrefixes(prefixes)
