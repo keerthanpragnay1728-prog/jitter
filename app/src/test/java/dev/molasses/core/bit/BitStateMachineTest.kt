@@ -43,15 +43,16 @@ class BitStateMachineTest {
         // The values those derivations actually produce at the default
         // horizon, so a change to the curve shows up here as a deliberate
         // edit rather than silently.
-        assertEquals(7 * min + 12_000L, onset)
-        assertEquals(12 * min + 36_000L, mid)
-        assertEquals(18 * min, terminal)
+        assertEquals(10 * min, onset)
+        assertEquals(17 * min + 30_000L, mid)
+        assertEquals(25 * min, terminal)
 
         // Bit stops being idle exactly when stalls begin, at every horizon.
         assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(onset, horizon))
         // And the most alarming face no longer arrives before the worst
-        // friction with nowhere left to go.
-        assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(20 * min, horizon))
+        // friction with nowhere left to go: twenty minutes is still short of
+        // saturation on the default horizon.
+        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(20 * min, horizon))
     }
 
     @Test
@@ -64,6 +65,7 @@ class BitStateMachineTest {
         val long = 60L * min
         assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(20 * min, short))
         assertEquals(Mood.IDLE, BitStateMachine.moodFor(20 * min, long))
+        assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(20 * min, 25L * min))
         assertEquals(Mood.VIGILANT, BitStateMachine.moodFor(25 * min, long))
         assertEquals(Mood.ANNOYED, BitStateMachine.moodFor(45 * min, long))
         assertEquals(Mood.GLITCHED, BitStateMachine.moodFor(60 * min, long))

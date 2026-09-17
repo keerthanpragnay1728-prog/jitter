@@ -95,7 +95,7 @@ class CycleWindowEngineTest {
         r.scroll(ig, 10 * min)
         r.setHorizon(ig, 60 * min)
 
-        assertEquals("not yet", 18 * min, r.snap(ig).horizonMs)
+        assertEquals("not yet", 25 * min, r.snap(ig).horizonMs)
         assertEquals("waiting", 60 * min, r.snap(ig).pendingHorizonMs)
 
         r.tick(window + min)
@@ -161,7 +161,7 @@ class CycleWindowEngineTest {
         val persisted = r.engine.snapshot()
 
         val r2 = Rig(initial = persisted)
-        assertEquals("still not in force", 18 * min, r2.snap(ig).horizonMs)
+        assertEquals("still not in force", 25 * min, r2.snap(ig).horizonMs)
         assertEquals("still waiting", 60 * min, r2.snap(ig).pendingHorizonMs)
 
         r2.enter(ig, 0)

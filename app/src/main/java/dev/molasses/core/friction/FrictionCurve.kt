@@ -122,12 +122,24 @@ object FrictionCurve {
     /**
      * What a newly tracked app gets.
      *
-     * Eighteen minutes, which is close to the shape the app has always had
-     * without reproducing it: see the note on [ONSET_MS]. Tracking an app is
-     * not a decision about how long you use it, so the default has to be the
-     * ordinary case rather than the generous one.
+     * Twenty five minutes, because that is where the terminal has always been
+     * and where the measurements were taken. The segment D floor and the mood
+     * boundaries were both calibrated against a 25 minute saturation, and a
+     * default that saturated seven minutes earlier would be shipping a shape
+     * nobody has run on hardware while claiming it was the conservative
+     * choice.
+     *
+     * It is not the old curve renamed. See [ONSET_MS]: the onset moves from
+     * six minutes to ten, because the one shape rule cannot reproduce the
+     * 0.24 ratio the old pair implied at any horizon. The terminal is the half
+     * the measurements are about, so that is the half that is held.
+     *
+     * Tracking an app is not a decision about how long you use it, so the
+     * default has to be the ordinary case rather than the generous one, and
+     * widening past it is deliberate in three separate ways: a trip to
+     * settings, a confirmation echo, and a wait for the next cycle.
      */
-    const val DEFAULT_HORIZON_MS = 18L * 60 * 1000
+    const val DEFAULT_HORIZON_MS = 25L * 60 * 1000
 
     /**
      * Below this the onset is under four minutes and the floor clamp collapses
@@ -157,12 +169,13 @@ object FrictionCurve {
      * The onset and terminal at the default horizon.
      *
      * Kept because several things want a boundary when no app is in hand, and
-     * because it is worth writing down what the default actually is: seven
-     * minutes twelve to eighteen minutes, against the six to twenty five this
-     * file carried before the horizon existed. That is a later start and an
-     * earlier saturation, so the default is not the old curve renamed. It is
-     * the closest the one shape rule can come to it, and the 0.24 ratio the
-     * old pair implied is not reachable at any horizon.
+     * because it is worth writing down what the default actually is: ten
+     * minutes to twenty five, against the six to twenty five this file carried
+     * before the horizon existed. The terminal is unchanged and the onset is
+     * four minutes later, which is the whole of the behavioural change at the
+     * default. The 0.24 ratio the old pair implied is not reachable at any
+     * horizon under one shape rule, so a later onset is the price of not
+     * having a per horizon table.
      */
     val ONSET_MS: Long = onsetMs(DEFAULT_HORIZON_MS)
     val TERMINAL_MS: Long = terminalMs(DEFAULT_HORIZON_MS)

@@ -82,6 +82,17 @@ fun SettingsScreen(
     val diag by vm.engineDiagnostics.collectAsStateWithLifecycle()
     val horizons by vm.horizons.collectAsStateWithLifecycle()
 
+    /**
+     * The package and value of a widen that has been echoed once.
+     *
+     * Hoisted rather than held per row, for the same reason the lock's
+     * confirmation is: a LazyColumn recycles rows, and a confirmation state
+     * that rode on a recycled row could be inherited by a different app.
+     * Only one can be outstanding, which is also the honest model: confirming
+     * is about the press you just made.
+     */
+    var horizonConfirm by remember { mutableStateOf<Pair<String, Long>?>(null) }
+
     var appFilter by rememberSaveable { mutableStateOf("") }
 
     // The scrubber. One app open at a time: eight steps and a confirm button
@@ -239,8 +250,29 @@ fun SettingsScreen(
                 horizon = horizons[app.pkg]
                     ?: HorizonPolicy.State(FrictionCurve.DEFAULT_HORIZON_MS),
                 cycleRemainingMs = diag.cycleRemainingMs.takeIf { it > 0L },
+                horizonAwaitingConfirm =
+                    horizonConfirm?.takeIf { it.first == app.pkg }?.second,
                 onToggleTarget = { vm.toggleTarget(app.pkg) },
-                onHorizon = { vm.setAppHorizon(app.pkg, it) },
+                onHorizon = { requested ->
+                    // Nothing commits until HorizonPolicy says so, and the
+                    // screen asks the same function the engine will. A first
+                    // press on a widen writes nothing at all: the state is
+                    // unchanged, so the next press computes the identical
+                    // request and finds it already echoed, which is what
+                    // makes "press again" literally the same button.
+                    val current = horizons[app.pkg]
+                        ?: HorizonPolicy.State(FrictionCurve.DEFAULT_HORIZON_MS)
+                    val confirmed = horizonConfirm == app.pkg to requested
+                    when (HorizonPolicy.evaluate(current, requested, confirmed)) {
+                        is HorizonPolicy.Verdict.Confirm ->
+                            horizonConfirm = app.pkg to requested
+                        is HorizonPolicy.Verdict.Apply -> {
+                            horizonConfirm = null
+                            vm.setAppHorizon(app.pkg, requested)
+                        }
+                        HorizonPolicy.Verdict.None -> horizonConfirm = null
+                    }
+                },
                 onExpand = {
                     scrubbing = if (scrubbing == app.pkg) null else app.pkg
                     // A fresh row starts one step above whatever already
@@ -794,6 +826,8 @@ private fun serviceStateBody(health: ServiceHealth): Int = when (health) {
 private fun HorizonControl(
     state: HorizonPolicy.State,
     cycleRemainingMs: Long?,
+    /** The widen this row has echoed and is waiting on, or null. */
+    awaitingConfirm: Long?,
     onHorizon: (Long) -> Unit,
 ) {
     // Stepping walks from whatever is on screen. After widening to sixty,
@@ -826,6 +860,19 @@ private fun HorizonControl(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.secondary,
         )
+        // The echo sits above the pending line rather than replacing it,
+        // because both can be true: a widen already waiting for the rollover
+        // and a further one being asked for now.
+        if (awaitingConfirm != null) {
+            Text(
+                stringResource(
+                    R.string.settings_horizon_confirm_fmt,
+                    CommandRender.duration(state.horizonMs),
+                    CommandRender.duration(awaitingConfirm),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         if (state.hasPending) {
             Text(
                 if (cycleRemainingMs == null) {
@@ -875,6 +922,8 @@ private fun TargetRow(
     horizon: HorizonPolicy.State,
     /** Until the cycle resets, or null when none is anchored. */
     cycleRemainingMs: Long?,
+    /** The widen this row has echoed and is waiting on, or null. */
+    horizonAwaitingConfirm: Long?,
     onToggleTarget: () -> Unit,
     onExpand: () -> Unit,
     onStep: (Int) -> Unit,
@@ -922,6 +971,7 @@ private fun TargetRow(
             HorizonControl(
                 state = horizon,
                 cycleRemainingMs = cycleRemainingMs,
+                awaitingConfirm = horizonAwaitingConfirm,
                 onHorizon = onHorizon,
             )
         }
