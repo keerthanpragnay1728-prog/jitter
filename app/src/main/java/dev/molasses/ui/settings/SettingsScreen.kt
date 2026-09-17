@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
+import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.command.CommandRegistry
@@ -77,6 +80,7 @@ fun SettingsScreen(
     val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
     val fontScale by vm.fontScale.collectAsStateWithLifecycle()
     val diag by vm.engineDiagnostics.collectAsStateWithLifecycle()
+    val horizons by vm.horizons.collectAsStateWithLifecycle()
 
     var appFilter by rememberSaveable { mutableStateOf("") }
 
@@ -182,6 +186,21 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.secondary,
             )
         }
+        // Once, here, rather than under all nine rows. The consequence has to
+        // be stated where the control is, and the control is per app.
+        item {
+            Column(Modifier.padding(top = 8.dp)) {
+                Text(
+                    stringResource(R.string.settings_horizon_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    stringResource(R.string.settings_horizon_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+        }
         item {
             // Eighty plus packages is not a list, it is a haystack. Filters
             // on label and package name both: the label is what a user knows
@@ -217,7 +236,11 @@ fun SettingsScreen(
                 expanded = scrubbing == app.pkg,
                 stepIndex = stepIndex,
                 awaitingConfirm = if (scrubbing == app.pkg) awaitingConfirm else null,
+                horizon = horizons[app.pkg]
+                    ?: HorizonPolicy.State(FrictionCurve.DEFAULT_HORIZON_MS),
+                cycleRemainingMs = diag.cycleRemainingMs.takeIf { it > 0L },
                 onToggleTarget = { vm.toggleTarget(app.pkg) },
+                onHorizon = { vm.setAppHorizon(app.pkg, it) },
                 onExpand = {
                     scrubbing = if (scrubbing == app.pkg) null else app.pkg
                     // A fresh row starts one step above whatever already
@@ -746,6 +769,85 @@ private fun serviceStateBody(health: ServiceHealth): Int = when (health) {
 }
 
 /**
+ * `horizon  18m  [ - ]  [ + ]`, with the derived onset under it.
+ *
+ * ## Why the onset is shown
+ * Because it is the consequence, and the horizon is only the input. "Sixty
+ * minutes" does not tell anyone that nothing at all happens for the first
+ * twenty four, and that is the number people will actually feel. Showing the
+ * derivation also makes the one rule visible rather than magic.
+ *
+ * ## Why steps and not a slider
+ * A slider invites tuning a number nobody can feel the difference in. The
+ * useful question is what kind of session this app is for, and that has about
+ * nine answers. The lock scrubber below is a slider because its steps are
+ * geometric and read as a scale; these are close together and read as a list.
+ *
+ * ## Why the pending line names the time
+ * A widen that says only "next cycle" is a promise with no deadline attached,
+ * and the whole point of the delay is that it is bounded and visible. The
+ * remaining time is null when no cycle is anchored, which is a different
+ * thing from a cycle with none left, so that case drops the parenthetical
+ * rather than printing a zero.
+ */
+@Composable
+private fun HorizonControl(
+    state: HorizonPolicy.State,
+    cycleRemainingMs: Long?,
+    onHorizon: (Long) -> Unit,
+) {
+    // Stepping walks from whatever is on screen. After widening to sixty,
+    // minus has to come back down from sixty rather than from the eighteen
+    // still in force, or the button would appear not to work.
+    val target = if (state.hasPending) state.pendingHorizonMs else state.horizonMs
+
+    Column(Modifier.padding(start = 12.dp, end = 4.dp, bottom = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(
+                    R.string.settings_horizon_fmt,
+                    CommandRender.duration(state.horizonMs),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = { onHorizon(HorizonPolicy.narrower(target)) }) {
+                Text(stringResource(R.string.settings_horizon_narrow))
+            }
+            TextButton(onClick = { onHorizon(HorizonPolicy.wider(target)) }) {
+                Text(stringResource(R.string.settings_horizon_widen))
+            }
+        }
+        Text(
+            stringResource(
+                R.string.settings_horizon_onset_fmt,
+                CommandRender.duration(FrictionCurve.onsetMs(state.horizonMs)),
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        if (state.hasPending) {
+            Text(
+                if (cycleRemainingMs == null) {
+                    stringResource(
+                        R.string.settings_horizon_pending_unknown_fmt,
+                        CommandRender.duration(state.pendingHorizonMs),
+                    )
+                } else {
+                    stringResource(
+                        R.string.settings_horizon_pending_fmt,
+                        CommandRender.duration(state.pendingHorizonMs),
+                        CommandRender.duration(cycleRemainingMs),
+                    )
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+    }
+}
+
+/**
  * One app in the target list, with its lock scrubber.
  *
  * ## Why the scrubber is here and not on its own screen
@@ -770,10 +872,14 @@ private fun TargetRow(
     /** The duration awaiting a second press, or null. */
     awaitingConfirm: Long?,
     dim: Boolean,
+    horizon: HorizonPolicy.State,
+    /** Until the cycle resets, or null when none is anchored. */
+    cycleRemainingMs: Long?,
     onToggleTarget: () -> Unit,
     onExpand: () -> Unit,
     onStep: (Int) -> Unit,
     onArm: () -> Unit,
+    onHorizon: (Long) -> Unit,
 ) {
     val labelColor =
         if (dim) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface
@@ -808,6 +914,16 @@ private fun TargetRow(
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
+        }
+
+        // Only once an app is tracked. An untracked app has no curve, so a
+        // horizon for it would be a setting with nothing on the other end.
+        if (tracked) {
+            HorizonControl(
+                state = horizon,
+                cycleRemainingMs = cycleRemainingMs,
+                onHorizon = onHorizon,
+            )
         }
 
         // if/else rather than an early return: Column is an inline function,

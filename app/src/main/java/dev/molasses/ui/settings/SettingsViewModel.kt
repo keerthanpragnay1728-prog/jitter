@@ -8,6 +8,8 @@ import dev.molasses.core.diag.RouteTally
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
+import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.time.CycleWindow
@@ -102,6 +104,29 @@ class SettingsViewModel @Inject constructor(
 
     val resetPolicy: StateFlow<CycleResetPolicy> = repo.resetPolicy
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CycleResetPolicy.DEFAULT)
+
+    /**
+     * What each tracked app's horizon will be once the standing preference is
+     * applied to the state actually in force.
+     *
+     * Composed with [HorizonPolicy.request], which is the same function the
+     * engine uses, so the screen and the engine cannot disagree about whether
+     * a change lands now or waits. Between a widen and the rollover that
+     * promotes it, this is a state with something pending, which is exactly
+     * what the row has to show.
+     */
+    val horizons: StateFlow<Map<String, HorizonPolicy.State>> = combine(
+        store.data,
+        repo.appHorizons,
+    ) { state, preferences ->
+        val packages = state.perAppMap.keys + preferences.keys
+        packages.associateWith { pkg ->
+            val inForce = state.perAppMap[pkg]
+                ?.let { HorizonPolicy.of(it.horizonMs, it.pendingHorizonMs) }
+                ?: HorizonPolicy.State(FrictionCurve.DEFAULT_HORIZON_MS)
+            preferences[pkg]?.let { HorizonPolicy.request(inForce, it) } ?: inForce
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     val gateMode: StateFlow<GatePolicy.GateMode> = repo.gateMode
         .stateIn(
@@ -277,6 +302,17 @@ class SettingsViewModel @Inject constructor(
 
     fun setResetPolicy(policy: CycleResetPolicy) {
         viewModelScope.launch { repo.setResetPolicy(policy) }
+    }
+
+    /**
+     * Declare a horizon. The engine decides whether it lands now or waits.
+     *
+     * Stepped from whatever the row is showing, which is the pending value
+     * when there is one: pressing minus twice after widening to sixty has to
+     * walk back down from sixty, not from the eighteen still in force.
+     */
+    fun setAppHorizon(pkg: String, horizonMs: Long) {
+        viewModelScope.launch { repo.setAppHorizon(pkg, horizonMs) }
     }
 
     fun setGateMode(mode: GatePolicy.GateMode) {
