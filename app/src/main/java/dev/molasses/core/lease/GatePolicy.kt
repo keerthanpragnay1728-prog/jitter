@@ -178,6 +178,61 @@ object LaunchGate {
     }
 
     /**
+     * What the caller should do once it has tried to put a gate up.
+     *
+     * ## Why a gate that did not draw is not a gate
+     * [LaunchGate.decide] says a gate is owed. Whether one is actually on the
+     * glass is a different question, and conflating them cost every stall on
+     * a device where the window could not be added: the caller committed as
+     * soon as it dispatched, so it returned before arming the shutter, and
+     * every later scroll re-entered, re-failed and returned the same way. One
+     * throw disabled the gate and all the friction behind it, permanently,
+     * with a healthy service and a correct ledger.
+     *
+     * So the rule is stated as a type. A gate suppresses friction only while
+     * it is genuinely covering the app. A gate that could not be drawn
+     * suppresses nothing: the app is on screen and scrollable, so the stall
+     * is the only friction left and it must still run.
+     *
+     * The direction that matters is that a failure costs the *gate*, never
+     * the friction. An overlay that cannot be added is a device or a platform
+     * problem; letting it also hand the user an unfrictioned app would turn
+     * someone else's bug into a bypass.
+     */
+    sealed interface Outcome {
+        /** On the glass. Nothing else of ours belongs behind it. */
+        data object Shown : Outcome
+
+        /**
+         * Owed, dispatched, and not drawn. Fall through to ordinary friction
+         * and say so loudly: this is never normal.
+         */
+        data class NotDrawn(val why: String) : Outcome
+
+        /** None was owed. [Pass] said why. */
+        data object NotOwed : Outcome
+
+        /**
+         * True only for [Shown]. The single question every caller asks, in
+         * one place, so no call site can answer it by reading a boolean that
+         * meant something slightly different.
+         */
+        val suppressesFriction: Boolean get() = this == Shown
+    }
+
+    /**
+     * Fold a decision and what actually happened into one answer.
+     *
+     * @param attached what the overlay manager reports **after** the attempt,
+     *   not what it was asked to do.
+     */
+    fun outcome(decision: Decision, attached: Boolean): Outcome = when {
+        decision is Decision.Pass -> Outcome.NotOwed
+        attached -> Outcome.Shown
+        else -> Outcome.NotDrawn("gate window could not be added")
+    }
+
+    /**
      * @param sensitiveForeground the foreground package is in the
      *   never-draw-over set. Outranks everything: an overlay sets
      *   `FLAG_WINDOW_IS_OBSCURED` on that app's touches and a hardened payment

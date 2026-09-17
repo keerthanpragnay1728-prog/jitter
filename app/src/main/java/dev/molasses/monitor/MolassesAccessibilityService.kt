@@ -119,6 +119,17 @@ class MolassesAccessibilityService : AccessibilityService() {
     @Volatile
     private var gateMode: GatePolicy.GateMode = GatePolicy.GateMode.COUNTDOWN
 
+    /**
+     * Consecutive failures to put a gate window on the glass, this visit.
+     *
+     * Bounds the retry: a device that refuses one window add refuses the
+     * next, and this is reached from the scroll path, so an unbounded retry
+     * is an addView per frame of a burst. Reset on leaving the target, so the
+     * next visit tries again and a transient cause heals itself rather than
+     * needing a restart.
+     */
+    private var gateAttachFailures = 0
+
     private var targets: Set<String> = emptySet()
 
     /** Package we currently believe is in the foreground, target or not. */
@@ -613,8 +624,16 @@ class MolassesAccessibilityService : AccessibilityService() {
     /**
      * Show the launch gate if this package is owed one.
      *
-     * @return true when a gate went up, or when one is already up, and the
-     *   caller should stop. Nothing of ours belongs on the glass behind it.
+     * @return true only when a gate is genuinely on the glass and the caller
+     *   should stop. **A gate that could not be drawn returns false**, so the
+     *   caller falls through to ordinary friction.
+     *
+     * That distinction is the whole method. It used to return true as soon as
+     * it dispatched, and one failed `addView` then disabled the gate and every
+     * stall behind it, permanently, on a healthy service with a correct
+     * ledger: the caller returned before arming the shutter, and every later
+     * scroll re-entered, re-failed and returned the same way. The rule now
+     * lives in `LaunchGate.Outcome`, where it is asserted rather than implied.
      *
      * Reactive, like the lock. Nothing polls for ungated apps and nothing
      * fires without the user having just opened or just scrolled something.
@@ -635,7 +654,14 @@ class MolassesAccessibilityService : AccessibilityService() {
         )
         if (decision !is LaunchGate.Decision.Intercept) return false
 
-        when (decision.mode) {
+        // Stop trying after a few consecutive failures for this visit. Each
+        // attempt is a window add, and a device that refuses one refuses the
+        // next; retrying per scroll event would be an addView per frame of a
+        // burst. Reset on leaving the app, so the next visit tries again and
+        // a transient cause heals itself.
+        if (gateAttachFailures >= MAX_GATE_ATTACH_FAILURES) return false
+
+        val attached = when (decision.mode) {
             GatePolicy.GateMode.COUNTDOWN ->
                 showLeaseGate(pkg, decision.countdownMs, decision.expired)
             // The movement gate is the toll in these two, and the panel
@@ -645,8 +671,26 @@ class MolassesAccessibilityService : AccessibilityService() {
             GatePolicy.GateMode.TYPING_ONLY ->
                 gate.show(pkg, engine.state.value.perApp[pkg]?.tierIndex ?: 0, true)
         }
-        ServiceDiagnostics.gateShowing = true
-        return true
+
+        val outcome = LaunchGate.outcome(decision, attached)
+        if (outcome is LaunchGate.Outcome.NotDrawn) {
+            gateAttachFailures += 1
+            // Loud, and only at the boundaries: once when it starts and once
+            // when it gives up. A line per scroll event would bury itself.
+            if (gateAttachFailures == 1 || gateAttachFailures == MAX_GATE_ATTACH_FAILURES) {
+                val note = "gate did not draw for $pkg (${outcome.why}), " +
+                    "attempt $gateAttachFailures of $MAX_GATE_ATTACH_FAILURES. " +
+                    "Friction is falling through to stalls only."
+                ServiceDiagnostics.overlayFailureNote = note
+                Log.e(TAG, note)
+            }
+        } else {
+            gateAttachFailures = 0
+            ServiceDiagnostics.overlayFailureNote = null
+        }
+
+        ServiceDiagnostics.gateShowing = gate.isShowing || leaseGate.isShowing
+        return outcome.suppressesFriction
     }
 
     /**
@@ -664,13 +708,13 @@ class MolassesAccessibilityService : AccessibilityService() {
      * took. A gate that is late is a gate that does not work; a number that
      * is late is a number that says so while it waits.
      */
-    private fun showLeaseGate(pkg: String, countdownMs: Long, expired: Boolean) {
+    private fun showLeaseGate(pkg: String, countdownMs: Long, expired: Boolean): Boolean {
         // Nothing of ours behind a full-screen window. An armed sink under a
         // gate absorbs nothing and would still be armed when the gate came
         // down.
         shutter.release("lease gate")
         shutter.detach()
-        leaseGate.show(
+        val attached = leaseGate.show(
             pkg = pkg,
             label = labelFor(pkg),
             countdownMs = countdownMs,
@@ -681,6 +725,13 @@ class MolassesAccessibilityService : AccessibilityService() {
                 opensToday = null,
             ),
         )
+        if (!attached) {
+            // The app is uncovered. Put the sink back, or the fall-through to
+            // ordinary friction would have nothing to arm.
+            shutter.setCurrentPackage(pkg)
+            if (!overlaysSuppressed()) shutter.attach()
+            return false
+        }
         scope.launch(Dispatchers.IO) {
             val day = dayUsageFor(pkg)
             withContext(Dispatchers.Main.immediate) {
@@ -694,6 +745,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                 )
             }
         }
+        return true
     }
 
     /**
@@ -906,6 +958,8 @@ class MolassesAccessibilityService : AccessibilityService() {
         shutter.setCurrentPackage(null)
         if (gate.isShowing) gate.abandon("left target")
         leaseGate.dismiss("left target")
+        // A new visit gets a fresh set of attempts. See gateAttachFailures.
+        gateAttachFailures = 0
     }
 
     /**
@@ -1096,5 +1150,16 @@ class MolassesAccessibilityService : AccessibilityService() {
 
         /** Length of the settings-screen stall preview. */
         const val PREVIEW_STALL_MS = 1_000L
+
+        /**
+         * Window adds to attempt per visit before falling through to stalls
+         * alone.
+         *
+         * Three rather than one, because a single failure can be a token that
+         * went stale in the moment between the decision and the add. Three
+         * rather than forever, because this is reached from the scroll path
+         * and a device that refuses a window add refuses the next one too.
+         */
+        const val MAX_GATE_ATTACH_FAILURES = 3
     }
 }

@@ -1,6 +1,7 @@
 package dev.molasses.overlay
 
 import android.content.Context
+import android.util.Log
 import android.view.WindowManager
 import dev.molasses.core.model.EventType
 import dev.molasses.core.model.GateOutcome
@@ -53,9 +54,15 @@ class GateOverlayManager(
 
     val isShowing: Boolean get() = host?.isShowing == true
 
-    /** Idempotent: a second call for the same package and tier is a no-op. */
-    fun show(pkg: String, tier: Int, alternativeChallenge: Boolean) {
-        if (isShowing && currentPkg == pkg && currentTier == tier) return
+    /**
+     * Idempotent: a second call for the same package and tier is a no-op.
+     *
+     * @return whether a window is genuinely on the glass afterwards. False
+     *   means the app is uncovered and the caller must fall through to
+     *   ordinary friction. See `LaunchGate.Outcome`.
+     */
+    fun show(pkg: String, tier: Int, alternativeChallenge: Boolean): Boolean {
+        if (isShowing && currentPkg == pkg && currentTier == tier) return true
         if (isShowing) dismissInternal()
 
         currentPkg = pkg
@@ -82,6 +89,19 @@ class GateOverlayManager(
             }
         }
 
+        if (!h.isShowing) {
+            // addView failed. Same rule as the lease gate: this did not
+            // happen, so it is not reported as though it did, and the sensors
+            // come straight back down rather than running for a gate nobody
+            // can see or clear.
+            Log.e(TAG, "movement gate window could not be added for $pkg; friction falls through")
+            detector.stop()
+            host = null
+            currentPkg = null
+            currentTier = 0
+            return false
+        }
+
         // first() rather than collect{}: it completes the collection before
         // the handler runs, so teardown is not executing inside the very
         // coroutine it is about to cancel. watchJob is nulled first for the
@@ -101,6 +121,7 @@ class GateOverlayManager(
             // is an abandon, not a pass: the toll is still owed.
             abandon("timeout")
         }
+        return true
     }
 
     /**
@@ -171,5 +192,7 @@ class GateOverlayManager(
     companion object {
         /** SS8: unregister sensors on pass, abandon, or this timeout. */
         const val GATE_TIMEOUT_MS = 90_000L
+
+        private const val TAG = "Molasses.Gate"
     }
 }

@@ -2,6 +2,7 @@ package dev.molasses.core.lease
 
 import dev.molasses.core.lease.GatePolicy.GateMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -202,5 +203,68 @@ class LaunchGateTest {
         for (p in passes) {
             assertTrue((p as LaunchGate.Decision.Pass).why.isNotEmpty())
         }
+    }
+}
+
+/**
+ * A gate that did not draw must not count as shown.
+ *
+ * The invariant this pins is the one that cost every stall on hardware: the
+ * caller committed as soon as it dispatched, so a single failed addView
+ * disabled the gate and all the friction behind it, permanently, with a
+ * healthy service and a correct ledger.
+ */
+class GateOutcomeTest {
+
+    private val intercept = LaunchGate.Decision.Intercept(
+        countdownMs = 8_000L,
+        mode = GateMode.COUNTDOWN,
+        expired = false,
+    )
+    private val pass = LaunchGate.Decision.Pass("lease active")
+
+    @Test
+    fun `a gate that attached suppresses friction`() {
+        val o = LaunchGate.outcome(intercept, attached = true)
+        assertEquals(LaunchGate.Outcome.Shown, o)
+        assertTrue(o.suppressesFriction)
+    }
+
+    @Test
+    fun `a gate that did not attach does not suppress friction`() {
+        // The whole point. The app is on screen and scrollable, so the stall
+        // is the only friction left and it has to run.
+        val o = LaunchGate.outcome(intercept, attached = false)
+        assertTrue(o is LaunchGate.Outcome.NotDrawn)
+        assertFalse(o.suppressesFriction)
+    }
+
+    @Test
+    fun `a failure carries a reason`() {
+        val o = LaunchGate.outcome(intercept, attached = false) as LaunchGate.Outcome.NotDrawn
+        assertTrue(o.why.isNotEmpty())
+    }
+
+    @Test
+    fun `no gate owed suppresses nothing, attached or not`() {
+        // A pass is not a gate. Reading attached here would make a stale
+        // isShowing from some other package decide this one's friction.
+        assertEquals(LaunchGate.Outcome.NotOwed, LaunchGate.outcome(pass, attached = false))
+        assertEquals(LaunchGate.Outcome.NotOwed, LaunchGate.outcome(pass, attached = true))
+        assertFalse(LaunchGate.outcome(pass, attached = true).suppressesFriction)
+    }
+
+    @Test
+    fun `only a drawn gate ever suppresses friction`() {
+        // Stated over the whole space rather than case by case, so a fourth
+        // outcome added later cannot quietly default to suppressing.
+        val all = listOf(
+            LaunchGate.outcome(intercept, attached = true),
+            LaunchGate.outcome(intercept, attached = false),
+            LaunchGate.outcome(pass, attached = true),
+            LaunchGate.outcome(pass, attached = false),
+        )
+        assertEquals(1, all.count { it.suppressesFriction })
+        assertEquals(LaunchGate.Outcome.Shown, all.single { it.suppressesFriction })
     }
 }
