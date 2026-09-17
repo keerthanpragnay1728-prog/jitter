@@ -93,24 +93,48 @@ class CommandResourcesTest {
         }
     }
 
+    /**
+     * Named individually rather than matched by prefix, so deleting one is a
+     * failure here rather than a vacuous pass.
+     *
+     * cmd_na_wifi_toggle and cmd_na_dnd_toggle used to be on this list. They
+     * are gone because the refusals are gone: both modifiers now open the
+     * panel and say what could not be done, so the copy moved to
+     * cmd_ack_wifi_panel_no_toggle and cmd_ack_dnd_panel_no_toggle.
+     */
+    private val unavailableReasons = listOf(
+        "cmd_na_no_allowance",
+        "cmd_na_relief_while_locked",
+        "cmd_na_no_log",
+        "cmd_na_no_scheduling",
+        "cmd_na_privileged",
+        "cmd_na_no_panel",
+        "cmd_na_no_clock_app",
+        "cmd_na_relief_needs_monitor",
+        "cmd_na_wiring",
+    )
+
     @Test
     fun `every unavailable reason exists`() {
-        // Named individually rather than by prefix, so deleting one is a
-        // failure here rather than a vacuous pass.
-        val reasons = listOf(
-            "cmd_na_no_allowance",
-            "cmd_na_relief_while_locked",
-            "cmd_na_no_log",
-            "cmd_na_no_scheduling",
-            "cmd_na_privileged",
-            "cmd_na_no_panel",
-            "cmd_na_no_clock_app",
-            "cmd_na_wifi_toggle",
-            "cmd_na_dnd_toggle",
-            "cmd_na_relief_needs_monitor",
-            "cmd_na_wiring",
-        )
-        for (name in reasons) assertNotNull("missing $name", stringValue(name))
+        for (name in unavailableReasons) assertNotNull("missing $name", stringValue(name))
+    }
+
+    @Test
+    fun `every acknowledgement exists and takes no arguments`() {
+        // The two panel acknowledgements that answer a modifier are the
+        // reason this test exists: they replaced refusals, so the coverage
+        // that was on the reason list has to land somewhere or the copy could
+        // be deleted with nothing failing.
+        for (name in listOf(
+            "cmd_ack_wifi_panel",
+            "cmd_ack_dnd_panel",
+            "cmd_ack_wifi_panel_no_toggle",
+            "cmd_ack_dnd_panel_no_toggle",
+        )) {
+            val value = stringValue(name)
+            assertNotNull("missing $name", value)
+            assertTrue("$name must take no arguments", !value!!.contains("%"))
+        }
     }
 
     @Test
@@ -128,7 +152,13 @@ class CommandResourcesTest {
                 !m.groupValues[2].contains("%"),
             )
         }
-        assertTrue("no cmd_na_ strings found, the regex has rotted", seen >= 10)
+        // Tied to the list above rather than a number written here, so
+        // removing a reason cannot leave this guard silently over-specified.
+        assertTrue(
+            "found $seen cmd_na_ strings, expected at least " +
+                "${unavailableReasons.size}; the regex has rotted",
+            seen >= unavailableReasons.size,
+        )
     }
 
     // ------------------------------------------------------------ manifest

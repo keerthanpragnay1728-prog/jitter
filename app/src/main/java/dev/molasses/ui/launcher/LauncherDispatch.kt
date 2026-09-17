@@ -284,30 +284,44 @@ private fun execute(
         }
     }
 
-    is Command.Wifi -> when (command.enable) {
-        // An app has not been able to toggle wifi since API 29. Opening the
-        // panel is the whole of what is possible, so a bare "$ wifi" does
-        // exactly what it says and "$ wifi on" does not.
-        null ->
-            if (actions.startIntent(Intent(wifiPanelAction()))) {
-                DispatchResult.Confirmed(R.string.cmd_ack_wifi_panel)
-            } else {
-                DispatchResult.Unavailable(R.string.cmd_na_no_panel)
-            }
-        else -> DispatchResult.Unavailable(R.string.cmd_na_wifi_toggle)
-    }
+    // An app has not been able to toggle wifi since API 29, so the panel is
+    // the whole of what is possible either way. Both forms open it; only the
+    // acknowledgement differs.
+    //
+    // "$ wifi on" used to be refused outright, which was the tidy answer and
+    // the wrong one. The user typed it meaning "I want wifi on", the panel is
+    // the nearest thing the platform permits and it is one tap from done, and
+    // a refusal bought nothing except making them type "$ wifi" afterwards.
+    //
+    // It is still not ignored. Silently dropping an argument someone typed is
+    // its own fault and a worse one, because the next thing they learn is that
+    // this prompt does not read what they write. So the modifier is answered
+    // rather than dropped: a different acknowledgement, which says the panel
+    // is open and says the toggle is not ours to do.
+    is Command.Wifi ->
+        if (actions.startIntent(Intent(wifiPanelAction()))) {
+            DispatchResult.Confirmed(
+                if (command.enable == null) R.string.cmd_ack_wifi_panel
+                else R.string.cmd_ack_wifi_panel_no_toggle,
+            )
+        } else {
+            DispatchResult.Unavailable(R.string.cmd_na_no_panel)
+        }
 
-    is Command.Dnd -> when (command.enable) {
-        // Same shape: setting DND needs ACCESS_NOTIFICATION_POLICY, which this
-        // app deliberately does not request.
-        null ->
-            if (actions.startIntent(Intent(DND_ACTION))) {
-                DispatchResult.Confirmed(R.string.cmd_ack_dnd_panel)
-            } else {
-                DispatchResult.Unavailable(R.string.cmd_na_no_panel)
-            }
-        else -> DispatchResult.Unavailable(R.string.cmd_na_dnd_toggle)
-    }
+    // Same shape, different reason, and the difference is kept. Wifi is a
+    // platform limit that binds every app; DND is a permission this app chose
+    // not to request. Claiming the first for the second would be a lie the
+    // user has no way to check, and the whole of what the prompt is for is
+    // that it tells the truth about what it can do.
+    is Command.Dnd ->
+        if (actions.startIntent(Intent(DND_ACTION))) {
+            DispatchResult.Confirmed(
+                if (command.enable == null) R.string.cmd_ack_dnd_panel
+                else R.string.cmd_ack_dnd_panel_no_toggle,
+            )
+        } else {
+            DispatchResult.Unavailable(R.string.cmd_na_no_panel)
+        }
 
     is Command.Block -> when (val resolved = actions.resolveApp(command.appToken)) {
         is AppTokenResolver.Result.One ->
