@@ -29,19 +29,19 @@ class ForegroundEventRouterTest {
         // The gate is a ComposeView in a TYPE_ACCESSIBILITY_OVERLAY window. It
         // has no activity class, so a class check alone would not catch it.
         val gate = WindowEvent(own, "android.widget.FrameLayout", 77, Kind.WINDOW_STATE_CHANGED)
-        assertEquals(EventRoute.Ignore, route(gate, ownWindows = setOf(77)))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_WINDOW), route(gate, ownWindows = setOf(77)))
     }
 
     @Test
     fun `dragging the mascot does not read as leaving the app`() {
         val mascot = WindowEvent(own, null, 78, Kind.WINDOWS_CHANGED)
-        assertEquals(EventRoute.Ignore, route(mascot, ownWindows = setOf(77, 78)))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_WINDOW), route(mascot, ownWindows = setOf(77, 78)))
     }
 
     @Test
     fun `arming the shutter sink does not read as leaving the app`() {
         val sink = WindowEvent(own, "android.view.View", 79, Kind.WINDOW_STATE_CHANGED)
-        assertEquals(EventRoute.Ignore, route(sink, ownWindows = setOf(79)))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_WINDOW), route(sink, ownWindows = setOf(79)))
     }
 
     @Test
@@ -50,7 +50,7 @@ class ForegroundEventRouterTest {
         // addView, so an event can arrive in the gap. The package check is the
         // second line of defence.
         val sink = WindowEvent(own, "android.view.View", 79, Kind.WINDOW_STATE_CHANGED)
-        assertEquals(EventRoute.Ignore, route(sink, ownWindows = emptySet()))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route(sink, ownWindows = emptySet()))
     }
 
     @Test
@@ -60,7 +60,7 @@ class ForegroundEventRouterTest {
         val impostor = WindowEvent(
             own, ForegroundEventRouter.LAUNCHER_CLASS_NAME, 77, Kind.WINDOW_STATE_CHANGED,
         )
-        assertEquals(EventRoute.Ignore, route(impostor, ownWindows = setOf(77)))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_WINDOW), route(impostor, ownWindows = setOf(77)))
     }
 
     // ------------------------------------------------------ the launcher
@@ -79,7 +79,7 @@ class ForegroundEventRouterTest {
         val home = WindowEvent(
             own, ForegroundEventRouter.LAUNCHER_CLASS_NAME, 12, Kind.WINDOWS_CHANGED,
         )
-        assertEquals(EventRoute.Ignore, route(home))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route(home))
     }
 
     // --------------------------------------------------------- target apps
@@ -107,13 +107,13 @@ class ForegroundEventRouterTest {
         // Cannot happen while packageNames is scoped, but the router must not
         // depend on that filtering being correct.
         val e = WindowEvent("com.android.chrome", "x", 9, Kind.WINDOW_STATE_CHANGED)
-        assertEquals(EventRoute.Ignore, route(e))
+        assertEquals(EventRoute.Ignore(IgnoreReason.NOT_A_TARGET), route(e))
     }
 
     @Test
     fun `a package removed from the target list stops routing`() {
         val e = WindowEvent(ig, "x", 3, Kind.WINDOW_STATE_CHANGED)
-        assertEquals(EventRoute.Ignore, router.route(e, setOf(yt), emptySet()))
+        assertEquals(EventRoute.Ignore(IgnoreReason.NOT_A_TARGET), router.route(e, setOf(yt), emptySet()))
     }
 
     // ------------------------------------------- the degraded guard (no flag)
@@ -148,7 +148,7 @@ class ForegroundEventRouterTest {
                 targets = targets,
                 ownWindowIds = emptySet(),
             )
-            assertEquals("kind=$kind", EventRoute.Ignore, route)
+            assertEquals("kind=$kind", EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route)
         }
     }
 
@@ -164,7 +164,7 @@ class ForegroundEventRouterTest {
             targets = targets,
             ownWindowIds = emptySet(),
         )
-        assertEquals(EventRoute.Ignore, route)
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route)
     }
 
     @Test
@@ -181,7 +181,7 @@ class ForegroundEventRouterTest {
             targets = targets,
             ownWindowIds = emptySet(),
         )
-        assertEquals(EventRoute.Ignore, route)
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), route)
     }
 
     @Test

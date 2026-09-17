@@ -67,6 +67,8 @@ data class EngineDiagnostics(
     val usedTargetFallback: Boolean,
     val routes: List<Pair<String, RouteTally.PackageTally>>,
     val overflowedPackages: Long,
+    /** The window ids the service has learned as its own. Shown raw. */
+    val ownWindowIds: List<Int>,
 )
 
 data class LadderRow(
@@ -217,6 +219,7 @@ class SettingsViewModel @Inject constructor(
             usedTargetFallback = ServiceDiagnostics.usedTargetFallback,
             routes = ServiceDiagnostics.tallySnapshot(),
             overflowedPackages = ServiceDiagnostics.overflowedPackages,
+            ownWindowIds = ServiceDiagnostics.ownWindowIds,
         )
     }.stateIn(
         viewModelScope,
@@ -236,6 +239,7 @@ class SettingsViewModel @Inject constructor(
             appliedPackageNames = emptyList(),
             usedTargetFallback = false,
             routes = emptyList(),
+            ownWindowIds = emptyList(),
             overflowedPackages = 0,
         ),
     )

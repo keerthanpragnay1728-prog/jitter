@@ -21,10 +21,37 @@ data class WindowEvent(
     enum class Kind { WINDOW_STATE_CHANGED, WINDOWS_CHANGED, VIEW_SCROLLED }
 }
 
+/**
+ * Why an event was dropped.
+ *
+ * ## Why the reason is carried rather than inferred
+ * A total of ignored events says the router rejected them and nothing about
+ * which branch did it, and the three branches have completely different
+ * fixes. On hardware that cost a diagnosis: every event from every package
+ * was being dropped, including the launcher's own, and the tally could say
+ * only that it was happening. The first branch drops before the package is
+ * ever looked at, so "the target set is wrong" and "the collision guard is
+ * eating everything" produce an identical row.
+ */
+enum class IgnoreReason {
+    /**
+     * The event came from a window this service added. Dropped before
+     * anything else looks at it, which is why it is the one that can hide
+     * every other explanation.
+     */
+    OWN_WINDOW,
+
+    /** Our own package, and not the launcher activity. */
+    OWN_PACKAGE,
+
+    /** A package the user is not tracking. */
+    NOT_A_TARGET,
+}
+
 /** What the service should do with an event. */
 sealed interface EventRoute {
     /** Not ours to act on. */
-    data object Ignore : EventRoute
+    data class Ignore(val reason: IgnoreReason) : EventRoute
 
     data class EnterTarget(val pkg: String) : EventRoute
 
