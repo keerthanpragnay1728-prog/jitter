@@ -358,6 +358,14 @@
     <string name="debug_warn_all_ignored">Events are arriving and every one is being ignored. The target scope and the router disagree.</string>
     <string name="debug_warn_target_fallback">Stored target list was empty. Using the shipped defaults instead of listening to every package.</string>
     <string name="debug_never_connected">NOT BOUND. The service has never connected in this process.</string>
+    <!--
+      Not a warning. READ_PHONE_STATE is deliberately not requested, so the
+      telephony secondary never registers on any shipped build, and saying so
+      calmly is the difference between a design decision and a swallowed
+      crash. If the primary is also down, panicPathNote says so in red
+      directly above this.
+    -->
+    <string name="debug_panic_secondary">Call-state listener not registered (READ_PHONE_STATE is not requested). AudioManager is the primary call check.</string>
     <string name="debug_ms_ago" translatable="false">%1$s ms ago</string>
     <string name="debug_none" translatable="false">--</string>
     <!-- Command REPL feedback. Every message names the offending token or

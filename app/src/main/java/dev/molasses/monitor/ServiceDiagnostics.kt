@@ -45,19 +45,42 @@ object ServiceDiagnostics {
     @Volatile var startupNote: String? = null
 
     /**
-     * Set while a call-detection path is degraded. Shown verbatim in debug.
+     * Set while the call check is genuinely degraded. Shown as a warning.
      *
-     * The call checks are the reason a stall can never survive an incoming
-     * call, and both of them can go quiet without anything changing shape: the
-     * telephony callback fails to register because `READ_PHONE_STATE` is not
-     * requested, and `AudioManager` can be absent or throw. Either way the
-     * answer handed back is still an ordinary boolean, so from outside the app
-     * a degraded panic path is indistinguishable from a healthy one.
+     * The call check is the reason a stall can never survive an incoming
+     * call, and it can go quiet without anything changing shape: `AudioManager`
+     * can be absent or throw, and the answer handed back is still an ordinary
+     * boolean, so from outside the app a degraded panic path is
+     * indistinguishable from a healthy one.
+     *
+     * This being non-null means something specific and serious. The shutter
+     * answers an unanswerable call check with "assume a call", so a device in
+     * this state arms no stall at all: the friction engine is running and
+     * nothing it decides can reach the glass. That is the loudest thing this
+     * screen can say and it should stay rare enough to be believed.
      *
      * Logcat is not a substitute. The only place this matters is a device in
      * someone's hand, which is the one place logcat is not being read.
      */
     @Volatile var panicPathNote: String? = null
+
+    /**
+     * The telephony secondary is not registered, which is the normal state.
+     *
+     * Separate from [panicPathNote] and rendered as an ordinary field rather
+     * than a warning, because it is not a fault and never has been.
+     * `READ_PHONE_STATE` is deliberately not in the manifest, and
+     * `AccessibilityConfigTest` asserts it stays out, so this path cannot
+     * register on any build this app ships. `AudioManager` is the primary, it
+     * needs no grant, and it catches VoIP calls that telephony misses
+     * entirely.
+     *
+     * It used to be appended to [panicPathNote], which meant every healthy
+     * device showed a red SecurityException on its debug screen forever. A
+     * warning that is always on is a warning nobody reads, and the thing it
+     * was drowning out is the one directly above.
+     */
+    @Volatile var panicSecondaryNote: String? = null
 
     /**
      * Set when a gate window could not be added, with the count.
@@ -138,6 +161,7 @@ object ServiceDiagnostics {
         lastHeartbeatMs = 0L
         startupNote = null
         panicPathNote = null
+        panicSecondaryNote = null
         overlayFailureNote = null
         tally.reset()
     }
