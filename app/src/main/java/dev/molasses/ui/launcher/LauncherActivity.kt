@@ -202,11 +202,6 @@ class LauncherActivity : ComponentActivity() {
             val fontScale by settingsRepository.fontScale
                 .collectAsState(initial = FontScale.DEFAULT)
 
-            // Newest first and already capped, so the prompt renders it in
-            // stored order without sorting or truncating.
-            val commandHistory by settingsRepository.commandHistory
-                .collectAsState(initial = emptyList())
-
             // The armed locks. Read by the prompt to predict what a lock
             // command will do, and by the target list to dim what is locked.
             // The store stays authoritative: the extend-only compare happens
@@ -264,7 +259,6 @@ class LauncherActivity : ComponentActivity() {
                                 startActivity(Intent(this@LauncherActivity, SettingsActivity::class.java))
                             },
                             onLaunchPackage = ::launchPackage,
-                            history = commandHistory,
                             cycle = cycle,
                             // A standing bedtime lock is the curfew. Read from
                             // BedtimeWindow rather than a second copy of the
@@ -494,7 +488,6 @@ fun MainLauncherWorkspace(
     appList: List<LaunchableApp>,
     pagerState: androidx.compose.foundation.pager.PagerState,
     actions: LauncherActions,
-    history: List<String>,
     onRecordCommand: (String, Boolean) -> Unit,
     cycle: CycleReadout,
     curfewEndMinuteOfDay: Int?,
@@ -576,7 +569,6 @@ fun MainLauncherWorkspace(
                     bitOrigin = bitOrigin,
                     apps = apps,
                     actions = actions,
-                    history = history,
                     onRecordCommand = onRecordCommand,
                     cycle = cycle,
                     curfewEndMinuteOfDay = curfewEndMinuteOfDay,
@@ -611,7 +603,6 @@ fun TerminalHomeView(
     bitOrigin: Long,
     apps: List<LaunchableApp>,
     actions: LauncherActions,
-    history: List<String>,
     /** @param confirmation true for the second Enter on a long lock. */
     onRecordCommand: (String, Boolean) -> Unit,
     cycle: CycleReadout,
@@ -862,8 +853,9 @@ fun TerminalHomeView(
      *
      * The prompt, the filter, a pending lock confirmation and the manual are
      * one surface, so they clear together. Command history is deliberately
-     * not touched: it is persisted, and an empty prompt is exactly when it is
-     * meant to show.
+     * not touched: it is persisted, it is still recorded on every dispatch,
+     * and clearing the prompt is not a request to forget what was typed. It
+     * simply has no view any more.
      */
     fun clearPrompt() {
         query = ""
@@ -1342,8 +1334,8 @@ fun TerminalHomeView(
                             // Everything below except NeedsConfirmation is a
                             // finished command, and a finished command has no
                             // use for the keyboard. It was staying up, which
-                            // halved the viewport the manual and the history
-                            // list then rendered into for no reason. A
+                            // halved the viewport the manual then rendered
+                            // into for no reason. A
                             // confirmation keeps it, because the user has to
                             // press Go again.
                             val outcome = submit()
@@ -1420,10 +1412,15 @@ fun TerminalHomeView(
 
         Spacer(Modifier.height(10.dp))
 
-        // One list, three jobs, in priority order. The manual is what the
-        // user just asked for; a filter is what they are typing; and an empty
-        // prompt is the only moment there is room to show them what they have
-        // typed before.
+        // One list, two jobs. The manual is what the user just asked for; a
+        // filter is what they are typing.
+        //
+        // It had a third: an empty prompt listed recent commands. The view is
+        // gone and the feature is not. CommandHistory still deduplicates and
+        // caps, the store still records every command through onRecordCommand,
+        // and nothing renders it. An empty prompt now shows nothing at all,
+        // because filteredApps is empty on an empty query, which is the right
+        // answer for a terminal: a blank prompt is a blank prompt.
         //
         // imePadding because the window does not resize for the keyboard:
         // setDecorFitsSystemWindows(false) hands that job to the content, and
@@ -1467,39 +1464,6 @@ fun TerminalHomeView(
                     }
                 }
 
-                query.isEmpty() && history.isNotEmpty() -> {
-                    item {
-                        SectionHeader(
-                            title = stringResource(R.string.launcher_history_title),
-                            hint = stringResource(R.string.launcher_history_hint),
-                        )
-                    }
-                    // No key. The store deduplicates before writing, so
-                    // these are unique in practice, and a duplicate key is a
-                    // crash rather than a glitch.
-                    items(history) { line ->
-                        Text(
-                            text = line,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            color = PhosphorDim,
-                            maxLines = 1,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                // Fills the prompt. A tap must never run a
-                                // command: the whole point of a confirmation
-                                // gate is that arming takes a deliberate
-                                // Enter, and a list you scroll with your
-                                // thumb is the opposite of deliberate.
-                                .clickable {
-                                    query = line
-                                    lastKeystrokeMs = SystemClock.elapsedRealtime()
-                                }
-                                .padding(vertical = 7.dp, horizontal = 4.dp),
-                        )
-                    }
-                }
-
                 else -> items(filteredApps, key = { it.packageName }) { app ->
                     Row(
                         modifier = Modifier
@@ -1532,7 +1496,7 @@ fun TerminalHomeView(
     }
 }
 
-/** A dim title and one line of explanation, shared by the manual and history. */
+/** A dim title and one line of explanation. Only the manual uses it now. */
 @Composable
 private fun SectionHeader(title: String, hint: String) {
     Column(modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp)) {
