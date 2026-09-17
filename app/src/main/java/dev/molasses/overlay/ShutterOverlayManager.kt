@@ -1,9 +1,11 @@
 package dev.molasses.overlay
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -19,6 +21,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
+import dev.molasses.R
 import android.view.Choreographer
 import dev.molasses.core.latency.LatencyRegistry
 import dev.molasses.core.latency.Segment
@@ -105,14 +108,22 @@ class ShutterOverlayManager(
     private val calls = CallDetector(service)
 
     /**
-     * Set when the telephony callback could not be registered, which is the
-     * normal case now that READ_PHONE_STATE is not requested. Surfaced in the
-     * debug screen rather than only logged: swallowing it would silently
-     * disable a panic condition, and a panic path that fails open is worse
-     * than no panic path.
+     * Why the telephony secondary is not registered, or null while it is.
+     *
+     * Two quite different reasons land here and the debug screen tells them
+     * apart. `READ_PHONE_STATE` not being held is the normal state on every
+     * build this app ships, and it is reported as a plain field. Registration
+     * throwing anyway, with the grant in hand, is a genuine surprise and is
+     * reported as a warning.
      */
     var telephonyPanicUnavailable: String? = null
         private set
+
+    /**
+     * True when the secondary is absent because the permission is not held,
+     * which is the expected case and not a fault. See [publishPanicNote].
+     */
+    private var telephonySecondaryExpected: Boolean = false
 
     /**
      * Primary call check, and permission-free. Checked before every arm and
@@ -149,14 +160,30 @@ class ShutterOverlayManager(
      * context, so they fail together and one note describes both.
      */
     private fun publishPanicNote() {
+        // Only AudioManager going quiet is a fault. It is the primary check,
+        // and the shutter answers an unanswerable one with "assume a call",
+        // so a device in that state arms no stall at all. That is worth a
+        // warning and it should be the only thing in this field.
+        //
+        // Registration throwing while the grant is held is also a fault,
+        // because something unexpected is wrong with a path that should have
+        // worked. The permission simply not being held is not, and it used to
+        // be reported identically, so every healthy device showed a red
+        // SecurityException forever and the line above it was invisible
+        // underneath.
         val note = listOfNotNull(
-            telephonyPanicUnavailable?.let { "call-state listener unavailable: $it" },
             calls.unavailable?.let { "audio mode unavailable: $it" },
+            telephonyPanicUnavailable
+                ?.takeUnless { telephonySecondaryExpected }
+                ?.let { "call-state listener failed with the grant held: $it" },
         ).joinToString("; ").ifEmpty { null }
         if (note != publishedPanicNote) {
             publishedPanicNote = note
             ServiceDiagnostics.panicPathNote = note
         }
+        ServiceDiagnostics.panicSecondaryNote =
+            if (telephonySecondaryExpected) service.getString(R.string.debug_panic_secondary)
+            else null
     }
 
     // ------------------------------------------------------------- lifecycle
@@ -376,10 +403,36 @@ class ShutterOverlayManager(
         }
         if (telephonyCallback != null) return
 
+        // Asked before it is attempted, rather than attempted and caught.
+        //
+        // READ_PHONE_STATE is deliberately absent from the manifest and
+        // AccessibilityConfigTest asserts it stays out, so this is never
+        // granted on a build this app ships and the check always declines.
+        // That is the point: the old code called registerTelephonyCallback
+        // anyway, caught the SecurityException, and put its text on the debug
+        // screen, so a deliberate design decision arrived in the user's hand
+        // looking like a crash that had been swallowed.
+        //
+        // The call is kept rather than deleted because it is not dead in the
+        // way the window-id guard was. That guard could never match anything;
+        // this one works the moment the permission is held, and the check is
+        // what decides. If the permission is never coming back, the honest
+        // move is to delete the whole secondary, and that is a decision rather
+        // than a cleanup.
+        if (service.checkSelfPermission(Manifest.permission.READ_PHONE_STATE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            telephonyPanicUnavailable = "READ_PHONE_STATE not held"
+            telephonySecondaryExpected = true
+            publishPanicNote()
+            Log.i(TAG, "call-state secondary not registered: AudioManager is the primary check")
+            return
+        }
+
         // TelephonyCallback is API 31+. minSdk is 30, so API 30 needs the
-        // deprecated PhoneStateListener; both need READ_PHONE_STATE, and both
-        // are wrapped because a missing grant throws SecurityException rather
-        // than degrading.
+        // deprecated PhoneStateListener. Still wrapped: the grant is held, so
+        // a throw here is a genuine surprise rather than the expected refusal
+        // the check above already took care of.
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val cb = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
@@ -402,15 +455,15 @@ class ShutterOverlayManager(
                 telephonyCallback = cb
             }
         }.onFailure {
-            // Expected: READ_PHONE_STATE is deliberately not requested. The
-            // AudioManager path above is the primary check and covers VoIP as
-            // well, so this is a lost secondary rather than a lost capability.
-            // Recorded so the debug screen can say so out loud; runCatching on
-            // its own would stop the crash and quietly disable a panic
-            // condition.
+            // Not expected any more. The permission check above already
+            // handled the ordinary refusal, so reaching here means the grant
+            // is held and registration failed anyway, which is worth a
+            // warning. Recorded rather than swallowed: runCatching on its own
+            // would stop the crash and quietly disable a panic condition.
             telephonyPanicUnavailable = it::class.java.simpleName + ": " + it.message
+            telephonySecondaryExpected = false
             publishPanicNote()
-            Log.w(TAG, "call-state panic path unavailable", it)
+            Log.w(TAG, "call-state panic path failed with the grant held", it)
         }
     }
 

@@ -88,8 +88,17 @@ fun DebugScreen(
         diag.startupNote?.let { note -> item { Warning(note) } }
         // A degraded call path is a warning and not a field, because it is
         // never true on a healthy device and it is the difference between a
-        // stall that releases on an incoming call and one that does not.
+        // stall that releases on an incoming call and one that does not. It
+        // is also the difference between a friction engine that reaches the
+        // glass and one that does not: the shutter reads an unanswerable call
+        // check as "assume a call" and arms nothing.
         diag.panicPathNote?.let { note -> item { Warning(note) } }
+        // The telephony secondary is a plain line, because its absence is the
+        // designed state rather than a fault. It used to be appended to the
+        // warning above, so every healthy device carried a red
+        // SecurityException forever and the real warning had nothing to stand
+        // out against.
+        diag.panicSecondaryNote?.let { note -> item { Note(note) } }
         // A service that is running correctly while the glass refuses it.
         // Distinct from a startup fault, and the distinction is the fix.
         diag.overlayFailureNote?.let { note -> item { Warning(note) } }
@@ -501,6 +510,22 @@ private fun Mono(text: String) {
 @Composable
 private fun MonoRow(label: String, value: String) {
     Mono(label.padEnd(LABEL_WIDTH) + value)
+}
+
+/**
+ * Something the reader should know that is not wrong.
+ *
+ * Deliberately not [Warning]. A state that is true on every healthy device
+ * cannot be rendered in the error colour without teaching the reader to skip
+ * the error colour, and the thing they would then skip is the line above it.
+ */
+@Composable
+private fun Note(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary,
+    )
 }
 
 /** Something is wrong and the reader should not have to infer it. */
