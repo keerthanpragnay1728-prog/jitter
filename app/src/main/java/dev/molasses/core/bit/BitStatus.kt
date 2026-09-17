@@ -70,9 +70,25 @@ object BitStatus {
      *   that has just started, and finds itself already past the terminal,
      *   must not burst: it did not see the crossing, and a burst for a
      *   threshold that was passed twenty minutes ago is a lie about when.
+     * @param horizonMs the deepest app's horizon, because the terminal is
+     *   now a property of that app rather than of the curve. Reading a fixed
+     *   terminal here would burst at a moment the engine did not saturate at.
+     *
+     * A horizon widened between two observations moves the threshold up, so a
+     * crossing can be un-crossed. That is correct and needs no special case:
+     * the burst fires on the crossing, and if the user moved the line before
+     * reaching it, there was no crossing to fire on. Widening only takes
+     * effect at a cycle rollover anyway, which resets the accumulated total
+     * that feeds this.
      */
-    fun crossedTerminal(previousDeepestMs: Long?, deepestMs: Long): Boolean =
-        previousDeepestMs != null &&
-            previousDeepestMs < FrictionCurve.TERMINAL_MS &&
-            deepestMs >= FrictionCurve.TERMINAL_MS
+    fun crossedTerminal(
+        previousDeepestMs: Long?,
+        deepestMs: Long,
+        horizonMs: Long,
+    ): Boolean {
+        val terminal = FrictionCurve.terminalMs(horizonMs)
+        return previousDeepestMs != null &&
+            previousDeepestMs < terminal &&
+            deepestMs >= terminal
+    }
 }

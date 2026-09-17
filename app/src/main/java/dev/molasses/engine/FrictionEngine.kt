@@ -253,7 +253,15 @@ class FrictionEngine(
         app.tier.raiseTo(index)
 
         val effective = live + app.penaltyMs
-        val friction = FrictionCurve.frictionAt(effective, floorMs)
+        // The default horizon until the per-app field lands in the next
+        // commit. Named rather than defaulted, because a call site that does
+        // not say which app's curve it wants is the bug this parameter exists
+        // to make impossible.
+        val friction = FrictionCurve.frictionAt(
+            effective,
+            FrictionCurve.DEFAULT_HORIZON_MS,
+            floorMs,
+        )
 
         if (!friction.stalls) return FrictionDecision.NONE
 
@@ -274,7 +282,7 @@ class FrictionEngine(
 
         return FrictionDecision(
             stallMs = stallMs,
-            terminal = effective >= FrictionCurve.TERMINAL_MS,
+            terminal = effective >= FrictionCurve.terminalMs(FrictionCurve.DEFAULT_HORIZON_MS),
         )
     }
 
@@ -288,7 +296,8 @@ class FrictionEngine(
      */
     fun isTerminal(pkg: String, nowMs: Long): Boolean {
         val app = apps[pkg] ?: return false
-        return liveAccumulatedMs(app, nowMs) + app.penaltyMs >= FrictionCurve.TERMINAL_MS
+        return liveAccumulatedMs(app, nowMs) + app.penaltyMs >=
+            FrictionCurve.terminalMs(FrictionCurve.DEFAULT_HORIZON_MS)
     }
 
     /** Leases granted on [pkg] in the current cycle. Drives the escalation. */

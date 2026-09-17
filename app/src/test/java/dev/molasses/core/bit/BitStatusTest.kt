@@ -9,6 +9,7 @@ import org.junit.Test
 class BitStatusTest {
 
     private val minute = 60_000L
+    private val horizon = dev.molasses.core.friction.FrictionCurve.DEFAULT_HORIZON_MS
 
     private fun app(
         accumulatedMs: Long,
@@ -73,12 +74,13 @@ class BitStatusTest {
         assertEquals(10 * minute, BitStatus.deepestMs(apps))
         assertEquals(
             BitStateMachine.Mood.VIGILANT,
-            BitStateMachine.moodFor(BitStatus.deepestMs(apps)),
+            BitStateMachine.moodFor(BitStatus.deepestMs(apps), horizon),
         )
-        // What the bug produced, for contrast.
+        // What the bug produced, for contrast: on the default horizon the
+        // summed twenty minutes is past the terminal outright.
         assertEquals(
-            BitStateMachine.Mood.ANNOYED,
-            BitStateMachine.moodFor(apps.sumOf { it.accumulatedMs }),
+            BitStateMachine.Mood.GLITCHED,
+            BitStateMachine.moodFor(apps.sumOf { it.accumulatedMs }, horizon),
         )
     }
 
@@ -111,7 +113,10 @@ class BitStatusTest {
     @Test
     fun `no apps is zero, not a crash`() {
         assertEquals(0L, BitStatus.deepestMs(emptyList()))
-        assertEquals(BitStateMachine.Mood.IDLE, BitStateMachine.moodFor(BitStatus.deepestMs(emptyList())))
+        assertEquals(
+            BitStateMachine.Mood.IDLE,
+            BitStateMachine.moodFor(BitStatus.deepestMs(emptyList()), horizon),
+        )
     }
 
     // ------------------------------------------------------- the burst latch
@@ -120,23 +125,34 @@ class BitStatusTest {
 
     @Test
     fun `crossing into the terminal fires once`() {
-        assertTrue(BitStatus.crossedTerminal(terminal - 1, terminal))
+        assertTrue(BitStatus.crossedTerminal(terminal - 1, terminal, horizon))
     }
 
     @Test
     fun `staying past the terminal does not re-fire`() {
         // Once per entry, not once per scroll and not once per foreground.
-        assertFalse(BitStatus.crossedTerminal(terminal, terminal))
-        assertFalse(BitStatus.crossedTerminal(terminal, terminal + 60_000))
-        assertFalse(BitStatus.crossedTerminal(terminal + 60_000, terminal + 120_000))
+        assertFalse(BitStatus.crossedTerminal(terminal, terminal, horizon))
+        assertFalse(BitStatus.crossedTerminal(terminal, terminal + 60_000, horizon))
+        assertFalse(BitStatus.crossedTerminal(terminal + 60_000, terminal + 120_000, horizon))
+    }
+
+    @Test
+    fun `the crossing is measured against that app's horizon`() {
+        // A fixed terminal here would burst at a moment the engine did not
+        // saturate at. Eighteen minutes crosses on the default horizon and is
+        // nowhere near it on a sixty minute one.
+        val long = 60 * minute
+        assertTrue(BitStatus.crossedTerminal(terminal - 1, terminal, horizon))
+        assertFalse(BitStatus.crossedTerminal(terminal - 1, terminal, long))
+        assertTrue(BitStatus.crossedTerminal(long - 1, long, long))
     }
 
     @Test
     fun `a first observation already past the terminal does not fire`() {
         // A process that has just started did not see the crossing, and a
         // burst for a threshold passed twenty minutes ago is a lie about when.
-        assertFalse(BitStatus.crossedTerminal(null, terminal))
-        assertFalse(BitStatus.crossedTerminal(null, terminal + 600_000))
+        assertFalse(BitStatus.crossedTerminal(null, terminal, horizon))
+        assertFalse(BitStatus.crossedTerminal(null, terminal + 600_000, horizon))
     }
 
     @Test
@@ -144,12 +160,12 @@ class BitStatusTest {
         // The deepest app's accumulated time only ever falls at a rollover,
         // so the next crossing after one is the next burst, and there is no
         // separate latch to reset.
-        assertFalse(BitStatus.crossedTerminal(terminal + 60_000, 0))
-        assertTrue(BitStatus.crossedTerminal(0, terminal))
+        assertFalse(BitStatus.crossedTerminal(terminal + 60_000, 0, horizon))
+        assertTrue(BitStatus.crossedTerminal(0, terminal, horizon))
     }
 
     @Test
     fun `approaching the terminal without reaching it does not fire`() {
-        assertFalse(BitStatus.crossedTerminal(terminal - 120_000, terminal - 1))
+        assertFalse(BitStatus.crossedTerminal(terminal - 120_000, terminal - 1, horizon))
     }
 }

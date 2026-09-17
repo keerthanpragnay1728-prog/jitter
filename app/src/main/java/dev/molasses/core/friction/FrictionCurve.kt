@@ -17,7 +17,54 @@ data class FrictionPoint(
 }
 
 /**
- * The 2D friction curve.
+ * The 2D friction curve, scaled to a declared session horizon.
+ *
+ * ## Why a horizon at all
+ * The curve used to terminate at a fixed twenty five minutes with five second
+ * stalls at 100% probability, for every app and every user. That is not a
+ * degraded phone, it is a phone you cannot use, and it made a one hour lecture
+ * or a long research session impossible rather than expensive. The two numbers
+ * were picked without reference to either the app or the person.
+ *
+ * The fix is to scale the curve to a horizon the user declares per app, not to
+ * loosen it. A horizon is a statement about what a session in this app is for.
+ * It is **not** a reset and nothing about it refunds friction: someone forty
+ * minutes into a sixty minute horizon enters the curve at minute forty, deep
+ * in the ramp, exactly as they would have at any other horizon.
+ *
+ * ## One rule for the shape
+ * ```
+ * onset    = horizon * 0.40
+ * terminal = horizon
+ * ```
+ * Derived, with no free parameters, the same way the mood midpoint is. A
+ * per-horizon table would be three numbers nobody could defend individually.
+ *
+ * ## The ceiling tapers, and this is the part that fixes the complaint
+ * Stretching the timeline alone moves the cliff without removing it: minute
+ * fifty five of a sixty minute lecture would still be five second stalls at
+ * 100%, which is unwatchable. So the terminal ceiling comes down as the
+ * horizon grows, linearly and clamped at both ends, between
+ * [TAPER_FROM_HORIZON_MS] and [TAPER_TO_HORIZON_MS].
+ *
+ * At or below a twenty minute horizon the ceiling is exactly what it has
+ * always been. At sixty minutes it is 70% and three seconds: heavy, constant,
+ * clearly degraded, and still usable for the thing the user said they were
+ * doing. A longer horizon therefore accumulates **more friction in total** and
+ * is **never more severe at any instant**, which is the property worth
+ * stating, because the reverse would make a long horizon strictly worse to
+ * declare than to lie about.
+ *
+ * ## Why the taper scales the whole curve and not only the last knot
+ * Because tapering the terminal alone breaks monotonicity. The knot at 16/19
+ * of the ramp is 4200 ms at 98%; leave it alone and taper the terminal to
+ * 3000 ms at 70% and the curve steps *down* over the last sixth, which is
+ * friction being refunded and is the one thing this file may never do.
+ *
+ * So both dimensions are scaled by the ratio the terminal moved. The shape is
+ * preserved exactly, monotonicity falls out of multiplying a non-decreasing
+ * sequence by a positive constant, and the terminal lands on the tapered
+ * values by construction rather than by agreement.
  *
  * ## Why probability, and not just shorter stalls
  * Segment D measured **406 ms p50** on hardware: a commanded stall arms about
@@ -35,25 +82,25 @@ data class FrictionPoint(
  * device once segment D is measured elsewhere, and lowered once D itself is
  * optimised.
  *
- * The specified table's low bands ask for durations below the floor (150 to
- * 350 ms at 6 to 9 minutes). Those are clamped up. At the default floor of
- * 450 ms that flattens the whole 6 to 10 minute range to a constant duration,
- * which is not a defect: it is the design in B2 falling out of the arithmetic.
- * Across that range only probability moves.
+ * The source table's low bands ask for durations below the floor. Those are
+ * clamped up, which flattens the early range to a constant duration where only
+ * probability moves. That is not a defect, it is the design falling out of the
+ * arithmetic, and the taper makes it wider at long horizons rather than
+ * introducing anything new.
  *
  * ## Monotonicity
  * Both dimensions are non-decreasing in `accumulatedMs`, asserted by a sweep
- * test at one second granularity over the whole range.
+ * test at one second granularity over the whole range, at three horizons.
  *
- * The table as specified is **not** monotonic at its band edges: the 8 to 9
- * minute band ends at 350 ms and the 9 to 10 band starts at 300 ms, and the
- * same dips appear at 12, 14 and 18 minutes in one dimension or the other.
- * Read literally it would refund friction at four points. [KNOTS] resolves
- * each boundary to the larger of the two neighbouring values, so the curve is
+ * The source table is **not** monotonic at its band edges: the 8 to 9 minute
+ * band ended at 350 ms and the 9 to 10 band started at 300 ms, and the same
+ * dips appeared at 12, 14 and 18 minutes in one dimension or the other. Read
+ * literally it would refund friction at four points. [KNOTS] resolves each
+ * boundary to the larger of the two neighbouring values, so the curve is
  * continuous and never steps down. That is the same principle as
  * `MonotonicInt` on `tierIndex`, applied to a continuous function.
  *
- * The one discontinuity that survives is at 6 minutes, where both dimensions
+ * The one discontinuity that survives is at the onset, where both dimensions
  * jump from zero. Friction has to begin somewhere and a ramp from zero
  * probability would make the first minutes indistinguishable from none.
  *
@@ -70,74 +117,188 @@ object FrictionCurve {
     /** Default floor. See the class doc; retune when D is measured elsewhere. */
     const val DEFAULT_FLOOR_MS = 450
 
-    const val TERMINAL_MS = 25L * 60 * 1000
-    const val ONSET_MS = 6L * 60 * 1000
+    // -------------------------------------------------------------- horizon
 
     /**
-     * One point on the curve. Values between knots are linearly interpolated
-     * in both dimensions.
+     * What a newly tracked app gets.
      *
-     * Derived from the B1 table by taking each band boundary once, resolving
-     * a disagreement between the band that ends there and the band that
-     * starts there in favour of the larger value.
+     * Eighteen minutes, which is close to the shape the app has always had
+     * without reproducing it: see the note on [ONSET_MS]. Tracking an app is
+     * not a decision about how long you use it, so the default has to be the
+     * ordinary case rather than the generous one.
      */
-    private data class Knot(val atMs: Long, val stallMs: Int, val probability: Float)
+    const val DEFAULT_HORIZON_MS = 18L * 60 * 1000
 
-    private fun minutes(m: Double): Long = (m * 60_000).toLong()
+    /**
+     * Below this the onset is under four minutes and the floor clamp collapses
+     * the early bands into a single constant, so the curve stops having a
+     * shape to speak of.
+     */
+    const val MIN_HORIZON_MS = 10L * 60 * 1000
 
+    /** Above this the taper is clamped anyway and the curve stops meaning much. */
+    const val MAX_HORIZON_MS = 60L * 60 * 1000
+
+    /** Onset as a share of the horizon. The whole shape rule. */
+    const val ONSET_FRACTION = 0.40
+
+    /** A horizon outside the offered range is clamped, never rejected. */
+    fun clampHorizon(horizonMs: Long): Long =
+        horizonMs.coerceIn(MIN_HORIZON_MS, MAX_HORIZON_MS)
+
+    /** Where friction starts for this horizon. */
+    fun onsetMs(horizonMs: Long): Long =
+        (clampHorizon(horizonMs) * ONSET_FRACTION).toLong()
+
+    /** Where it saturates. The horizon itself, clamped. */
+    fun terminalMs(horizonMs: Long): Long = clampHorizon(horizonMs)
+
+    /**
+     * The onset and terminal at the default horizon.
+     *
+     * Kept because several things want a boundary when no app is in hand, and
+     * because it is worth writing down what the default actually is: seven
+     * minutes twelve to eighteen minutes, against the six to twenty five this
+     * file carried before the horizon existed. That is a later start and an
+     * earlier saturation, so the default is not the old curve renamed. It is
+     * the closest the one shape rule can come to it, and the 0.24 ratio the
+     * old pair implied is not reachable at any horizon.
+     */
+    val ONSET_MS: Long = onsetMs(DEFAULT_HORIZON_MS)
+    val TERMINAL_MS: Long = terminalMs(DEFAULT_HORIZON_MS)
+
+    // ---------------------------------------------------------------- taper
+
+    /** At or below this horizon the ceiling is untapered. */
+    const val TAPER_FROM_HORIZON_MS = 20L * 60 * 1000
+
+    /** At or above this horizon the taper is at full extent. */
+    const val TAPER_TO_HORIZON_MS = 60L * 60 * 1000
+
+    const val TERMINAL_STALL_MS = 5000
+    const val TERMINAL_STALL_TAPERED_MS = 3000
+    const val TERMINAL_PROBABILITY = 1.00f
+    const val TERMINAL_PROBABILITY_TAPERED = 0.70f
+
+    /** 0.0 at [TAPER_FROM_HORIZON_MS], 1.0 at [TAPER_TO_HORIZON_MS]. */
+    private fun taper(horizonMs: Long): Float {
+        val span = (TAPER_TO_HORIZON_MS - TAPER_FROM_HORIZON_MS).toFloat()
+        val over = (clampHorizon(horizonMs) - TAPER_FROM_HORIZON_MS).toFloat()
+        return (over / span).coerceIn(0f, 1f)
+    }
+
+    /** The stall this horizon saturates at. */
+    fun terminalStallMs(horizonMs: Long): Int {
+        val t = taper(horizonMs)
+        return (TERMINAL_STALL_MS + (TERMINAL_STALL_TAPERED_MS - TERMINAL_STALL_MS) * t).toInt()
+    }
+
+    /** The probability this horizon saturates at. */
+    fun terminalProbability(horizonMs: Long): Float {
+        val t = taper(horizonMs)
+        return TERMINAL_PROBABILITY +
+            (TERMINAL_PROBABILITY_TAPERED - TERMINAL_PROBABILITY) * t
+    }
+
+    // ----------------------------------------------------------------- shape
+
+    /**
+     * One point on the curve, positioned as a fraction of the onset-to-terminal
+     * ramp rather than at an absolute minute, which is what lets one shape
+     * serve every horizon. Values between knots are linearly interpolated in
+     * both dimensions.
+     */
+    private data class Knot(val fraction: Double, val stallMs: Int, val probability: Float)
+
+    /**
+     * The minute marks the shape was originally specified at, kept as the
+     * derivation so the provenance of every fraction below stays readable.
+     */
+    private const val SOURCE_ONSET_MIN = 6.0
+    private const val SOURCE_TERMINAL_MIN = 25.0
+
+    private fun at(minute: Double): Double =
+        (minute - SOURCE_ONSET_MIN) / (SOURCE_TERMINAL_MIN - SOURCE_ONSET_MIN)
+
+    /**
+     * Derived from the B1 table by taking each band boundary once, resolving a
+     * disagreement between the band that ends there and the band that starts
+     * there in favour of the larger value.
+     *
+     * The stall and probability columns are the values at the **untapered**
+     * ceiling. [frictionAt] scales both by however far the terminal has come
+     * down for the horizon it is asked about.
+     */
     private val KNOTS = listOf(
-        // Nothing at all before six minutes.
-        Knot(0L, 0, 0f),
-        Knot(minutes(6.0), 0, 0f),
         // Onset. Duration is at the floor for the whole early range; only
         // probability separates these bands.
-        Knot(minutes(6.0), 150, 0.10f),
-        Knot(minutes(7.0), 150, 0.15f),
-        Knot(minutes(8.0), 150, 0.20f),
-        Knot(minutes(9.0), 350, 0.30f),
-        Knot(minutes(10.0), 450, 0.40f),
+        Knot(at(6.0), 150, 0.10f),
+        Knot(at(7.0), 150, 0.15f),
+        Knot(at(8.0), 150, 0.20f),
+        Knot(at(9.0), 350, 0.30f),
+        Knot(at(10.0), 450, 0.40f),
         // 10-12 ends at 800/50, 12-14 starts at 700/60. Larger wins: 800/60.
-        Knot(minutes(12.0), 800, 0.60f),
+        Knot(at(12.0), 800, 0.60f),
         // 12-14 ends at 1200/65, 14-18 starts at 1200/70. Larger wins.
-        Knot(minutes(14.0), 1200, 0.70f),
+        Knot(at(14.0), 1200, 0.70f),
         // 14-18 ends at 2700/90, 18-22 starts at 2500/90. Larger wins.
-        Knot(minutes(18.0), 2700, 0.90f),
+        Knot(at(18.0), 2700, 0.90f),
         // 18-22 ends at 4200/95, 22-25 starts at 4000/98. Larger wins.
-        Knot(minutes(22.0), 4200, 0.98f),
-        Knot(minutes(25.0), 5000, 1.00f),
+        Knot(at(22.0), 4200, 0.98f),
+        Knot(at(25.0), TERMINAL_STALL_MS, TERMINAL_PROBABILITY),
     )
 
     /**
-     * The curve at [accumulatedMs].
+     * The curve at [accumulatedMs], for an app with this [horizonMs].
+     *
+     * [horizonMs] has no default on purpose. Friction is now a property of one
+     * app's declared horizon, and a call site that forgot to say which app it
+     * meant would silently get the default one's curve. Naming it is the same
+     * discipline `ClockTamperClamp` applies to a clamp direction.
      *
      * @param floorMs no non-zero stall is commanded below this.
      */
-    fun frictionAt(accumulatedMs: Long, floorMs: Int = DEFAULT_FLOOR_MS): FrictionPoint {
-        if (accumulatedMs < ONSET_MS) return FrictionPoint(0, 0f)
-        if (accumulatedMs >= TERMINAL_MS) {
-            return FrictionPoint(clampFloor(5000, floorMs), 1.0f)
+    fun frictionAt(
+        accumulatedMs: Long,
+        horizonMs: Long,
+        floorMs: Int = DEFAULT_FLOOR_MS,
+    ): FrictionPoint {
+        val horizon = clampHorizon(horizonMs)
+        val onset = onsetMs(horizon)
+        val topStall = terminalStallMs(horizon)
+        val topProbability = terminalProbability(horizon)
+
+        if (accumulatedMs < onset) return FrictionPoint(0, 0f)
+        if (accumulatedMs >= horizon) {
+            return FrictionPoint(clampFloor(topStall, floorMs), topProbability)
         }
 
-        // The duplicate knot at six minutes makes the onset a step rather
-        // than a ramp, so start from the second one.
-        var lower = KNOTS[2]
-        var upper = KNOTS[2]
-        for (i in 2 until KNOTS.size) {
-            if (KNOTS[i].atMs <= accumulatedMs) {
+        // How far along the ramp, which is the space the knots live in.
+        val f = (accumulatedMs - onset).toDouble() / (horizon - onset).toDouble()
+
+        var lower = KNOTS.first()
+        var upper = KNOTS.first()
+        for (i in KNOTS.indices) {
+            if (KNOTS[i].fraction <= f) {
                 lower = KNOTS[i]
                 upper = KNOTS.getOrElse(i + 1) { KNOTS[i] }
             }
         }
 
-        val span = upper.atMs - lower.atMs
-        val t = if (span <= 0L) 0f else (accumulatedMs - lower.atMs).toFloat() / span
+        val span = upper.fraction - lower.fraction
+        val t = if (span <= 0.0) 0.0 else (f - lower.fraction) / span
 
-        val stall = lower.stallMs + ((upper.stallMs - lower.stallMs) * t).toInt()
+        val stall = lower.stallMs + (upper.stallMs - lower.stallMs) * t
         val probability = lower.probability + (upper.probability - lower.probability) * t
 
+        // Scaled by however far this horizon brought the ceiling down. See the
+        // class doc: scaling the whole shape is what keeps it monotonic.
+        val stallScale = topStall.toDouble() / TERMINAL_STALL_MS
+        val probabilityScale = topProbability.toDouble() / TERMINAL_PROBABILITY
+
         return FrictionPoint(
-            stallMs = clampFloor(stall, floorMs),
-            probability = probability.coerceIn(0f, 1f),
+            stallMs = clampFloor((stall * stallScale).toInt(), floorMs),
+            probability = (probability * probabilityScale).toFloat().coerceIn(0f, 1f),
         )
     }
 

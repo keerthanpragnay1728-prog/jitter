@@ -827,7 +827,7 @@ class MolassesAccessibilityService : AccessibilityService() {
      */
     private fun queueSessionNotice(pkg: String) {
         val app = engine.state.value.perApp[pkg] ?: return
-        if (app.accumulatedMs < FrictionCurve.ONSET_MS) return
+        if (app.accumulatedMs < FrictionCurve.onsetMs(FrictionCurve.DEFAULT_HORIZON_MS)) return
         val line = ConsoleLine.Notice(
             id = ConsoleIds.SCROLLED,
             args = listOf(CycleLine.duration(app.accumulatedMs), labelFor(pkg)),

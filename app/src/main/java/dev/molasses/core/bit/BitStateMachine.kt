@@ -283,23 +283,26 @@ object BitStateMachine {
     // ------------------------------------------------------------------- api
 
     /**
-     * The midpoint of the friction curve.
+     * The midpoint of the friction curve, for one horizon.
      *
      * The only boundary between moods that the curve does not name, so it is
      * derived rather than chosen: halfway between the onset and the terminal.
      * That leaves the mood ladder with no free parameters at all, and a
      * change to the curve moves all three boundaries together.
      */
-    val MOOD_MIDPOINT_MS: Long = (FrictionCurve.ONSET_MS + FrictionCurve.TERMINAL_MS) / 2
+    fun moodMidpointMs(horizonMs: Long): Long =
+        (FrictionCurve.onsetMs(horizonMs) + FrictionCurve.terminalMs(horizonMs)) / 2
+
+    /** The midpoint at the default horizon. */
+    val MOOD_MIDPOINT_MS: Long = moodMidpointMs(FrictionCurve.DEFAULT_HORIZON_MS)
 
     /**
      * Accumulated cycle time to mood, anchored to the friction curve.
      *
      * The boundaries used to be 7, 15 and 20 minutes against the old discrete
-     * ladder, and they had stopped describing anything: the curve starts at
-     * six, so Bit sat idle through the first minute of stalls, and saturates
-     * at twenty five, so the most alarming face arrived five minutes before
-     * the worst friction and then had nowhere left to go.
+     * ladder, and they had stopped describing anything: Bit sat idle through
+     * the first minute of stalls, and the most alarming face arrived five
+     * minutes before the worst friction and then had nowhere left to go.
      *
      * Now: idle until the curve starts, glitched when it saturates, and the
      * two states in between split the span evenly.
@@ -307,11 +310,23 @@ object BitStateMachine {
      * This is the *deepest* app's accumulated time, not the sum across apps.
      * The curve is per app, so a sum would read two apps at ten minutes each
      * as deeper than either of them is.
+     *
+     * ## Why the horizon is a parameter and not a constant
+     * Because the curve's is. Every boundary here is derived from the onset
+     * and the terminal, and those now depend on which app is being described,
+     * so a mood read against a fixed pair would report a friction level the
+     * engine is not producing. That is not hypothetical: it is the same defect
+     * shape as feeding the summed cycle total to a per app curve, which
+     * shipped once.
+     *
+     * [horizonMs] must therefore be the horizon of the app [accumulatedMs]
+     * belongs to, which is the deepest one. `CycleReadout` carries both off
+     * the same snapshot for exactly that reason.
      */
-    fun moodFor(accumulatedMs: Long): Mood = when {
-        accumulatedMs < FrictionCurve.ONSET_MS -> Mood.IDLE
-        accumulatedMs < MOOD_MIDPOINT_MS -> Mood.VIGILANT
-        accumulatedMs < FrictionCurve.TERMINAL_MS -> Mood.ANNOYED
+    fun moodFor(accumulatedMs: Long, horizonMs: Long): Mood = when {
+        accumulatedMs < FrictionCurve.onsetMs(horizonMs) -> Mood.IDLE
+        accumulatedMs < moodMidpointMs(horizonMs) -> Mood.VIGILANT
+        accumulatedMs < FrictionCurve.terminalMs(horizonMs) -> Mood.ANNOYED
         else -> Mood.GLITCHED
     }
 
