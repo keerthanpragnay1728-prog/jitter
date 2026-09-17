@@ -530,6 +530,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         // service that lives for weeks.
         if (pkg == packageName && ownWindowIds.size < MAX_OWN_WINDOW_IDS) {
             ownWindowIds += event.windowId
+            ServiceDiagnostics.ownWindowIds = ownWindowIds.toList()
         }
 
         val windowEvent = WindowEvent(
@@ -549,7 +550,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         ServiceDiagnostics.recordEvent(windowEvent, route)
 
         when (route) {
-            EventRoute.Ignore -> Unit
+            is EventRoute.Ignore -> Unit
 
             is EventRoute.EnterTarget -> enterTarget(route.pkg)
 

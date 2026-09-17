@@ -44,13 +44,24 @@ class ForegroundEventRouter(
         ownWindowIds: Set<Int>,
     ): EventRoute {
         // 1. Our own windows, dropped before any other handling.
-        if (event.windowId in ownWindowIds) return EventRoute.Ignore
+        //
+        // This branch runs before the package is even read, so when it
+        // misfires it hides every other explanation: a row of ignored events
+        // looks identical whether the target set is wrong or this guard is
+        // eating the device. That is why the reason is carried out.
+        if (event.windowId in ownWindowIds) {
+            return EventRoute.Ignore(IgnoreReason.OWN_WINDOW)
+        }
 
         // 2. Anything else wearing our package name.
         if (event.packageName == ownPackage) {
             val isLauncher = event.className == launcherClassName &&
                 event.kind == WindowEvent.Kind.WINDOW_STATE_CHANGED
-            return if (isLauncher) EventRoute.ExitToHome else EventRoute.Ignore
+            return if (isLauncher) {
+                EventRoute.ExitToHome
+            } else {
+                EventRoute.Ignore(IgnoreReason.OWN_PACKAGE)
+            }
         }
 
         // 3. Target apps.
@@ -62,7 +73,7 @@ class ForegroundEventRouter(
             }
         }
 
-        return EventRoute.Ignore
+        return EventRoute.Ignore(IgnoreReason.NOT_A_TARGET)
     }
 
     companion object {

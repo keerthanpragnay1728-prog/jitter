@@ -1,6 +1,7 @@
 package dev.molasses.core.diag
 
 import dev.molasses.core.session.EventRoute
+import dev.molasses.core.session.IgnoreReason
 import dev.molasses.core.session.WindowEvent
 
 /**
@@ -44,8 +45,19 @@ class RouteTally(
         val windowsChanged: Long = 0,
         val routed: Long = 0,
         val ignored: Long = 0,
+        /**
+         * [ignored], split by which branch dropped it.
+         *
+         * The split is the read that was missing. A total says the router
+         * rejected everything and not which rule did it, and the first rule
+         * runs before the package is looked at, so a collision guard eating
+         * the device and a wrong target set produce the same row.
+         */
+        val ignoredBy: Map<IgnoreReason, Long> = emptyMap(),
     ) {
         val total: Long get() = scrolled + windowState + windowsChanged
+
+        fun ignoredBy(reason: IgnoreReason): Long = ignoredBy[reason] ?: 0L
     }
 
     private val counts = LinkedHashMap<String, PackageTally>()
@@ -62,15 +74,20 @@ class RouteTally(
             return
         }
         val t = existing ?: PackageTally()
-        val ignored = route == EventRoute.Ignore
+        val ignored = route as? EventRoute.Ignore
         counts[key] = t.copy(
             scrolled = t.scrolled + if (event.kind == WindowEvent.Kind.VIEW_SCROLLED) 1 else 0,
             windowState = t.windowState +
                 if (event.kind == WindowEvent.Kind.WINDOW_STATE_CHANGED) 1 else 0,
             windowsChanged = t.windowsChanged +
                 if (event.kind == WindowEvent.Kind.WINDOWS_CHANGED) 1 else 0,
-            routed = t.routed + if (ignored) 0 else 1,
-            ignored = t.ignored + if (ignored) 1 else 0,
+            routed = t.routed + if (ignored == null) 1 else 0,
+            ignored = t.ignored + if (ignored == null) 0 else 1,
+            ignoredBy = if (ignored == null) {
+                t.ignoredBy
+            } else {
+                t.ignoredBy + (ignored.reason to t.ignoredBy(ignored.reason) + 1)
+            },
         )
     }
 
