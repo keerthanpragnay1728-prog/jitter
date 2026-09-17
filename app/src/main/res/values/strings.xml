@@ -254,7 +254,13 @@
     <string name="launcher_open_settings">Settings</string>
     <!-- Terminal Launcher UI -->
     <string name="launcher_terminal_prompt">&gt; init molasses_core</string>
-    <string name="launcher_search_placeholder">type command or app...</string>
+    <!--
+      The whole of prompt discovery, in one line that does not move. The
+      apostrophes are escaped because aapt rejects a bare one in a string
+      value. "?" sits on the STATE surface so it can never report itself
+      unavailable, which is what makes this safe to say unconditionally.
+    -->
+    <string name="launcher_search_placeholder">type \'?\' for commands</string>
     <string name="launcher_status_ready">DAEMON: ACTIVE | CYCLE: 6H</string>
     <string name="launcher_target_badge">[TRACKED]</string>
     <!--
@@ -263,7 +269,6 @@
       command can be learned without reading the source: a rotating
       suggestion, the manual, and what you have already typed.
     -->
-    <string name="launcher_placeholder_try">try: %1$s</string>
     <string name="launcher_manual_title">COMMANDS</string>
     <string name="launcher_manual_hint">Type any of these. Dimmed rows parse but cannot run yet.</string>
     <!-- Launcher Telemetry & Quick Access -->
