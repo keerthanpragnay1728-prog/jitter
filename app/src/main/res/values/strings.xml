@@ -266,8 +266,6 @@
     <string name="launcher_placeholder_try">try: %1$s</string>
     <string name="launcher_manual_title">COMMANDS</string>
     <string name="launcher_manual_hint">Type any of these. Dimmed rows parse but cannot run yet.</string>
-    <string name="launcher_history_title">RECENT</string>
-    <string name="launcher_history_hint">Tap to put a line back in the prompt. It does not run until you press Enter.</string>
     <!-- Launcher Telemetry & Quick Access -->
     <string name="launcher_filter_label">NOTIF FILTER</string>
     <string name="launcher_filter_active">MUTED</string>
