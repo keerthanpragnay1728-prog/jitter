@@ -196,6 +196,43 @@ Jitter must never draw any overlay over a package in
 that app's touches and a hardened payment app is entitled to refuse the
 transaction.
 
+## Window insets are a constant, and that is a known fault
+
+Both activities call `setDecorFitsSystemWindows(window, false)` and neither
+reads a single inset. Nothing in `ui/` consumes `WindowInsets` except the two
+`imePadding()` calls on the lists. Everything else clears the system bars with
+a hardcoded `padding(horizontal = 18.dp, vertical = 44.dp)`, and the drawer and
+the notification inbox each repeat their own copy of that guess.
+
+It works. 44dp is larger than a 24dp status bar and larger than a gesture
+navigation inset, so nothing looks wrong on the hardware this was built on.
+That is the whole of why it has survived: the number is not related to any
+measurement, it is just bigger than the ones that have been tried. It is a few
+dp short of a 48dp three button bar, it is short on a device whose status bar
+grows to cover a tall cutout, and 18dp clears nothing at all in landscape.
+
+The fix is real inset consumption, `safeDrawing` or the individual types,
+replacing the constants. It is deliberately not done yet: it is being held
+until test users report from hardware nobody here owns, because guessing a
+second time is not better than guessing once.
+
+### If you are building immersive mode, read this first
+
+Immersive mode hides the system bars. A constant padding that exists to clear
+the system bars is trivially correct once there are no bars to clear. So
+immersive **conceals this fault rather than fixing it**, and it conceals it
+completely: with the bars hidden there is no device shape and no navigation
+mode on which the 44dp is wrong.
+
+That matters in two directions. Shipping immersive does not close the inset
+work, and the inset work must not be marked done because immersive made the
+symptom go away. And the first user who turns immersive off, or the first
+screen that does not use it, gets the original fault back with no warning and
+nothing in the diff to point at.
+
+So: land immersive if it is wanted for its own sake, and leave this section
+standing until the constants are actually gone.
+
 ## Which clock a deadline is measured on
 
 **Always err toward more friction.** Every deadline in this app is either a
