@@ -10,9 +10,17 @@ import android.util.Log
  * ## Why `AudioManager.getMode()` and not telephony
  * It needs no grant, and it catches VoIP, which
  * `TelephonyCallback.CallStateListener` misses entirely. `READ_PHONE_STATE` is
- * deliberately not requested by this app, so the telephony callback is a
- * secondary that is usually unavailable; this is the primary and it always
- * works.
+ * deliberately not requested by this app and `AccessibilityConfigTest` asserts
+ * it stays out, so a telephony listener cannot register on any build that
+ * ships.
+ *
+ * There was one anyway, registered beside this and described as a secondary.
+ * It is deleted. A path that needs a grant the manifest forbids, and that
+ * would have seen a strict subset of what this sees even with the grant, is
+ * not a fallback; `MODE_IN_CALL` covers the cellular call telephony would have
+ * reported and `MODE_IN_COMMUNICATION` covers the VoIP call it would not.
+ *
+ * So this is not the primary among two. It is the check.
  *
  * `MODE_IN_COMMUNICATION` is also set by some assistant and voice recording
  * flows, so this occasionally reports a call with none in progress. That is a

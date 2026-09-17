@@ -55,8 +55,6 @@ data class EngineDiagnostics(
     val startupNote: String?,
     /** Non-null while a call-detection path is degraded. See ServiceDiagnostics. */
     val panicPathNote: String?,
-    /** Informational, not a fault. See ServiceDiagnostics.panicSecondaryNote. */
-    val panicSecondaryNote: String?,
     /** Non-null when a gate window could not be added. See ServiceDiagnostics. */
     val overlayFailureNote: String?,
     val heartbeatAgeMs: Long?,
@@ -201,7 +199,6 @@ class SettingsViewModel @Inject constructor(
             stuckStarting = ServiceDiagnostics.isStuckStarting(),
             startupNote = ServiceDiagnostics.startupNote,
             panicPathNote = ServiceDiagnostics.panicPathNote,
-            panicSecondaryNote = ServiceDiagnostics.panicSecondaryNote,
             overlayFailureNote = ServiceDiagnostics.overlayFailureNote,
             heartbeatAgeMs = ServiceDiagnostics.heartbeatAgeMs(),
             accessibilityEnabled = repo.permissionState().accessibility,
@@ -229,7 +226,6 @@ class SettingsViewModel @Inject constructor(
             stuckStarting = false,
             startupNote = null,
             panicPathNote = null,
-            panicSecondaryNote = null,
             overlayFailureNote = null,
             heartbeatAgeMs = null,
             accessibilityEnabled = false,
