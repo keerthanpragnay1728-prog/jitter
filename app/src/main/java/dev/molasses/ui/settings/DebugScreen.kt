@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
-import dev.molasses.BuildConfig
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.session.IgnoreReason
 import dev.molasses.debug.DebugSurface
@@ -119,11 +118,6 @@ fun DebugScreen(
                         .ifEmpty { stringResource(R.string.debug_none) },
                 )
                 MonoRow(
-                    R.string.debug_field_own_windows,
-                    diag.ownWindowIds.joinToString(" ")
-                        .ifEmpty { stringResource(R.string.debug_none) },
-                )
-                MonoRow(
                     R.string.debug_field_open_session,
                     diag.openSessionPkg ?: stringResource(R.string.debug_none),
                 )
@@ -159,17 +153,10 @@ fun DebugScreen(
                 if (diag.routes.isNotEmpty() && !anyRouted) {
                     Warning(stringResource(R.string.debug_warn_all_ignored))
                 }
-                // The reason a package was dropped, not only that it was.
-                // The first branch of the router runs before the package is
-                // read, so without this split a collision guard eating the
-                // device and a wrong target set are the same row.
-                val swallowed = diag.routes.any { (pkg, t) ->
-                    pkg != BuildConfig.APPLICATION_ID &&
-                        t.ignoredBy(IgnoreReason.OWN_WINDOW) > 0
-                }
-                if (swallowed) {
-                    Warning(stringResource(R.string.debug_warn_own_window_swallow))
-                }
+                // The reason a package was dropped, not only that it was. A
+                // target package under not-target means the target set is
+                // wrong; our own package under own-pkg is ordinary. Those two
+                // read identically without the split.
                 for ((pkg, t) in diag.routes) {
                     MonoRow(
                         pkg,
@@ -185,7 +172,6 @@ fun DebugScreen(
                         Mono(
                             stringResource(
                                 R.string.debug_events_ignored_by,
-                                t.ignoredBy(IgnoreReason.OWN_WINDOW).toString(),
                                 t.ignoredBy(IgnoreReason.OWN_PACKAGE).toString(),
                                 t.ignoredBy(IgnoreReason.NOT_A_TARGET).toString(),
                             ),
