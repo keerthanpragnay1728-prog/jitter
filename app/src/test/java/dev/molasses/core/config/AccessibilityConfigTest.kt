@@ -198,6 +198,39 @@ class AccessibilityConfigTest {
         assertFalse(manifest.contains("android:foregroundServiceType"))
     }
 
+    @Test
+    fun `the launcher declares its soft input mode rather than inheriting one`() {
+        // Same reason as everything else in this file: a silent revert here
+        // breaks nothing visibly. The default is adjustUnspecified, and
+        // ViewRootImpl resolves that to adjustPan for a window with no
+        // registered scroll containers, which a pure Compose hierarchy never
+        // has. A pan translates the whole window far enough to carry the
+        // header, the status line and Bit's row off the top of the screen,
+        // and it would read as a layout bug rather than as a missing
+        // attribute.
+        val manifest = repoFile("app/src/main/AndroidManifest.xml").readText()
+        val activity = Regex(
+            """<activity[^>]*LauncherActivity[\s\S]*?>""",
+        ).find(manifest)?.value ?: error("LauncherActivity is not declared")
+
+        assertTrue(
+            "LauncherActivity must declare adjustResize, or the unspecified " +
+                "default resolves to adjustPan. Found: $activity",
+            activity.contains("adjustResize"),
+        )
+        assertFalse(
+            "adjustPan cannot be combined with adjustResize and would push " +
+                "Bit's row off the top of the screen",
+            activity.contains("adjustPan"),
+        )
+        assertTrue(
+            "LauncherActivity is the HOME activity and singleTask, so it " +
+                "must declare stateAlwaysHidden or returning from an app can " +
+                "restore a keyboard the user never asked for",
+            activity.contains("stateAlwaysHidden"),
+        )
+    }
+
     private fun repoFile(relative: String): File {
         var dir: File? = File(System.getProperty("user.dir")!!).absoluteFile
         while (dir != null) {

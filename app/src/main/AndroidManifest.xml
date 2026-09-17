@@ -116,11 +116,41 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config"/>
         </service>
+            <!--
+            windowSoftInputMode is declared rather than left to the default,
+            and both halves are load bearing.
+
+            adjustResize, because the default is adjustUnspecified and
+            ViewRootImpl resolves that by walking AttachInfo.mScrollContainers
+            and falling back to adjustPan when the list is empty. A pure
+            Compose window registers nothing there: setScrollContainer is a
+            View API and AndroidComposeView never calls it, so the resolved
+            mode today is pan. Panning translates the whole window to keep the
+            focused field visible, and the prompt sits two thirds down while
+            the keyboard takes the bottom of the screen, so the pan distance
+            is enough to push the header, the status line and Bit's row off
+            the top. The constant is deprecated in favour of
+            setDecorFitsSystemWindows(false) plus an ime() inset listener, and
+            the launcher already does the first half; declaring it is what
+            stops the unspecified value resolving to pan before any of that
+            runs.
+
+            stateAlwaysHidden, because this is the HOME activity and it is
+            singleTask, so coming back from an app returns to the same
+            instance with whatever focus it had. ImeVisibilityStateComputer
+            reads this in two places and both are focus transitions:
+            computeState hides on hasImeFocusChanged, and
+            shouldRestoreImeVisibility returns false so a keyboard that was up
+            when the user left is not restored when they come home. Neither
+            touches the explicit show path, so tapping the prompt still raises
+            the keyboard.
+            -->
             <activity
             android:name=".ui.launcher.LauncherActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:stateNotNeeded="true">
+            android:stateNotNeeded="true"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
