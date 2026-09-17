@@ -91,6 +91,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -629,6 +630,15 @@ fun TerminalHomeView(
     onLaunchIntent: (String, String?) -> Unit,
 ) {
     val context = LocalContext.current
+
+    // Dismissed by hand on execute. KeyboardActions carries a
+    // defaultKeyboardAction, but its only hiding branch is ImeAction.Done:
+    // Go falls through to the else and does nothing, so calling it here
+    // would read as a fix and behave as a no-op. Focus is deliberately left
+    // where it is; hiding the keyboard does not require clearing it, and
+    // clearing it would take the cursor out of the prompt the user is still
+    // working in.
+    val keyboard = LocalSoftwareKeyboardController.current
 
     /**
      * The filter and the prompt are the same field.
@@ -1329,7 +1339,18 @@ fun TerminalHomeView(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(
                         onGo = {
-                            when (val outcome = submit()) {
+                            // Everything below except NeedsConfirmation is a
+                            // finished command, and a finished command has no
+                            // use for the keyboard. It was staying up, which
+                            // halved the viewport the manual and the history
+                            // list then rendered into for no reason. A
+                            // confirmation keeps it, because the user has to
+                            // press Go again.
+                            val outcome = submit()
+                            if (outcome !is DispatchResult.NeedsConfirmation) {
+                                keyboard?.hide()
+                            }
+                            when (outcome) {
                                 is DispatchResult.Confirmed -> {
                                     react(BitStateMachine.Reaction.Confirm(outcome.message(context)))
                                     query = ""
@@ -1364,26 +1385,38 @@ fun TerminalHomeView(
             }
         }
 
-        // One line, two jobs. A pending confirmation outranks the usage hint:
-        // the hint is something to glance at, and this is a question.
+        // One line, two jobs, and always drawn. A pending confirmation
+        // outranks the usage hint: the hint is something to glance at, and
+        // this is a question.
+        //
+        // Composed unconditionally because it used to come and go between the
+        // prompt and the list. The first keystroke produced a hint, inserted
+        // a line and pushed the list down; clearing the query on execute
+        // pulled it back up. That is a shift on every command, in a layout
+        // whose whole claim is that nothing moves unless the user moved it.
+        //
+        // The reservation is the line's own height rather than a dp constant.
+        // Sizes here are in sp, and this app multiplies the system font scale
+        // by its own setting on top, so a number written here would be wrong
+        // on the first device that is not at 1.0 twice over. StatRow in
+        // LeaseGateScreen declines a fixed column width for the same reason.
+        //
+        // One line is reserved, not two. A confirmation long enough to wrap
+        // still costs a line, which is rare, deliberate and not the churn
+        // this fixes. The empty string is a reserved line and not copy, so it
+        // has nothing to translate.
         val armed = pending
-        if (armed != null) {
-            Text(
-                text = stringResource(R.string.cmd_confirm_line, armed.line),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
-                color = PhosphorGreen,
-                modifier = Modifier.padding(top = 4.dp, start = 2.dp),
-            )
-        } else if (commandHint != null) {
-            Text(
-                text = stringResource(R.string.cmd_hint_fmt, commandHint),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
-                color = PhosphorDivider,
-                modifier = Modifier.padding(top = 4.dp, start = 2.dp),
-            )
-        }
+        Text(
+            text = when {
+                armed != null -> stringResource(R.string.cmd_confirm_line, armed.line)
+                commandHint != null -> stringResource(R.string.cmd_hint_fmt, commandHint)
+                else -> ""
+            },
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            color = if (armed != null) PhosphorGreen else PhosphorDivider,
+            modifier = Modifier.padding(top = 4.dp, start = 2.dp),
+        )
 
         Spacer(Modifier.height(10.dp))
 
