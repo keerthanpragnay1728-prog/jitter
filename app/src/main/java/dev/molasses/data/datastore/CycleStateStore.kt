@@ -12,6 +12,7 @@ import dev.molasses.CycleState
 import dev.molasses.core.command.CommandHistory
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
+import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.lease.LeaseLadder
 import dev.molasses.core.lease.LeaseManager
@@ -398,6 +399,33 @@ class CycleStateStore(context: Context) {
         }
     }
 
+    /**
+     * The user's declared horizon per package, snapped to an offered step.
+     *
+     * The standing preference, not what is in force. Between a widen and the
+     * rollover that promotes it those differ, and the engine's per app state
+     * is the one that decides friction.
+     */
+    val appHorizons: Flow<Map<String, Long>> = store.data.map { state ->
+        state.appHorizonMsMap.mapValues { (_, ms) -> HorizonPolicy.snap(ms) }
+    }
+
+    /**
+     * Declare a horizon for [pkg].
+     *
+     * Writes the preference only. Whether it lands now or at the next
+     * rollover is the engine's to decide, through [HorizonPolicy], because
+     * the engine owns the per app state and rewrites it at every checkpoint.
+     * A settings screen writing that state directly would be overwritten
+     * inside fifteen seconds.
+     */
+    suspend fun setAppHorizon(pkg: String, horizonMs: Long) {
+        if (pkg.isEmpty()) return
+        store.updateData {
+            it.toBuilder().putAppHorizonMs(pkg, HorizonPolicy.snap(horizonMs)).build()
+        }
+    }
+
     val gateMode: Flow<GatePolicy.GateMode> =
         store.data.map { gateModeFromOrdinal(it.gateModeOrdinal) }
 
@@ -543,6 +571,8 @@ fun AppSnapshot.toProto(): AppState = AppState.newBuilder()
     .setTierIndex(tierIndex)
     .setLeasesTaken(leasesTaken)
     .setLeaseUntilAccumulatedMs(leaseUntilAccumulatedMs)
+    .setHorizonMs(horizonMs)
+    .setPendingHorizonMs(pendingHorizonMs)
     .setPenaltyMs(penaltyMs)
     .build()
 
@@ -559,6 +589,11 @@ fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
             // would hand every restored package a lease it never took.
             leaseUntilAccumulatedMs = a.leaseUntilAccumulatedMs,
             penaltyMs = a.penaltyMs,
+            // Zero is the migration: every install written before the horizon
+            // existed reads it, and it has to mean the default rather than
+            // the minimum clamped up from nothing.
+            horizonMs = HorizonPolicy.of(a.horizonMs, a.pendingHorizonMs).horizonMs,
+            pendingHorizonMs = HorizonPolicy.of(a.horizonMs, a.pendingHorizonMs).pendingHorizonMs,
         )
     },
     cycleAnchorWallMs = cycleAnchorWallMs,

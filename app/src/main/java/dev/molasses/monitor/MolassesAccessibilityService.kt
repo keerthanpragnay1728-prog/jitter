@@ -391,6 +391,17 @@ class MolassesAccessibilityService : AccessibilityService() {
                 // one piece of state in this app that must not be possible to
                 // disagree about.
                 locks = LockRegistry.of(state.locksList.map { it.toLock() })
+
+                // Re-applied on every emission rather than diffed, because
+                // applying a horizon request is idempotent: once it is in
+                // force, re-applying it changes nothing. That is what lets the
+                // stored value be a standing preference instead of a command
+                // something has to remember it consumed.
+                if (ready) {
+                    for ((pkg, horizonMs) in state.appHorizonMsMap) {
+                        engine.setHorizon(pkg, horizonMs)
+                    }
+                }
                 leases = LeaseManager.of(state.leasesList.map { it.toLease() })
                 gateMode = gateModeFromOrdinal(state.gateModeOrdinal)
 
@@ -827,7 +838,7 @@ class MolassesAccessibilityService : AccessibilityService() {
      */
     private fun queueSessionNotice(pkg: String) {
         val app = engine.state.value.perApp[pkg] ?: return
-        if (app.accumulatedMs < FrictionCurve.onsetMs(FrictionCurve.DEFAULT_HORIZON_MS)) return
+        if (app.accumulatedMs < FrictionCurve.onsetMs(app.horizonMs)) return
         val line = ConsoleLine.Notice(
             id = ConsoleIds.SCROLLED,
             args = listOf(CycleLine.duration(app.accumulatedMs), labelFor(pkg)),

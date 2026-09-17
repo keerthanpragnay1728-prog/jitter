@@ -6,6 +6,7 @@ import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EngineState
 import dev.molasses.core.model.EventType
 import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.model.FrictionDecision
 import dev.molasses.core.time.BootIdProvider
 import dev.molasses.core.time.CycleWindow
@@ -57,6 +58,9 @@ internal class MutableAppState(
      * time; this is a separate number and is shown separately.
      */
     var penaltyMs: Long = 0,
+    /** See [AppSnapshot.horizonMs]. Never zero: [HorizonPolicy.of] resolves it. */
+    var horizonMs: Long = FrictionCurve.DEFAULT_HORIZON_MS,
+    var pendingHorizonMs: Long = HorizonPolicy.NONE,
 ) {
     val tier = MonotonicInt(tierIndex)
 
@@ -70,6 +74,8 @@ internal class MutableAppState(
         leasesTaken = leasesTaken,
         leaseUntilAccumulatedMs = leaseUntilAccumulatedMs,
         penaltyMs = penaltyMs,
+        horizonMs = horizonMs,
+        pendingHorizonMs = pendingHorizonMs,
     )
 }
 
@@ -149,6 +155,8 @@ class FrictionEngine(
                 leasesTaken = s.leasesTaken,
                 leaseUntilAccumulatedMs = s.leaseUntilAccumulatedMs,
                 penaltyMs = s.penaltyMs,
+                horizonMs = s.horizonMs,
+                pendingHorizonMs = s.pendingHorizonMs,
             )
         }
         .toMutableMap()
@@ -253,15 +261,7 @@ class FrictionEngine(
         app.tier.raiseTo(index)
 
         val effective = live + app.penaltyMs
-        // The default horizon until the per-app field lands in the next
-        // commit. Named rather than defaulted, because a call site that does
-        // not say which app's curve it wants is the bug this parameter exists
-        // to make impossible.
-        val friction = FrictionCurve.frictionAt(
-            effective,
-            FrictionCurve.DEFAULT_HORIZON_MS,
-            floorMs,
-        )
+        val friction = FrictionCurve.frictionAt(effective, app.horizonMs, floorMs)
 
         if (!friction.stalls) return FrictionDecision.NONE
 
@@ -282,7 +282,7 @@ class FrictionEngine(
 
         return FrictionDecision(
             stallMs = stallMs,
-            terminal = effective >= FrictionCurve.terminalMs(FrictionCurve.DEFAULT_HORIZON_MS),
+            terminal = effective >= FrictionCurve.terminalMs(app.horizonMs),
         )
     }
 
@@ -297,11 +297,38 @@ class FrictionEngine(
     fun isTerminal(pkg: String, nowMs: Long): Boolean {
         val app = apps[pkg] ?: return false
         return liveAccumulatedMs(app, nowMs) + app.penaltyMs >=
-            FrictionCurve.terminalMs(FrictionCurve.DEFAULT_HORIZON_MS)
+            FrictionCurve.terminalMs(app.horizonMs)
     }
 
     /** Leases granted on [pkg] in the current cycle. Drives the escalation. */
     fun leasesTakenThisCycle(pkg: String): Int = apps[pkg]?.leasesTaken ?: 0
+
+    /**
+     * Apply the user's declared horizon for [pkg].
+     *
+     * Narrowing lands now, widening waits for the next rollover; see
+     * [HorizonPolicy], which holds the rule and the reason. Idempotent, so
+     * the caller re-applies the stored preference on every settings emission
+     * rather than tracking whether it already did.
+     *
+     * Touches neither `accumulatedMs` nor `tier`. A horizon is a statement
+     * about what a session is for, not a reset, and someone forty minutes
+     * into a widened curve stays forty minutes into it.
+     */
+    fun setHorizon(pkg: String, requestedMs: Long) {
+        val app = appState(pkg)
+        val before = HorizonPolicy.of(app.horizonMs, app.pendingHorizonMs)
+        val after = HorizonPolicy.request(before, requestedMs)
+        if (after == before) return
+        app.horizonMs = after.horizonMs
+        app.pendingHorizonMs = after.pendingHorizonMs
+        ledger.log(
+            pkg,
+            EventType.HORIZON_SET,
+            "horizon=${after.horizonMs} pending=${after.pendingHorizonMs}",
+        )
+        publish()
+    }
 
     /**
      * Grow [MutableAppState.penaltyMs] while a checkpoint is overdue.
@@ -487,7 +514,21 @@ class FrictionEngine(
 
         val ageMs = CycleWindow.ageMs(reference, now)
         val keys = apps.keys.toList()
-        for (pkg in keys) apps[pkg] = MutableAppState(pkg)
+        for (pkg in keys) {
+            // The horizon crosses the rollover, and a widen waiting for one
+            // lands here. Everything else about the app starts over, which is
+            // what makes the rollover the right moment: the accumulated total
+            // the new curve is read against is zero, so a wider horizon can
+            // never arrive part way up a ramp it did not scale.
+            val promoted = HorizonPolicy.promote(
+                HorizonPolicy.of(apps.getValue(pkg).horizonMs, apps.getValue(pkg).pendingHorizonMs),
+            )
+            apps[pkg] = MutableAppState(
+                pkg = pkg,
+                horizonMs = promoted.horizonMs,
+                pendingHorizonMs = promoted.pendingHorizonMs,
+            )
+        }
 
         if (openPkg != null) {
             // Rolling over in place, mid-session. The new cycle starts now,

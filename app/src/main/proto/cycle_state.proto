@@ -145,6 +145,21 @@ message CycleState {
   // also the default, so an install that has never touched the setting reads
   // correctly with no migration.
   int32 gate_mode_ordinal = 34;
+
+  // The user's declared horizon per package, as set in settings.
+  //
+  // Separate from AppState.horizon_ms, which is the engine's derived state:
+  // this is the standing preference and that is what is actually in force,
+  // and between a widen and the rollover that promotes it they differ. The
+  // engine owns per app state and rewrites it at every checkpoint, so a
+  // settings screen writing there directly would be overwritten within
+  // fifteen seconds, which is the same problem debug_override_nonce exists
+  // for.
+  //
+  // Applying a request is idempotent, so this is never cleared and never
+  // needs to be: it is read on every settings emission and re-applied, and
+  // re-applying it changes nothing once it is in force.
+  map<string, int64> app_horizon_ms = 35;
 }
 
 // One line of Bit's speech, in the form that survives a process death.
@@ -260,6 +275,17 @@ message AppState {
   // lease is overdue and never decreases. Kept separate from accumulated_ms
   // on purpose, so the ledger still reports true time.
   int64 penalty_ms = 5;
+
+  // The declared session horizon this app's curve is scaled to, and a wider
+  // one waiting for the next rollover. New field numbers, not reused: field 4
+  // has already changed meaning once and a second reinterpretation of an
+  // existing number is how a stored file starts lying.
+  //
+  // Zero means unset, which reads as the default rather than as ten minutes
+  // clamped up from zero. That is what every existing install reads on its
+  // first launch after this ships, so it has to be the migration.
+  int64 horizon_ms = 6;
+  int64 pending_horizon_ms = 7;
 }
 
 enum CycleResetPolicyProto {
