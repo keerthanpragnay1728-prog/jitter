@@ -787,7 +787,6 @@ fun TerminalHomeView(
     val manualRows = remember(dispatch, showManual) {
         Manual.rows(dispatch.registry, dispatch::availabilityOf)
     }
-    val suggestable = remember(manualRows) { Manual.suggestable(manualRows) }
 
     // Bit's transient reaction and when it started. The monotonic clock, so a
     // clock change cannot leave a face stuck on screen.
@@ -1264,22 +1263,24 @@ fun TerminalHomeView(
 
             Box(modifier = Modifier.weight(1f)) {
                 if (query.isEmpty()) {
-                    // The placeholder rotates through commands that actually
-                    // work on this device, driven off Bit's existing tick so
-                    // discovery costs no timer of its own.
-                    val suggestion = Manual.at(
-                        suggestable,
-                        (bitTickMs / PLACEHOLDER_CYCLE_MS).toInt(),
-                    )
+                    // One line, and it does not move.
+                    //
+                    // It used to rotate through the commands available on
+                    // this device, a new one every five seconds off Bit's
+                    // tick. The idea was that discovery cost no timer of its
+                    // own; the effect was a hint that changed while you were
+                    // reading it, so you either read it twice or stopped
+                    // reading it. A prompt with a moving label is also a
+                    // prompt that never looks idle, which is the opposite of
+                    // what this screen is for.
+                    //
+                    // So: name the one command that opens the whole list, and
+                    // let the list do the explaining. "?" is on the STATE
+                    // surface, which nothing can make unavailable, so this
+                    // advice cannot dead-end on a degraded device.
+                    // ManualTest pins that.
                     Text(
-                        text = if (suggestion == null) {
-                            stringResource(R.string.launcher_search_placeholder)
-                        } else {
-                            stringResource(
-                                R.string.launcher_placeholder_try,
-                                stringResource(suggestion.usageKey),
-                            )
-                        },
+                        text = stringResource(R.string.launcher_search_placeholder),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         color = PhosphorDim,
@@ -2447,7 +2448,6 @@ private const val TAG_LAUNCHER = "Molasses.Launcher"
  * long enough to read a usage shape and short enough that someone standing at
  * the home screen sees more than one.
  */
-private const val PLACEHOLDER_CYCLE_MS = 5_000L
 
 /** Taps inside this window count toward the same burst. */
 private const val BIT_TAP_WINDOW_MS = 400L

@@ -2,7 +2,6 @@ package dev.molasses.core.command
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -63,41 +62,25 @@ class ManualTest {
         }
     }
 
-    // --------------------------------------------------------- suggestions
+    // ------------------------------------------------------- the way in
 
     @Test
-    fun `only available commands are suggested`() {
-        // A placeholder is an invitation. Inviting someone to type a command
-        // that then reports it cannot run teaches them to stop reading.
-        val rows = rows {
-            if (it.verb == "status" || it.verb == "help") Availability.Available
-            else Availability.Unavailable(7)
-        }
-        assertEquals(listOf("status", "help"), Manual.suggestable(rows).map { it.verb })
-    }
-
-    @Test
-    fun `the suggestion index wraps in both directions`() {
-        val rows = Manual.suggestable(rows { Availability.Available })
-        val n = rows.size
-        assertEquals(rows[0], Manual.at(rows, 0))
-        assertEquals(rows[0], Manual.at(rows, n))
-        assertEquals(rows[1], Manual.at(rows, n + 1))
-        // A counter that lives long enough to overflow still produces a row.
-        assertNotNull(Manual.at(rows, -1))
-        assertNotNull(Manual.at(rows, Int.MIN_VALUE))
-    }
-
-    @Test
-    fun `nothing suggestable yields no suggestion rather than throwing`() {
-        assertNull(Manual.at(emptyList(), 3))
-    }
-
-    @Test
-    fun `help is always suggestable, because it is the way in`() {
-        // help sits on STATE, which nothing can make unavailable. If that
-        // stops being true, discovery has no entry point on a broken device.
+    fun `help is always available, because it is the way in`() {
+        // help sits on STATE, which nothing can make unavailable. It matters
+        // more than it did: the prompt placeholder is now a single static
+        // line telling the user to type "?", so if help could go unavailable
+        // the only advertised route into the app would dead-end.
         val help = registry.specForVerb("help")!!
         assertEquals(Surface.STATE, help.surface)
+    }
+
+    @Test
+    fun `every row is reachable from the one command the placeholder names`() {
+        // The placeholder points at "?" and nothing else, so this page is the
+        // whole of discovery. A verb that is in the registry is in here,
+        // available or not, which is what makes that a complete answer rather
+        // than a partial one.
+        val rows = rows { Availability.Available }
+        assertEquals(registry.specs.map { it.verb }, rows.map { it.verb })
     }
 }
