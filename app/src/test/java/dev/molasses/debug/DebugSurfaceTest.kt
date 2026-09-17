@@ -135,3 +135,80 @@ class DebugSurfaceTest {
         )
     }
 }
+
+/**
+ * The blink trace must not exist in a release variant either.
+ *
+ * Same split and same reasoning as `DebugSurface`, and worth its own test
+ * because the cost of getting it wrong is different: a trace left in release
+ * writes twenty five log lines a second for as long as the launcher is on
+ * screen, which is a battery and logcat problem rather than a bypass.
+ */
+class BitTraceTest {
+
+    private fun repoRoot(): File? = listOf(File("."), File(".."), File("/home/user/visceral"))
+        .firstOrNull { File(it, "app/src/main/java/dev/molasses").isDirectory }
+
+    private fun read(root: File, path: String) = File(root, path).readText()
+
+    private val debugPath = "app/src/debug/java/dev/molasses/debug/BitTrace.kt"
+    private val releasePath = "app/src/release/java/dev/molasses/debug/BitTrace.kt"
+
+    @Test
+    fun `both variants supply the trace`() {
+        val root = repoRoot()
+        assumeTrue("repo root not locatable", root != null)
+        assertTrue("missing $debugPath", File(root, debugPath).isFile)
+        assertTrue("missing $releasePath", File(root, releasePath).isFile)
+    }
+
+    @Test
+    fun `release disables the trace and debug enables it`() {
+        val root = repoRoot()
+        assumeTrue("repo root not locatable", root != null)
+        assertTrue(read(root!!, debugPath).contains("ENABLED: Boolean = true"))
+        assertTrue(read(root, releasePath).contains("ENABLED: Boolean = false"))
+    }
+
+    @Test
+    fun `the release trace writes nothing`() {
+        val root = repoRoot()
+        assumeTrue("repo root not locatable", root != null)
+        val release = read(root!!, releasePath)
+        for (forbidden in listOf("Log.d", "Log.i", "Log.w", "Log.e", "android.util.Log")) {
+            assertFalse(
+                "release BitTrace must not contain $forbidden",
+                release.contains(forbidden),
+            )
+        }
+    }
+
+    @Test
+    fun `both variants declare the same entry points`() {
+        val root = repoRoot()
+        assumeTrue("repo root not locatable", root != null)
+        for (signature in listOf("fun tick(", "fun drew(")) {
+            assertTrue(
+                "debug BitTrace is missing $signature",
+                read(root!!, debugPath).contains(signature),
+            )
+            assertTrue(
+                "release BitTrace is missing $signature",
+                read(root, releasePath).contains(signature),
+            )
+        }
+    }
+
+    @Test
+    fun `the trace is called from the blink ticker and the render`() {
+        // The whole value of it is that the two are logged from the two
+        // different places. One without the other cannot separate a state
+        // fault from a rendering one, which is the only question it exists
+        // to answer.
+        val root = repoRoot()
+        assumeTrue("repo root not locatable", root != null)
+        val launcher = read(root!!, "app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt")
+        assertTrue("BitTrace.tick is not called", launcher.contains("BitTrace.tick("))
+        assertTrue("BitTrace.drew is not called", launcher.contains("BitTrace.drew("))
+    }
+}
