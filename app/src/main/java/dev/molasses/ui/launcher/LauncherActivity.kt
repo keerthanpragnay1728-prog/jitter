@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1390,8 +1391,24 @@ fun TerminalHomeView(
         // user just asked for; a filter is what they are typing; and an empty
         // prompt is the only moment there is room to show them what they have
         // typed before.
+        //
+        // imePadding because the window does not resize for the keyboard:
+        // setDecorFitsSystemWindows(false) hands that job to the content, and
+        // until now nothing in this tree took it, so the list ran to the
+        // bottom of the window and the keyboard covered roughly the lower
+        // half of it. The filtered app list is the case that makes this a bug
+        // rather than a blemish: it only exists while the query is non-empty,
+        // which is exactly when the keyboard is up, so the list that only
+        // appears with the keyboard was the list the keyboard covered.
+        //
+        // On this list and not on the whole column. Padding the column would
+        // move the prompt and Bit's row, which is the panning behaviour the
+        // manifest now declares its way out of. Only the list gives up the
+        // space, because only the list has space to give.
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             when {
@@ -2358,8 +2375,12 @@ private fun AppDrawerOverlay(
             )
         }
 
+        // Same as the console list: the window does not resize for the
+        // keyboard, and this filter is only useful while the keyboard is up.
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             items(shown, key = { it.packageName }) { app ->
