@@ -219,3 +219,131 @@ class HorizonPolicyTest {
         }
     }
 }
+
+/**
+ * The confirmation echo on a widen.
+ *
+ * Separate class because it is a separate guard: `request` is the rule about
+ * when a change lands, and `evaluate` is the rule about how many deliberate
+ * acts it takes to ask for one.
+ */
+class HorizonConfirmationTest {
+
+    private val min = 60_000L
+    private val default = FrictionCurve.DEFAULT_HORIZON_MS
+
+    @Test
+    fun `a widen echoes before it is accepted`() {
+        val v = HorizonPolicy.evaluate(State(25 * min), 60 * min)
+        assertEquals(HorizonPolicy.Verdict.Confirm(25 * min, 60 * min), v)
+    }
+
+    @Test
+    fun `a confirmed widen becomes pending`() {
+        val v = HorizonPolicy.evaluate(State(25 * min), 60 * min, confirmed = true)
+        assertEquals(
+            HorizonPolicy.Verdict.Apply(State(25 * min, 60 * min)),
+            v,
+        )
+    }
+
+    @Test
+    fun `one step wider still echoes`() {
+        // Any widen, not only a large one. A ladder walked one rung at a time
+        // with no echo is the same outcome reached without ever saying it.
+        val v = HorizonPolicy.evaluate(State(25 * min), 30 * min)
+        assertEquals(HorizonPolicy.Verdict.Confirm(25 * min, 30 * min), v)
+    }
+
+    @Test
+    fun `a narrow applies on the first press`() {
+        val v = HorizonPolicy.evaluate(State(25 * min), 15 * min)
+        assertEquals(HorizonPolicy.Verdict.Apply(State(15 * min)), v)
+    }
+
+    @Test
+    fun `cancelling a pending widen applies on the first press`() {
+        // Taking back a widen is a request for more friction, and asking for
+        // more friction is never the harder path.
+        val v = HorizonPolicy.evaluate(State(25 * min, 60 * min), 25 * min)
+        assertEquals(HorizonPolicy.Verdict.Apply(State(25 * min)), v)
+    }
+
+    @Test
+    fun `narrowing out of a pending widen applies on the first press`() {
+        val v = HorizonPolicy.evaluate(State(25 * min, 60 * min), 10 * min)
+        assertEquals(HorizonPolicy.Verdict.Apply(State(10 * min)), v)
+    }
+
+    @Test
+    fun `asking again for what is already pending is nothing to confirm`() {
+        val v = HorizonPolicy.evaluate(State(25 * min, 60 * min), 60 * min)
+        assertEquals(HorizonPolicy.Verdict.None, v)
+    }
+
+    @Test
+    fun `asking for what is already in force is nothing to confirm`() {
+        assertEquals(
+            HorizonPolicy.Verdict.None,
+            HorizonPolicy.evaluate(State(default), default),
+        )
+    }
+
+    @Test
+    fun `replacing one pending widen with another still echoes`() {
+        // Pending sixty, asking for thirty. Thirty is narrower than sixty but
+        // wider than the twenty five actually in force, so it is a widen and
+        // it echoes. Measuring against the pending value instead would let a
+        // user walk 25 to 60 to 30 and land on thirty having confirmed
+        // nothing since the first press.
+        val v = HorizonPolicy.evaluate(State(25 * min, 60 * min), 30 * min)
+        assertEquals(HorizonPolicy.Verdict.Confirm(25 * min, 30 * min), v)
+    }
+
+    @Test
+    fun `confirming is idempotent`() {
+        val once = HorizonPolicy.evaluate(State(25 * min), 60 * min, confirmed = true)
+        val state = (once as HorizonPolicy.Verdict.Apply).state
+        assertEquals(
+            HorizonPolicy.Verdict.None,
+            HorizonPolicy.evaluate(state, 60 * min, confirmed = true),
+        )
+    }
+
+    @Test
+    fun `every widen on the ladder echoes and every narrow does not`() {
+        for (from in HorizonPolicy.STEPS_MS) {
+            for (to in HorizonPolicy.STEPS_MS) {
+                val v = HorizonPolicy.evaluate(State(from), to)
+                when {
+                    to > from -> assertTrue(
+                        "$from to $to should echo, got $v",
+                        v is HorizonPolicy.Verdict.Confirm,
+                    )
+                    to < from -> assertTrue(
+                        "$from to $to should apply, got $v",
+                        v is HorizonPolicy.Verdict.Apply,
+                    )
+                    else -> assertEquals(HorizonPolicy.Verdict.None, v)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `an echo never changes anything on its own`() {
+        // The whole point. A first press must leave the stored state exactly
+        // as it was, or the confirmation would be theatre over a change that
+        // had already happened.
+        val before = State(25 * min)
+        assertTrue(HorizonPolicy.evaluate(before, 60 * min) is HorizonPolicy.Verdict.Confirm)
+        assertEquals(before, before)
+        // And the value it echoes is the one that would land.
+        val echo = HorizonPolicy.evaluate(before, 60 * min) as HorizonPolicy.Verdict.Confirm
+        val applied = HorizonPolicy.evaluate(before, 60 * min, confirmed = true)
+        assertEquals(
+            echo.toMs,
+            (applied as HorizonPolicy.Verdict.Apply).state.pendingHorizonMs,
+        )
+    }
+}

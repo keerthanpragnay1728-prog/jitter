@@ -20,8 +20,14 @@ class FrictionCurveTest {
     private fun atMs(ms: Long, horizonMs: Long = default) =
         FrictionCurve.frictionAt(ms, horizonMs, floor)
 
-    /** The three horizons every shape assertion is run at. */
-    private val horizons = listOf(18L, 30L, 60L).map { it * 60_000 }
+    /**
+     * Every shape assertion runs at all of these.
+     *
+     * The bottom and the top of the offered range are in the list because
+     * they are where the clamps and the taper bind, and the default is in it
+     * because it is the one most people will ever see.
+     */
+    private val horizons = listOf(10L, 18L, 25L, 30L, 60L).map { it * 60_000 }
 
     /**
      * Where a knot sits, in milliseconds, for a given horizon.
@@ -306,8 +312,27 @@ class FrictionCurveTest {
     @Test
     fun `an absurd accumulated time does not overflow or wrap`() {
         val p = FrictionCurve.frictionAt(Long.MAX_VALUE, default, floor)
-        assertEquals(5000, p.stallMs)
-        assertEquals(1.0f, p.probability, 0f)
+        assertEquals(FrictionCurve.terminalStallMs(default), p.stallMs)
+        assertEquals(FrictionCurve.terminalProbability(default), p.probability, 0f)
+    }
+
+    @Test
+    fun `the default horizon sits just inside the taper`() {
+        // Worth pinning, because it is the one place the default is not the
+        // old curve's ceiling. Twenty five minutes is an eighth of the way
+        // from the taper's start to its end, so the ceiling comes down by an
+        // eighth of its range: 4750ms at 96% rather than 5000 at 100%.
+        //
+        // The terminal is still at twenty five minutes, which is the half the
+        // hardware measurements are about. Moving TAPER_FROM_HORIZON_MS to
+        // twenty five would restore the old ceiling exactly and is a one line
+        // change; it is not made here because the taper endpoints were
+        // specified as twenty to sixty.
+        assertEquals(25 * 60_000L, default)
+        assertEquals(10 * 60_000L, FrictionCurve.ONSET_MS)
+        assertEquals(25 * 60_000L, FrictionCurve.TERMINAL_MS)
+        assertEquals(4750, FrictionCurve.terminalStallMs(default))
+        assertEquals(0.9625f, FrictionCurve.terminalProbability(default), 0.0005f)
     }
 
     @Test
@@ -364,7 +389,7 @@ class FrictionCurveTest {
     // ---------------------------------------------------------- report
 
     /**
-     * The three horizons side by side.
+     * The offered horizons side by side.
      *
      * Reported rather than asserted, the same way the run length distribution
      * is. The shape assertions above pin the knots; this is for reading the
@@ -373,17 +398,18 @@ class FrictionCurveTest {
      * friction and light enough to still be a lecture.
      */
     @Test
-    fun `report the curve at three horizons`() {
+    fun `report the curve at every offered horizon`() {
         println("friction curve by horizon (floor ${floor}ms)")
-        println("  horizon  onset   terminal  ceiling")
+        println("  horizon  onset   terminal  ceiling         at the floor for")
         for (h in horizons) {
             println(
-                "  %5dm  %6s  %7s  %4dms @ %3.0f%%".format(
+                "  %5dm  %6s  %7s  %4dms @ %3.0f%%  %14s".format(
                     h / 60_000,
                     clock(FrictionCurve.onsetMs(h)),
                     clock(FrictionCurve.terminalMs(h)),
                     FrictionCurve.terminalStallMs(h),
                     FrictionCurve.terminalProbability(h) * 100,
+                    clock(flatSpanMs(h)),
                 ),
             )
         }
@@ -397,6 +423,19 @@ class FrictionCurveTest {
             }
             println("  %4.0f%%  %s".format(share * 100, cells))
         }
+    }
+
+    /**
+     * How long the curve stays pinned at the floor, where only probability
+     * moves. The two dimensional design is only visible while this lasts, so
+     * it is the number that decides whether the bottom of the offered range
+     * is still a curve or just a switch.
+     */
+    private fun flatSpanMs(horizonMs: Long): Long {
+        val onset = FrictionCurve.onsetMs(horizonMs)
+        var t = onset
+        while (t < horizonMs && atMs(t, horizonMs).stallMs <= floor) t += 1_000
+        return t - onset
     }
 
     private fun clock(ms: Long): String {

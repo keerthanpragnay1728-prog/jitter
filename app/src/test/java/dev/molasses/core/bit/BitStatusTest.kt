@@ -76,10 +76,9 @@ class BitStatusTest {
             BitStateMachine.Mood.VIGILANT,
             BitStateMachine.moodFor(BitStatus.deepestMs(apps), horizon),
         )
-        // What the bug produced, for contrast: on the default horizon the
-        // summed twenty minutes is past the terminal outright.
+        // What the bug produced, for contrast.
         assertEquals(
-            BitStateMachine.Mood.GLITCHED,
+            BitStateMachine.Mood.ANNOYED,
             BitStateMachine.moodFor(apps.sumOf { it.accumulatedMs }, horizon),
         )
     }

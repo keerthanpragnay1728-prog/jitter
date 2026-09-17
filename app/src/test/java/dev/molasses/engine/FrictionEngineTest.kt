@@ -108,7 +108,7 @@ class FrictionEngineTest {
         r.lease(ig, 0, 5 * min)
 
         assertEquals("before the curve's onset", 0L, r.scroll(ig, 5 * min).stallMs)
-        assertTrue("past the onset", r.scroll(ig, 7 * min).stalls)
+        assertTrue("past the onset", r.scroll(ig, 12 * min).stalls)
     }
 
     @Test
@@ -215,12 +215,20 @@ class FrictionEngineTest {
         step(30 * min, 6)
         step(120 * min, 24)
 
-        assertEquals("terminal stall", 5_000L, previousStall)
+        // The default horizon sits an eighth into the taper, so its ceiling
+        // is 4750 rather than 5000. Read from the curve rather than written
+        // as a literal, so retuning the taper does not make this a test of a
+        // constant instead of the invariant it is about.
+        assertEquals(
+            "terminal stall",
+            FrictionCurve.terminalStallMs(FrictionCurve.DEFAULT_HORIZON_MS).toLong(),
+            previousStall,
+        )
     }
 
     @Test
     fun `the curve onset is the default horizon's forty percent`() {
-        // Seven minutes twelve on the default eighteen minute horizon.
+        // Ten minutes on the default twenty five minute horizon.
         // Isolated so a change to the horizon shows up here rather than as a
         // surprise somewhere downstream.
         val r = Rig()
@@ -229,30 +237,30 @@ class FrictionEngineTest {
         // measures the curve rather than the ratchet.
         r.lease(ig, 0, 15 * min)
 
-        assertEquals(7 * min + 12_000L, FrictionCurve.ONSET_MS)
-        assertEquals(0L, r.scroll(ig, 7 * min).stallMs)
-        assertTrue(r.scroll(ig, 7 * min + 30_000).stalls)
+        assertEquals(10 * min, FrictionCurve.ONSET_MS)
+        assertEquals(0L, r.scroll(ig, 9 * min + 30_000).stallMs)
+        assertTrue(r.scroll(ig, 10 * min + 30_000).stalls)
     }
 
     @Test
     fun `overstaying a lease pulls the onset forward`() {
         // The other side of the same coin, asserted rather than left
-        // implicit. Five minutes leased and ninety seconds overstayed is
-        // eight minutes of effective time at six and a half of real time,
-        // which is past an onset that real time has not reached.
+        // implicit. Five minutes leased and three overstayed is eleven
+        // minutes of effective time at eight of real time, which is past an
+        // onset that real time has not reached.
         val overstayed = Rig()
         overstayed.enter(ig, 0)
         overstayed.lease(ig, 0, 5 * min)
         assertTrue(
-            "ninety seconds overdue should reach the onset early",
-            overstayed.scroll(ig, 6 * min + 30_000).stalls,
+            "three minutes overdue should reach the onset early",
+            overstayed.scroll(ig, 8 * min).stalls,
         )
 
         // Without the overstay, the same real time earns nothing.
         val covered = Rig()
         covered.enter(ig, 0)
         covered.lease(ig, 0, 15 * min)
-        assertEquals(0L, covered.scroll(ig, 6 * min + 30_000).stallMs)
+        assertEquals(0L, covered.scroll(ig, 8 * min).stallMs)
     }
 
     @Test
@@ -428,7 +436,7 @@ class FrictionEngineTest {
         assertEquals(0L, r.snap(yt).accumulatedMs)
 
         assertEquals(FrictionDecision.NONE, r.scroll(yt, 6 * min))
-        assertTrue(r.scroll(yt, 12 * min).stalls)
+        assertTrue(r.scroll(yt, 16 * min).stalls)
         // Instagram is untouched at 3 minutes.
         assertEquals(3 * min, r.snap(ig).accumulatedMs)
     }
@@ -570,9 +578,9 @@ class FrictionEngineTest {
         // Past the curve's onset, or the scroll earns nothing and writes no
         // row. A SCROLL row is written when a stall is actually commanded,
         // which is the only moment it describes anything.
-        r.scroll(ig, 8 * min)
-        r.lease(ig, 8 * min + 3_000, 5 * min)
-        r.exit(ig, 9 * min)
+        r.scroll(ig, 12 * min)
+        r.lease(ig, 12 * min + 3_000, 5 * min)
+        r.exit(ig, 13 * min)
 
         val types = r.ledger.typesFor(ig)
         assertTrue(types.contains(EventType.RESUMED))

@@ -94,7 +94,7 @@
          apps.
     -->
     <string name="settings_horizon_title">Session horizon</string>
-    <string name="settings_horizon_body">How long a session in this app is meant to be. A longer horizon means friction starts later and stays lighter at its heaviest, so an hour of lectures stays watchable. It is not extra time and it refunds nothing: time you have already spent in this cycle still counts against the new shape. Widening takes effect at the next cycle reset. Narrowing takes effect now.</string>
+    <string name="settings_horizon_body">How long a session in this app is meant to be. A longer horizon means friction starts later and stays lighter at its heaviest, so an hour of lectures stays watchable. It is not extra time and it refunds nothing: time you have already spent in this cycle still counts against the new shape. Widening asks twice and then takes effect at the next cycle reset. Narrowing takes effect on the first press.</string>
     <string name="settings_horizon_fmt" translatable="false">horizon  %1$s</string>
     <string name="settings_horizon_onset_fmt" translatable="false">onset %1$s</string>
     <string name="settings_horizon_narrow" translatable="false">[ - ]</string>
@@ -102,6 +102,9 @@
     <!-- %1$s is the new horizon, %2$s is the time until the cycle resets. -->
     <string name="settings_horizon_pending_fmt">%1$s takes effect next cycle (%2$s)</string>
     <string name="settings_horizon_pending_unknown_fmt">%1$s takes effect next cycle</string>
+    <!-- %1$s is the horizon in force, %2$s the one being asked for. The app is
+         named by the row this sits under, so it is not repeated here. -->
+    <string name="settings_horizon_confirm_fmt">%1$s to %2$s? Press again to confirm.</string>
 
     <string name="settings_lock_remaining_fmt">LOCKED %1$s</string>
     <string name="settings_lock_scrub_fmt">Lock for %1$s</string>

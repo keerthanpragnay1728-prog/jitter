@@ -92,6 +92,60 @@ object HorizonPolicy {
         }
     }
 
+    /**
+     * What a request does, including whether it has to be echoed first.
+     *
+     * The shape is `LockRequest.Verdict` and deliberately so: a lock over a
+     * day and a widened horizon are the same kind of decision, made once,
+     * hard to see the consequence of, and easy to make by leaning on a
+     * button. One of them already had an echo.
+     */
+    sealed interface Verdict {
+        /** Do it. [state] is what to store. */
+        data class Apply(val state: State) : Verdict
+
+        /** A widen. Say it back and wait for a second, deliberate press. */
+        data class Confirm(val fromMs: Long, val toMs: Long) : Verdict
+
+        /** Already the case. Not an error and not a thing to confirm. */
+        data object None : Verdict
+    }
+
+    /**
+     * Evaluate a request against the state it is made from.
+     *
+     * ## Why a widen echoes and a narrow does not
+     * The rollover delay turned out to be a cooling-off period rather than a
+     * cost. Under `ABSTINENCE_6H` the cycle resets after six hours with no
+     * target use, so the user most likely to want sixty minutes is the one
+     * who next opens the app after a long gap, which is exactly when the
+     * promotion has already fired. The delay stops the impulsive widen, which
+     * is its job, and does nothing at all about the considered one. That left
+     * the trip to settings carrying the whole defence by itself.
+     *
+     * So a widen now costs three separate deliberate acts: reaching settings,
+     * saying it twice, and waiting a cycle. A narrow costs one press, because
+     * asking for more friction should never be the harder path.
+     *
+     * @param confirmed true when this is the second, deliberate pass.
+     */
+    fun evaluate(state: State, requestedMs: Long, confirmed: Boolean = false): Verdict {
+        val requested = snap(requestedMs)
+        val current = snap(state.horizonMs)
+        return when {
+            // Already waiting for exactly this. Confirming it again would be
+            // asking someone to agree to something they have agreed to.
+            state.hasPending && requested == snap(state.pendingHorizonMs) -> Verdict.None
+            requested == current && !state.hasPending -> Verdict.None
+            // Narrower, or a cancel of a pending widen. Neither needs a
+            // second look: both leave the user with more friction than they
+            // had a moment ago.
+            requested <= current -> Verdict.Apply(request(state, requested))
+            !confirmed -> Verdict.Confirm(current, requested)
+            else -> Verdict.Apply(request(state, requested))
+        }
+    }
+
     /** The cycle turned. Anything waiting is now in force. */
     fun promote(state: State): State =
         if (state.hasPending) State(snap(state.pendingHorizonMs), NONE) else state
