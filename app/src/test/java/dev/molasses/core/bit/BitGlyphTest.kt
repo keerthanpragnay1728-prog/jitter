@@ -1,6 +1,8 @@
 package dev.molasses.core.bit
 
+import dev.molasses.core.console.ConsoleLine
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -136,5 +138,118 @@ class BitGlyphTest {
     @Test
     fun `the slits are distinct`() {
         assertEquals(BitGlyph.SLITS.size, BitGlyph.SLITS.distinct().size)
+    }
+
+    // -------------------------------------------------- the second slot
+
+    @Test
+    fun `the slit slot is as wide as the widest slit`() {
+        // Derived exactly the way WIDTH is derived from FACES, so [!] and [z]
+        // cannot drift away from [|] and be silently truncated.
+        assertEquals(BitGlyph.SLITS.maxOf { it.length }, BitGlyph.SLIT_WIDTH)
+    }
+
+    @Test
+    fun `the slit slot is narrower than the face slot`() {
+        // If it were not, the whole exercise is pointless: the retreat exists
+        // to get out of the way, and it could not reach the bezel while it
+        // was padded to the width of a face.
+        assertTrue(
+            "slit slot ${BitGlyph.SLIT_WIDTH} is not narrower than ${BitGlyph.WIDTH}",
+            BitGlyph.SLIT_WIDTH < BitGlyph.WIDTH,
+        )
+    }
+
+    @Test
+    fun `padFor puts a slit in the narrow slot and a face in the wide one`() {
+        for (slit in BitGlyph.SLITS) {
+            assertEquals(slit, BitGlyph.SLIT_WIDTH, BitGlyph.padFor(slit).length)
+        }
+        for (face in BitStateMachine.FACES) {
+            assertEquals(face, BitGlyph.WIDTH, BitGlyph.padFor(face).length)
+        }
+    }
+
+    @Test
+    fun `padFor is still left aligned, in either slot`() {
+        // The blink fix is not undone by the second width. Every glyph starts
+        // at column zero; only the trailing pad varies.
+        for (glyph in BitGlyph.SLITS + BitStateMachine.FACES) {
+            assertTrue(glyph, BitGlyph.padFor(glyph).startsWith(glyph))
+        }
+    }
+
+    @Test
+    fun `no face is a slit`() {
+        // padFor keys on content, so the two sets being disjoint is what
+        // makes it sound. A face spelled [|] would narrow the slot for a
+        // face, which is the original snap-target bug wearing a new hat.
+        for (face in BitStateMachine.FACES) {
+            assertTrue("face '$face' collides with a slit", face !in BitGlyph.SLITS)
+        }
+        for (slit in BitGlyph.SLITS) {
+            assertTrue("slit '$slit' collides with a face", slit !in BitStateMachine.FACES)
+        }
+    }
+
+    @Test
+    fun `no readout can be mistaken for a slit`() {
+        // BitHud emits exactly WIDTH characters and a slit is shorter, so the
+        // collision is arithmetically impossible rather than merely unlikely.
+        // BitHudTest sweeps the input range; this pins the reason.
+        assertNotEquals(BitGlyph.WIDTH, BitGlyph.SLIT_WIDTH)
+        for (slit in BitGlyph.SLITS) {
+            assertNotEquals(slit.length, BitGlyph.WIDTH)
+        }
+    }
+
+    @Test
+    fun `no BitDisplay case renders a slit beside a face`() {
+        // The constraint that makes a second width safe at all: a slit and a
+        // face never share a frame, so the slot is unambiguous for any one
+        // frame. Enumerated over every case of BitDisplay, Speech included,
+        // because Speech carries a mood and therefore renders a face rather
+        // than a glyph, and that is easy to change by accident.
+        val cases: List<BitDisplay> = listOf(
+            BitDisplay.Face(BitStateMachine.Mood.IDLE, BitStateMachine.Reaction.None),
+            BitDisplay.Face(BitStateMachine.Mood.GLITCHED, BitStateMachine.Reaction.Glitching),
+            BitDisplay.Hud(HudStep.PRIMARY, BitGlyph.pad("12m")),
+            BitDisplay.Speech(
+                ConsoleLine.Notice("scrolled", listOf("27m")),
+                BitStateMachine.Mood.VIGILANT,
+            ),
+            BitDisplay.Speech(
+                ConsoleLine.Prompt("scrolled", listOf("27m"), action = "focus"),
+                BitStateMachine.Mood.ANNOYED,
+            ),
+        ) + BitGlyph.SLITS.map { BitDisplay.Slit(it) }
+
+        for (case in cases) {
+            val face = BitStateMachine.frame(case, reactionAgeMs = 0L, tickMs = 0L).face
+            val isSlit = case is BitDisplay.Slit
+            assertEquals(
+                "$case rendered '$face'",
+                isSlit,
+                face in BitGlyph.SLITS,
+            )
+            assertEquals(
+                "$case rendered '$face' into the wrong slot",
+                if (isSlit) BitGlyph.SLIT_WIDTH else BitGlyph.WIDTH,
+                BitGlyph.padFor(face).length,
+            )
+        }
+    }
+
+    @Test
+    fun `a speaking Bit renders a face, not a glyph`() {
+        // Stated on its own because it is the case the constraint is most
+        // likely to be broken by: Speech is the one display that carries
+        // something other than a face and still has to produce one.
+        for (mood in BitStateMachine.Mood.entries) {
+            val speech = BitDisplay.Speech(ConsoleLine.Notice("scrolled"), mood)
+            val face = BitStateMachine.frame(speech, reactionAgeMs = 0L, tickMs = 0L).face
+            assertTrue("mood $mood spoke as '$face'", face !in BitGlyph.SLITS)
+            assertEquals(mood.toString(), BitGlyph.WIDTH, BitGlyph.padFor(face).length)
+        }
     }
 }
