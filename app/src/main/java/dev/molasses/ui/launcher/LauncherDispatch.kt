@@ -292,8 +292,16 @@ private fun execute(
     // It is still not ignored. Silently dropping an argument someone typed is
     // its own fault and a worse one, because the next thing they learn is that
     // this prompt does not read what they write. So the modifier is answered
-    // rather than dropped: a different acknowledgement, which says the panel
-    // is open and says the toggle is not ours to do.
+    // rather than dropped, by a different acknowledgement.
+    //
+    // That acknowledgement used to carry the reason as well and was two
+    // sentences long, which is too much for a terminal line that appears for
+    // two seconds beside a face. It now says only that the toggle did not
+    // happen, and the reason moved to the manual entry, where there is room
+    // and where someone asking "why" is already looking. The reasons stay
+    // distinct there: wifi is a platform limit binding every app, DND is a
+    // permission this app chose not to request, and claiming the first for
+    // the second is a lie the user cannot check.
     is Command.Wifi ->
         if (actions.startIntent(Intent(wifiPanelAction()))) {
             DispatchResult.Confirmed(
@@ -304,11 +312,8 @@ private fun execute(
             DispatchResult.Unavailable(R.string.cmd_na_no_panel)
         }
 
-    // Same shape, different reason, and the difference is kept. Wifi is a
-    // platform limit that binds every app; DND is a permission this app chose
-    // not to request. Claiming the first for the second would be a lie the
-    // user has no way to check, and the whole of what the prompt is for is
-    // that it tells the truth about what it can do.
+    // Same shape, different reason, and the difference is kept. It lives in
+    // cmd_desc_dnd now rather than in the ack. See the wifi branch above.
     is Command.Dnd ->
         if (actions.startIntent(Intent(DND_ACTION))) {
             DispatchResult.Confirmed(

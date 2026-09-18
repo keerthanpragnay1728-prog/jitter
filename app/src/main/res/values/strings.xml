@@ -432,8 +432,8 @@
       and claiming a platform limit for our own choice would be a lie the user
       cannot check.
     -->
-    <string name="cmd_ack_wifi_panel_no_toggle">WIFI PANEL. Android does not let an app switch wifi, so flip it here.</string>
-    <string name="cmd_ack_dnd_panel_no_toggle">DND SETTINGS. Setting DND needs a permission Jitter does not request, so set it here.</string>
+    <string name="cmd_ack_wifi_panel_no_toggle">ACK: WIFI PANEL (NO TOGGLE)</string>
+    <string name="cmd_ack_dnd_panel_no_toggle">ACK: DND SETTINGS (NO TOGGLE)</string>
     <string name="cmd_na_relief_needs_monitor">The monitor is not running, so nothing would read the lease.</string>
     <!-- A wiring bug rather than a condition the user is in. It has to render
          as something rather than crash the launcher. -->
@@ -471,8 +471,14 @@
     <string name="cmd_desc_timer">Start a timer in the clock app.</string>
     <string name="cmd_desc_reboot">Restart the device.</string>
     <string name="cmd_desc_poweroff">Power the device off.</string>
-    <string name="cmd_desc_wifi">Open the wifi panel.</string>
-    <string name="cmd_desc_dnd">Open do not disturb settings.</string>
+    <!--
+      The manual carries the reason the ack no longer has room for, and the
+      two reasons stay different on purpose. Wifi is a platform limit binding
+      every app since API 29; DND is a permission Jitter chose not to request.
+      Claiming the first for the second would be a lie the user cannot check.
+    -->
+    <string name="cmd_desc_wifi">Open the wifi panel. No app has been able to switch wifi since Android 10, so wifi on and wifi off open the panel too.</string>
+    <string name="cmd_desc_dnd">Open do not disturb settings. Setting DND needs a permission Jitter does not request, so dnd on and dnd off open settings too.</string>
     <!--
       The lock flash. Four lines, shown for about a second and a half before
       the user is sent home. The remaining time is the load-bearing one: it is
