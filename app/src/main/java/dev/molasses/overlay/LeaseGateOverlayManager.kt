@@ -75,6 +75,21 @@ class LeaseGateOverlayManager(
      * own package, so without it the service reads the gate as the user going
      * home and closes the session it is gating.
      */
+    /**
+     * The user's chosen text size, read at the moment this window is shown.
+     *
+     * A lambda and not a value. These managers are constructed once when the
+     * service connects and shown many times over the hours that follow, so a
+     * captured Float would freeze whatever the setting was at boot. That is
+     * the same bug this parameter exists to fix, arriving by a second route.
+     *
+     * It matters most here and not least. An overlay is the one surface a
+     * user cannot scroll, pinch or dismiss to cope with, so a gate rendered
+     * at 1.0 while the user chose VERY_LARGE is the accessibility case the
+     * whole setting exists for, failing in the one place it cannot be worked
+     * around.
+     */
+    private val fontScale: () -> Float,
     private val onWindowsChanged: () -> Unit = {},
 ) {
     private val calls = CallDetector(service)
@@ -130,7 +145,7 @@ class LeaseGateOverlayManager(
         host = h
 
         h.show(onBackPressed = { decline("back") }) {
-            MolassesTheme {
+            MolassesTheme(fontScale = fontScale()) {
                 LeaseGateScreen(
                     appLabel = label,
                     expired = expired,
