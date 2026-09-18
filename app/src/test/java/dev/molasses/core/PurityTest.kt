@@ -39,6 +39,28 @@ class PurityTest {
         "sensing/TickEvaluation.kt",
     )
 
+    /**
+     * The one `java.*` import the pure set is allowed, named by file and by
+     * type.
+     *
+     * `java.time.LocalDate` is arithmetic on three integers: no I/O, no
+     * locale, no timezone. That is what `DateMath` needs and it is the only
+     * reason a `java.*` import is here at all. Hand-rolling days-from-civil
+     * to protect the convention would put the century leap rule in our own
+     * hands, where an off-by-one hides for a year.
+     *
+     * It is written as this file may import exactly this type, rather than
+     * as an exception for `java.time`, on purpose. A general exception is a
+     * precedent the next import inherits without arguing, and the ones next
+     * door are the ones the rule exists to keep out: `LocalDateTime`,
+     * `ZonedDateTime`, `Instant` and `Duration` all carry a timezone or a
+     * clock. The narrow form makes the next `java.*` import come back here
+     * and make its own case.
+     */
+    private val javaAllowance: Map<String, Set<String>> = mapOf(
+        "DateMath.kt" to setOf("java.time.LocalDate"),
+    )
+
     private fun repoRoot(): File? = listOf(
         File("."),
         File(".."),
@@ -51,6 +73,14 @@ class PurityTest {
         File("/home/user/visceral/app/src/main/java/dev/molasses"),
     ).firstOrNull { it.isDirectory }
 
+    /** Every file in the pure set, as the two lists above describe it. */
+    private fun pureSources(root: File): List<File> = buildList {
+        pureRoots.forEach { r ->
+            File(root, r).walkTopDown().filter { it.extension == "kt" }.forEach { add(it) }
+        }
+        pureFiles.forEach { add(File(root, it)) }
+    }
+
     @Test
     fun `the pure set imports nothing from android`() {
         val root = sourceRoot()
@@ -59,12 +89,7 @@ class PurityTest {
         assumeTrue("source tree not locatable from ${File("").absolutePath}", root != null)
 
         val offenders = mutableListOf<String>()
-        val files = buildList {
-            pureRoots.forEach { r ->
-                File(root, r).walkTopDown().filter { it.extension == "kt" }.forEach { add(it) }
-            }
-            pureFiles.forEach { add(File(root, it)) }
-        }
+        val files = pureSources(root!!)
 
         assertTrue("expected to find pure sources, found none under $root", files.isNotEmpty())
 
@@ -106,6 +131,30 @@ class PurityTest {
         assertEquals(
             "harness pureMain and PurityTest disagree about what the pure set is",
             checked, harnessEntries,
+        )
+    }
+
+    @Test
+    fun `the pure set imports nothing from java but the one allowance`() {
+        val root = sourceRoot()
+        assumeTrue("source tree not locatable from ${File("").absolutePath}", root != null)
+
+        val offenders = mutableListOf<String>()
+        for (f in pureSources(root!!)) {
+            if (!f.isFile) continue
+            val allowed = javaAllowance[f.name].orEmpty()
+            f.readLines().forEachIndexed { i, line ->
+                val t = line.trim()
+                if (!t.startsWith("import java.")) return@forEachIndexed
+                val type = t.removePrefix("import ").substringBefore(" as ").trim()
+                if (type !in allowed) offenders += "${f.name}:${i + 1}: $t"
+            }
+        }
+
+        assertTrue(
+            "pure set may import java.* only where javaAllowance says so:\n" +
+                offenders.joinToString("\n"),
+            offenders.isEmpty(),
         )
     }
 }
