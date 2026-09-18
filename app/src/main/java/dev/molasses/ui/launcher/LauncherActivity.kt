@@ -117,6 +117,7 @@ import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.BitTap
 import dev.molasses.core.console.ConsoleLine
+import dev.molasses.core.launch.ShortcutLadder
 import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.console.Greeting
 import dev.molasses.core.bit.HudStep
@@ -343,8 +344,8 @@ class LauncherActivity : ComponentActivity() {
                             onDialer = {
                                 startActivity(Intent(Intent.ACTION_DIAL))
                             },
-                            onOpenMessaging = ::openMessaging,
-                            onLaunchIntent = ::launchIntent,
+                            messagingApps = ::messagingApps,
+                            onLaunchLadder = ::launchLadder,
                             onOpenWellbeingSettings = ::openWellbeing,
                         )
 
@@ -394,9 +395,71 @@ class LauncherActivity : ComponentActivity() {
      * one where the row simply does not respond, and the row is only ever
      * tapped deliberately.
      */
-    private fun launchIntent(action: String, category: String?) {
-        val intent = Intent(action).apply { category?.let { addCategory(it) } }
-        runCatching { startActivity(intent) }
+    /**
+     * Walk a [ShortcutLadder] and start the first rung this device answers.
+     *
+     * @return false when no rung resolved, so the caller can say so. It used
+     *   to be a bare `runCatching { startActivity(intent) }`, which meant a
+     *   device whose clock app does not declare SHOW_ALARMS got a `[clock]`
+     *   row that did nothing at all, silently, forever. A row that does
+     *   nothing is worse than one that says it cannot, because the user
+     *   presses it again.
+     *
+     * Each rung is resolved before it is launched rather than launched inside
+     * a try, for the reason [openWellbeing] gives: a throw has already torn
+     * down the touch that caused it, so the fallback has to be a decision
+     * rather than a recovery.
+     */
+    private fun launchLadder(ladder: List<ShortcutLadder.Candidate>): Boolean {
+        for (rung in ladder) {
+            val intent = when {
+                rung.pkg != null -> packageManager.getLaunchIntentForPackage(rung.pkg)
+                else -> Intent(rung.action).apply {
+                    rung.category?.let { addCategory(it) }
+                }
+            } ?: continue
+            // A package rung's launch intent is already known to exist, so it
+            // needs no second resolve; an action rung does.
+            if (rung.pkg == null && !canResolve(intent)) continue
+            if (startIfHandled(intent)) return true
+        }
+        Log.w(TAG_LAUNCHER, "no rung of the ladder resolved: $ladder")
+        return false
+    }
+
+    /**
+     * The messaging clients worth offering.
+     *
+     * Two sources, because "messaging app" is two questions. The device's SMS
+     * clients declare `CATEGORY_APP_MESSAGING` and can be asked for. WhatsApp,
+     * Signal and Telegram do not and never will, because they are not SMS
+     * clients, so asking the system for messaging apps returns exactly the
+     * ones most people do not use. The named list covers them.
+     *
+     * Deduplicated by package, because Google Messages is on both lists.
+     */
+    private fun messagingApps(): List<LaunchableApp> {
+        val sms = Intent(Intent.ACTION_MAIN)
+            .addCategory(ShortcutLadder.MESSAGING_CATEGORY)
+        val declared = runCatching {
+            packageManager.queryIntentActivities(sms, 0).map { it.activityInfo.packageName }
+        }.getOrDefault(emptyList())
+
+        return (declared + ShortcutLadder.CHAT_PACKAGES)
+            .distinct()
+            .mapNotNull { pkg ->
+                val info = runCatching {
+                    packageManager.getApplicationInfo(pkg, 0)
+                }.getOrNull() ?: return@mapNotNull null
+                if (packageManager.getLaunchIntentForPackage(pkg) == null) return@mapNotNull null
+                LaunchableApp(
+                    label = packageManager.getApplicationLabel(info).toString(),
+                    packageName = pkg,
+                    isTarget = false,
+                )
+            }
+            .distinctBy { it.packageName }
+            .sortedBy { it.label.lowercase() }
     }
 
     /**
@@ -437,17 +500,6 @@ class LauncherActivity : ComponentActivity() {
             .onFailure { Log.w(TAG_LAUNCHER, "wellbeing intent refused", it) }
     }
 
-    private fun openMessaging() {
-        val wa = packageManager.getLaunchIntentForPackage(WHATSAPP_PACKAGE)
-        if (wa != null) {
-            startActivity(wa)
-            return
-        }
-        val sms = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_APP_MESSAGING)
-        }
-        runCatching { startActivity(sms) }
-    }
 
     /**
      * @return false when nothing handled it, so the caller can say that rather
@@ -489,7 +541,6 @@ class LauncherActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val WHATSAPP_PACKAGE = "com.whatsapp"
     }
 }
 
@@ -514,8 +565,10 @@ fun MainLauncherWorkspace(
     onOpenSettings: () -> Unit,
     onLaunchPackage: (String) -> Unit,
     onDialer: () -> Unit,
-    onOpenMessaging: () -> Unit,
-    onLaunchIntent: (String, String?) -> Unit,
+    /** The messaging clients to offer under `[messages]`. */
+    messagingApps: () -> List<LaunchableApp>,
+    /** Walks a ShortcutLadder. False when no rung resolved. */
+    onLaunchLadder: (List<ShortcutLadder.Candidate>) -> Boolean,
     onOpenWellbeingSettings: () -> Unit,
 ) {
 
@@ -593,8 +646,8 @@ fun MainLauncherWorkspace(
                     onOpenDrawer = onOpenDrawer,
                     onLaunchPackage = onLaunchPackage,
                     onDialer = onDialer,
-                    onOpenMessaging = onOpenMessaging,
-                    onLaunchIntent = onLaunchIntent,
+                    messagingApps = messagingApps,
+                    onLaunchLadder = onLaunchLadder,
                 )
                 PAGE_LEDGER -> TextualWellbeingView(
                     cycle = cycle,
@@ -628,8 +681,10 @@ fun TerminalHomeView(
     onOpenDrawer: () -> Unit,
     onLaunchPackage: (String) -> Unit,
     onDialer: () -> Unit,
-    onOpenMessaging: () -> Unit,
-    onLaunchIntent: (String, String?) -> Unit,
+    /** The messaging clients to offer under `[messages]`. */
+    messagingApps: () -> List<LaunchableApp>,
+    /** Walks a ShortcutLadder. False when no rung resolved. */
+    onLaunchLadder: (List<ShortcutLadder.Candidate>) -> Boolean,
 ) {
     val context = LocalContext.current
 
@@ -780,6 +835,17 @@ fun TerminalHomeView(
     // exactly the space a list of commands wants.
     var showManual by remember { mutableStateOf(false) }
 
+    /**
+     * The messaging clients offered under `[messages]`, or null when closed.
+     *
+     * Queried on the tap rather than at composition. It is a PackageManager
+     * call per press on a row nobody presses in a loop, and querying up front
+     * would be an IPC on every visit to the launcher for a list most visits
+     * never look at.
+     */
+    var messagingChoices by remember { mutableStateOf<List<LaunchableApp>?>(null) }
+    }
+
     // The dispatcher, rebuilt only when the action table changes. Surfaces
     // read live state when asked, so nothing here needs to recompose for the
     // service binding or an app being installed.
@@ -871,6 +937,7 @@ fun TerminalHomeView(
         query = ""
         pending = null
         showManual = false
+        messagingChoices = null
     }
 
     /** Launch, and leave the prompt empty behind it. */
@@ -878,6 +945,26 @@ fun TerminalHomeView(
         clearPrompt()
         onLaunchPackage(pkg)
     }
+
+    /**
+     * Walk a ladder, and say something when no rung answers.
+     *
+     * The saying is the whole point. These rows used to wrap startActivity in
+     * a runCatching and discard the result, so a device whose clock app does
+     * not declare SHOW_ALARMS had a `[clock]` row that did nothing, silently,
+     * every time. Bit's unavailable face is the same tell the command bar
+     * already uses for a command this device cannot run, which is exactly
+     * what this is.
+     */
+    fun launchLadderOrSay(ladder: List<ShortcutLadder.Candidate>) {
+        messagingChoices = null
+        if (!onLaunchLadder(ladder)) {
+            react(
+                BitStateMachine.Reaction.Unavailable(
+                    context.getString(R.string.launcher_fav_none),
+                ),
+            )
+        }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -1164,10 +1251,57 @@ fun TerminalHomeView(
         // listed, and they match [CFG] and the gate's [DO IT].
         Column(modifier = Modifier.fillMaxWidth()) {
             Favourite(R.string.launcher_fav_phone, onDialer)
-            Favourite(R.string.launcher_fav_messages, onOpenMessaging)
-            Favourite(R.string.launcher_fav_calendar) { onLaunchIntent(Intent.ACTION_MAIN, "android.intent.category.APP_CALENDAR") }
-            Favourite(R.string.launcher_fav_calculator) { onLaunchIntent(Intent.ACTION_MAIN, "android.intent.category.APP_CALCULATOR") }
-            Favourite(R.string.launcher_fav_clock) { onLaunchIntent(android.provider.AlarmClock.ACTION_SHOW_ALARMS, null) }
+            // [messages] is the one with a choice behind it, so it expands
+            // in place rather than launching. Everything else walks its
+            // ladder and says so when nothing on the device answers.
+            Favourite(R.string.launcher_fav_messages) {
+                val apps = messagingApps()
+                when (apps.size) {
+                    // Nothing to pick from, and nothing to say it with except
+                    // Bit. A list of none is not a selector.
+                    0 -> react(
+                        BitStateMachine.Reaction.Unavailable(
+                            context.getString(R.string.launcher_fav_none_messaging),
+                        ),
+                    )
+                    // A list of one is a tax, not a choice.
+                    1 -> launchAndClear(apps.first().packageName)
+                    else -> messagingChoices = apps
+                }
+            }
+            Favourite(R.string.launcher_fav_calendar) {
+                launchLadderOrSay(ShortcutLadder.CALENDAR)
+            }
+            Favourite(R.string.launcher_fav_calculator) {
+                launchLadderOrSay(ShortcutLadder.CALCULATOR)
+            }
+            Favourite(R.string.launcher_fav_clock) {
+                launchLadderOrSay(ShortcutLadder.CLOCK)
+            }
+
+            // The selector, inline under the row that opened it. Not a
+            // dialog and not an overlay: a popup over a terminal is a
+            // different interface wearing the terminal's clothes, and this is
+            // the same inline list pattern the manual and the app filter use.
+            val choices = messagingChoices
+            if (choices != null) {
+                for (app in choices) {
+                    Text(
+                        text = app.label,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = PhosphorDim,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                messagingChoices = null
+                                launchAndClear(app.packageName)
+                            }
+                            .padding(start = 14.dp, top = 5.dp, bottom = 5.dp),
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(16.dp))

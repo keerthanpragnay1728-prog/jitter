@@ -72,6 +72,46 @@
           Wellbeing is installed, and the link fell through to raw Usage
           Access on every device.
         -->
+        <!--
+          The console's favourite rows. Every action ShortcutLadder probes has
+          to be here: on API 30+ resolveActivity returns null for an action
+          that is not declared, on a device that handles it perfectly well, so
+          a ladder and a manifest that disagree produce a fallback chain that
+          collapses to nothing without saying so. That is not hypothetical, it
+          is how the Wellbeing link below failed on every device.
+
+          The package rungs of those ladders need nothing here. They are
+          launched through getLaunchIntentForPackage, which needs the package
+          visible rather than the action declared, and the MAIN plus LAUNCHER
+          query at the top of this block already covers every app with an
+          icon. ShortcutLadderTest holds the action list and this block in
+          step.
+        -->
+        <intent>
+            <action android:name="android.intent.action.SHOW_ALARMS"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.APP_CLOCK"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.APP_CALCULATOR"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.APP_CALENDAR"/>
+        </intent>
+        <!--
+          The messaging selector asks for the device's SMS clients by
+          category, and offers named chat apps beside them. The chat apps are
+          covered by the launcher query; this entry is what makes the SMS ones
+          visible, since some ship without a launcher icon.
+        -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.APP_MESSAGING"/>
+        </intent>
         <package android:name="com.google.android.apps.wellbeing"/>
         <intent>
             <action android:name="android.settings.DIGITAL_WELLBEING_SETTINGS"/>
