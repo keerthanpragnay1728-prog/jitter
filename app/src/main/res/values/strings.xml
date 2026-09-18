@@ -203,6 +203,14 @@
 
     <string name="settings_test_stall">Test Phantom Stall (1 second)</string>
     <string name="settings_debug">Debug and ledger</string>
+    <!--
+      The header entry. Bracketed like [CFG] and [ON], because in a
+      zero-border layout the brackets are what say a thing is pressable.
+      translatable="false" for the same reason those are: terminal chrome on a
+      character grid, and a three-letter word replaced by a longer one moves
+      the title.
+    -->
+    <string name="settings_debug_short" translatable="false">[DBG]</string>
 
     <!-- Debug screen -->
     <string name="debug_title">Debug</string>
