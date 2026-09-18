@@ -72,6 +72,24 @@ class ShutterTellTest {
     }
 
     @Test
+    fun `both markers are drawn at the same opacity`() {
+        // They were not, and the difference was carrying an argument that
+        // only held while the marker flickered. arm() extends the armed
+        // window on every scroll, so at terminal probability the tell is a
+        // continuous line across another app, and a line that is always there
+        // says nothing by being brighter.
+        //
+        // Counted rather than parsed, because the paints are built inside a
+        // View this module cannot construct. Two paints, two alpha lines: the
+        // old code had two paints and one, which is the exact shape that
+        // would come back if someone restored the emphasis.
+        val paints = shutter.split("Paint().apply {").size - 1
+        val alphas = shutter.split("alpha = TELL_ALPHA").size - 1
+        assertEquals("expected two tell paints", 2, paints)
+        assertEquals("every tell paint needs its alpha", paints, alphas)
+    }
+
+    @Test
     fun `the terminal colour is used nowhere else in the palette`() {
         // The reserved-hue rule, asserted rather than documented. One
         // definition, one marker, one tier.
