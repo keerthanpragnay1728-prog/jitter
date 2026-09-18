@@ -89,6 +89,14 @@ class AudioFocusHold(context: Context) {
         val result = runCatching { am.requestAudioFocus(request) }.getOrNull()
         if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             held = request
+            // Logged on the success path too, not only on refusal.
+            //
+            // A window that goes up and comes down faster than a person can
+            // see leaves no trace anywhere else: nothing in this path writes
+            // to the ledger, and a clean-looking run is then indistinguishable
+            // from one that happened and recovered. These two lines are the
+            // only thing that would tell those apart in logcat.
+            Log.i(TAG, "audio focus taken for $reason")
         } else {
             // Not a failure of the window. See the class doc.
             Log.w(TAG, "audio focus refused for $reason (result=$result)")
@@ -100,6 +108,7 @@ class AudioFocusHold(context: Context) {
         val am = audio ?: return
         val request = held ?: return
         held = null
+        Log.i(TAG, "audio focus released for $reason")
         runCatching { am.abandonAudioFocusRequest(request) }
             .onFailure { Log.w(TAG, "abandoning audio focus threw for $reason", it) }
     }

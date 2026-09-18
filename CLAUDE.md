@@ -457,6 +457,28 @@ replacing the constants. It is deliberately not done yet: it is being held
 until test users report from hardware nobody here owns, because guessing a
 second time is not better than guessing once.
 
+### Immersive has now landed, and this section still stands
+
+`LauncherActivity.hideStatusBar` hides the status bar on the console, with
+transient bars on swipe. It was landed for its own sake: a launcher that
+reports four unread messages along the top gives you somewhere to go, which is
+what the console is arranged around not doing.
+
+It changes nothing about the fault above, and this paragraph exists so that is
+not rediscovered as "already fixed". With the status bar hidden there is no
+status bar for the 44dp to be wrong about **on that one screen**, and the
+constant is exactly as wrong as it was everywhere else: the settings activity,
+the gate, the lock overlay, and the console itself for as long as a transient
+bar is showing.
+
+So the fault did not shrink, its most-looked-at instance became invisible.
+That is the worse direction for something waiting on field reports, and it is
+why the section says to leave the note standing.
+
+The navigation bar is deliberately not hidden. It carries nobody's
+notifications, and hiding it would take the back gesture's affordance with it
+on a three-button device.
+
 ### If you are building immersive mode, read this first
 
 Immersive mode hides the system bars. A constant padding that exists to clear
@@ -472,7 +494,8 @@ screen that does not use it, gets the original fault back with no warning and
 nothing in the diff to point at.
 
 So: land immersive if it is wanted for its own sake, and leave this section
-standing until the constants are actually gone.
+standing until the constants are actually gone. That is what happened; see
+above.
 
 ## Which clock a deadline is measured on
 
