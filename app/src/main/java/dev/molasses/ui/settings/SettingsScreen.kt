@@ -157,7 +157,37 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                // DEBUG is an instrument, not a setting.
+                //
+                // It used to live at the bottom of TRY IT, which was one
+                // scroll away while every section was expanded and became two
+                // taps and a scroll once they collapsed. That is the wrong
+                // distance for the screen a beta tester is going to be asked
+                // to read down a phone line.
+                //
+                // Here rather than pinned as a ninth section, because it is
+                // not a group of settings and a section header claiming
+                // otherwise would be the screen lying about its own shape. The
+                // stall preview stays in TRY IT: that one genuinely is a
+                // setting you exercise.
+                Text(
+                    stringResource(R.string.settings_debug_short),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable(onClick = onOpenDebug)
+                        .padding(vertical = 6.dp, horizontal = 8.dp),
+                )
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 stringResource(R.string.settings_tagline),
