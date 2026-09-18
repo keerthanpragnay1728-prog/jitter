@@ -93,6 +93,7 @@ class LeaseGateOverlayManager(
     private val onWindowsChanged: () -> Unit = {},
 ) {
     private val calls = CallDetector(service)
+    private val focus = AudioFocusHold(service)
 
     private var host: OverlayHost? = null
     private var currentPkg: String? = null
@@ -173,6 +174,13 @@ class LeaseGateOverlayManager(
             currentPkg = null
             return false
         }
+
+        // After the addView check and not before it. A request made before
+        // that guard would be held by a window that never attached, and the
+        // early return below never reaches dismissInternal, so nothing would
+        // ever give it back: the device would be silent with no gate on
+        // screen.
+        focus.take("lease gate for $pkg")
 
         onWindowsChanged()
         ledger.log(
@@ -276,6 +284,12 @@ class LeaseGateOverlayManager(
     }
 
     private fun dismissInternal() {
+        // Here and not in dismiss(), because this is the one choke point all
+        // four ways out run through: a lease taken, a decline after its home
+        // settle, a dismiss from the service, and the teardown paths. Released
+        // anywhere else and one of the four leaks the device's audio focus
+        // with no window on screen to explain it.
+        focus.release("lease gate down")
         ticker?.cancel(); ticker = null
         holdJob?.cancel(); holdJob = null
         val h = host
