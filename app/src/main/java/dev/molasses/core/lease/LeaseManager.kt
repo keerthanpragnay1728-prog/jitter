@@ -36,6 +36,50 @@ data class Lease(
  * negotiable, and there would then be no reason for a user not to buy it every
  * time.
  *
+ * ## A lease survives leaving the app, including a swipe from Recents
+ * A lease is not revoked for leaving. Stepping out to answer a message and
+ * coming back inside the fifteen minutes must not cost a second gate, or the
+ * gate becomes a punishment for switching apps rather than a toll for
+ * entering one.
+ *
+ * That has a consequence which reads as a bug and is not one, so it is
+ * written down here rather than rediscovered: **open a target, take a lease,
+ * swipe the task away from Recents, reopen, and no gate fires.** The lease is
+ * still live on the wall clock, and the wall clock is the only thing it
+ * measures.
+ *
+ * It was considered and declined, in that order.
+ *
+ * The swipe itself is not observable. `packageNames` is scoped to the targets
+ * plus our own package, so nothing from the Recents surface reaches the
+ * service; the user has already left the app to get there, so the exit has
+ * fired already and the swipe adds no event on top of it; `ForegroundProbe`
+ * filters to `ACTIVITY_RESUMED` and a task removal produces none; and
+ * `getWindows()` is empty under this profile, so there is no enumeration to
+ * notice a task leaving.
+ *
+ * A cold start is not distinguishable from a warm resume either. The only
+ * signal available is the class name on the first `WINDOW_STATE_CHANGED`
+ * after a return, and a warm resume to the app's front screen carries the
+ * same launcher activity a cold start does. So a test built on it fires on a
+ * return the lease was sold to cover, which is the one case this whole
+ * section exists to protect, and "the gate fires on a return you already paid
+ * for" is how an app earns a force-quit rather than a habit.
+ *
+ * So the trade is taken deliberately: a swipe is leaving with extra steps,
+ * and it buys exactly one gate at the cost of a deliberate multi-step
+ * gesture. Accumulation and the penalty ratchet are untouched throughout, so
+ * the friction the user came here for still runs. That is a trade worth
+ * losing.
+ *
+ * The corollary is that **there is no per-package eviction and there must not
+ * be one.** A `revoke(pkg)` existed for a while with no caller, and its own
+ * doc claimed the rollover used it while the rollover went through
+ * `clearLeases` and a fresh manager. It is deleted. Anything that brings it
+ * back has to answer the paragraph above first, and has to leave
+ * `leasesTaken` alone when it does, or an eviction that also reset the ladder
+ * would make the bypass cheaper than the gate it avoids.
+ *
  * ## Immutable
  * Every mutator returns a new manager, for the same reason as
  * [dev.molasses.core.lock.LockRegistry]: it is read on the accessibility
@@ -127,18 +171,6 @@ class LeaseManager private constructor(
             leases + (pkg to Lease(pkg, now, durationMs, accumulatedMs)),
         )
     }
-
-    /**
-     * End [pkg]'s lease now.
-     *
-     * Used on cycle rollover, where every app starts over, and nowhere else. A
-     * lease is not revoked for leaving the app: stepping out to answer a
-     * message and coming back inside the fifteen minutes must not cost a
-     * second gate, or the gate becomes a punishment for switching apps rather
-     * than a toll for entering one.
-     */
-    fun revoke(pkg: String): LeaseManager =
-        if (pkg in leases) LeaseManager(leases - pkg) else this
 
     /**
      * Drop expired entries. Housekeeping only: [isActive] already treats an

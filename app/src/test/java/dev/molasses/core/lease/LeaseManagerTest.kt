@@ -119,19 +119,6 @@ class LeaseManagerTest {
     }
 
     @Test
-    fun `revoke ends the lease`() {
-        val m = LeaseManager().grant("a", t0, 15 * minute, 0).revoke("a")
-        assertFalse(m.isActive("a", t0))
-        assertTrue(m.snapshot().isEmpty())
-    }
-
-    @Test
-    fun `revoking a package with no lease changes nothing`() {
-        val m = LeaseManager().grant("a", t0, 15 * minute, 0)
-        assertEquals(m.snapshot(), m.revoke("b").snapshot())
-    }
-
-    @Test
     fun `the accumulated total at grant is carried on the lease`() {
         // The one number that crosses between the two systems, and it crosses
         // in this direction only: the engine reads it, the lease never reads
