@@ -49,7 +49,6 @@ import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lock.LockLadder
 import dev.molasses.core.lock.LockRequest
 import dev.molasses.core.diag.ServiceHealth
-import dev.molasses.ui.theme.PhosphorDivider
 import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.ui.FontScale
 import dev.molasses.engine.TierPolicy
@@ -645,13 +644,25 @@ private fun GroupHeader(text: String) {
 }
 
 /**
- * A section break: a label over a hairline rule, like a guide in a code
- * editor. The rule carries the structure that the removed card borders used
- * to, at a fraction of the visual weight.
+ * A section break: a label, a chevron, and space.
  *
- * The chevron is text, right aligned on the label's own line. An icon asset
- * would be the only thing on this screen not made of type, and it would need
- * a tint that `check-colors.sh` cannot see into.
+ * ## The rule that used to be here
+ * There was a hairline under every header, carrying the structure the removed
+ * card borders used to. That reasoning was sound while every section was
+ * expanded, because a rule between two long blocks of prose is a guide. It
+ * stopped being sound the moment sections could collapse: eight closed
+ * headers, each with a line under it, read as eight boxes, which is exactly
+ * the thing the zero-border rule exists to prevent. The borders came back
+ * wearing a different weight.
+ *
+ * Spacing carries it now. The twenty-dp lead above each header is more
+ * separation than a one-dp line was, and it costs nothing that looks like a
+ * container.
+ *
+ * ## The chevron
+ * Text, right aligned on the label's own line. An icon asset would be the
+ * only thing on this screen not made of type, and it would need a tint that
+ * `check-colors.sh` cannot see into.
  *
  * The whole row is the tap target, not the chevron. A one-character hit area
  * at the far edge of the screen is a target nobody reaches on the first try,
@@ -678,11 +689,7 @@ private fun SectionHeader(@StringRes text: Int, open: Boolean, onToggle: () -> U
             color = MaterialTheme.colorScheme.primary,
         )
     }
-    HorizontalDivider(
-        Modifier.padding(top = 4.dp, bottom = 8.dp),
-        thickness = 1.dp,
-        color = PhosphorDivider,
-    )
+    Spacer(Modifier.height(8.dp))
 }
 
 @Composable
