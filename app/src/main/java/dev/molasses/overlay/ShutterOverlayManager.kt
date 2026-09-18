@@ -416,6 +416,17 @@ class ShutterOverlayManager(
         /** The curve has saturated. Set before [setArmed]; read on draw. */
         var terminal = false
 
+        /**
+         * The ordinary tell.
+         *
+         * 35% was always the design for a line that can be continuous, which
+         * is why nobody has ever reported this one as stuck even though it
+         * behaves identically: [onDraw] branches on colour alone, and the
+         * armed window it draws during is the same window. At 91% probability
+         * and a three second stall the ordinary marker is on screen almost
+         * constantly too. It reads as a disclosure rather than an alarm, and
+         * that is entirely the alpha.
+         */
         private val tellPaint = Paint().apply {
             color = TELL_COLOR
             alpha = TELL_ALPHA
@@ -424,12 +435,31 @@ class ShutterOverlayManager(
         /**
          * The one hue break in the app, reserved for the terminal tier.
          *
-         * Full alpha rather than the 35% the ordinary tell uses: at the
-         * terminal the marker stops being a disclosure that something is
-         * running and becomes the statement that this is as bad as it gets.
+         * ## Same alpha as the ordinary tell, and it used to be full
+         * Full alpha was justified while the marker was intermittent: it
+         * appeared for a stall, went, and came back, and against that rhythm
+         * brightness carried the argument "this is as bad as it gets".
+         *
+         * It is not intermittent at the terminal. `arm` extends
+         * `armedUntilElapsed` on every scroll, so at terminal probability a
+         * burst holds the sink armed to its eight second ceiling, clears, and
+         * re-arms on the next event. The marker is a continuous red line
+         * across the top of someone else's app, and a line that is always
+         * there says nothing by being brighter. Opacity was carrying an
+         * argument that only worked while it flickered.
+         *
+         * The hue still separates terminal from ordinary, which is the
+         * distinction that was ever load bearing. What is dropped is an
+         * emphasis that stopped being true, not the signal.
+         *
+         * ## Why not a pulse instead
+         * Continuous animation over another app's content costs battery and
+         * draws the eye, which is the opposite of what a 2dp tell is for. The
+         * tell discloses; it does not perform.
          */
         private val terminalTellPaint = Paint().apply {
             color = TELL_COLOR_TERMINAL
+            alpha = TELL_ALPHA
         }
         private val tapTimesMs = ArrayDeque<Long>()
         private val density = context.resources.displayMetrics.density
