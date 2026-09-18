@@ -28,6 +28,7 @@ import dev.molasses.core.session.ForegroundSessionTracker
 import dev.molasses.core.session.TargetScope
 import dev.molasses.core.session.WindowEvent
 import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.stats.DayUsage
 import dev.molasses.core.time.MonotonicClock
 import dev.molasses.core.time.StampedInstant
@@ -762,6 +763,17 @@ class MolassesAccessibilityService : AccessibilityService() {
         // down.
         shutter.release("lease gate")
         shutter.detach()
+        // Read here rather than in the overlay, because the curve is read
+        // against true time plus the ratchet's penalty and only the engine
+        // holds both. An overlay given accumulated time alone would quote a
+        // price lower than the one the next scroll will actually pay, on the
+        // screen that exists to stop the app being vague about its numbers.
+        val app = engine.state.value.perApp[pkg]
+        val nextScroll = NextScroll.readingAt(
+            accumulatedMs = app?.accumulatedMs ?: 0L,
+            penaltyMs = app?.penaltyMs ?: 0L,
+            horizonMs = app?.horizonMs ?: FrictionCurve.DEFAULT_HORIZON_MS,
+        )
         val attached = leaseGate.show(
             pkg = pkg,
             label = labelFor(pkg),
@@ -769,9 +781,10 @@ class MolassesAccessibilityService : AccessibilityService() {
             expired = expired,
             stats = GateStats(
                 todayMs = null,
-                cycleMs = engine.state.value.perApp[pkg]?.accumulatedMs,
+                cycleMs = app?.accumulatedMs,
                 opensToday = null,
             ),
+            nextScroll = nextScroll,
         )
         if (!attached) {
             // The app is uncovered. Put the sink back, or the fall-through to

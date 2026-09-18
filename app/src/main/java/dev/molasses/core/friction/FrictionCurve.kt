@@ -167,6 +167,23 @@ object FrictionCurve {
     fun terminalMs(horizonMs: Long): Long = clampHorizon(horizonMs)
 
     /**
+     * The time the curve is actually read against: true time plus the
+     * ratchet's penalty.
+     *
+     * One definition rather than two. The engine computes this on every
+     * scroll and [dev.molasses.core.friction.NextScroll] has to compute the
+     * same thing to say what that scroll will cost, and a readout that
+     * disagreed with the engine by a term would be worse than no readout: it
+     * would be a confident wrong number on the one screen whose point is
+     * honest ones.
+     *
+     * Floored at zero. Both inputs are monotonic by construction, so a
+     * negative sum can only be a corrupt read.
+     */
+    fun effectiveMs(accumulatedMs: Long, penaltyMs: Long): Long =
+        (accumulatedMs + penaltyMs).coerceAtLeast(0L)
+
+    /**
      * The onset and terminal at the default horizon.
      *
      * Kept because several things want a boundary when no app is in hand, and

@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import dev.molasses.R
+import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateReadout
 import dev.molasses.core.lease.LeaseLadder
 import dev.molasses.ui.theme.JitterBackground
@@ -67,6 +68,7 @@ fun LeaseGateScreen(
     appLabel: String,
     expired: Boolean,
     fields: GateReadout.Fields,
+    nextScroll: NextScroll.Reading,
     panelUp: Boolean,
     onTakeLease: (durationMs: Long) -> Unit,
     onTakeMeOut: () -> Unit,
@@ -111,7 +113,11 @@ fun LeaseGateScreen(
             StatRow(stringResource(R.string.lease_gate_cycle), fields.cycle)
             StatRow(stringResource(R.string.lease_gate_opens), fields.opens)
 
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(20.dp))
+
+            NextScrollLine(nextScroll)
+
+            Spacer(Modifier.height(20.dp))
 
             if (panelUp) {
                 DecisionPanel(onTakeLease = onTakeLease, onTakeMeOut = onTakeMeOut)
@@ -126,6 +132,51 @@ fun LeaseGateScreen(
             }
         }
     }
+}
+
+/**
+ * What the next scroll costs, dimmed, under the three totals.
+ *
+ * ## Why it is a different sentence in each band and not a number
+ * See `NextScroll` for the measured reason. In short: with five minute leases
+ * the first two gates of a cycle sit below the onset and would read `0ms 0%`,
+ * and everything from the horizon on is pinned, so a live readout is blank at
+ * the gate seen most and frozen for the rest of a long session. Zero is the
+ * absence of a reading rather than a reading, and `0ms 0%` looks like a broken
+ * display on the one screen whose whole claim is honest numbers.
+ *
+ * ## Why the `when` is here and not a `@StringRes` helper
+ * The usual shape in this app maps state to a string id in a pure function and
+ * resolves it at the call site. That works when the arguments are the same
+ * across the family, and here they are not: one band takes two numbers and the
+ * other two take none. Passing surplus arguments would compile and would make
+ * the id mapping the only place a reader could check which band formats what.
+ * So the branch and its arguments stay together, and a new band is a compile
+ * error here rather than a silently unformatted line.
+ *
+ * Dimmed rather than green. It is context for the decision, not the decision,
+ * and the countdown is still the only thing on this screen that moves.
+ */
+@Composable
+private fun NextScrollLine(reading: NextScroll.Reading) {
+    val text = when (reading) {
+        NextScroll.Reading.BeforeOnset ->
+            stringResource(R.string.lease_gate_next_none)
+        is NextScroll.Reading.OnTheRamp -> stringResource(
+            R.string.lease_gate_next_fmt,
+            NextScroll.percent(reading.probability).toString(),
+            reading.stallMs.toString(),
+        )
+        is NextScroll.Reading.Pinned ->
+            stringResource(R.string.lease_gate_next_pinned)
+    }
+    Text(
+        text = text,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 11.sp,
+        color = PhosphorDim,
+        textAlign = TextAlign.Center,
+    )
 }
 
 /**
