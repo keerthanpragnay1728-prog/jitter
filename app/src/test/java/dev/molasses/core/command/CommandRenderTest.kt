@@ -43,15 +43,11 @@ class CommandRenderTest {
             Command.Status,
             Command.Reboot,
             Command.PowerOff,
-            Command.Log(null),
-            Command.Log("instagram"),
             Command.Alarm(0),
             Command.Alarm(6 * 60),
             Command.Alarm(12 * 60),
             Command.Alarm(18 * 60 + 30),
             Command.Alarm(23 * 60 + 59),
-            Command.Remind(10 * m, "call mum"),
-            Command.Remind(1 * h, "take the bins out"),
             Command.Wifi(null),
             Command.Wifi(true),
             Command.Wifi(false),
@@ -76,13 +72,10 @@ class CommandRenderTest {
             "bedtime",
             "sleep",
             "status",
-            "log",
-            "log youtube",
             "alarm 6am",
             "alarm 12am",
             "alarm 12pm",
             "alarm 18:30",
-            "rem 10m call mum",
             "wifi",
             "wifi on",
             "dnd off",
@@ -152,7 +145,7 @@ class CommandRenderTest {
         // miss: a renderer that emits a line another verb happens to accept.
         val cases = listOf<Command>(
             Command.Bedtime, Command.Status, Command.Reboot, Command.PowerOff,
-            Command.Log(null), Command.Wifi(null), Command.Dnd(null),
+            Command.Wifi(null), Command.Dnd(null),
         )
         for (c in cases) {
             val verb = CommandRender.render(c).substringBefore(' ')

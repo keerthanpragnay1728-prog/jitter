@@ -23,8 +23,8 @@ object CommandParser {
 
     /** Every verb, including aliases. For autocomplete and for the help line. */
     val VERBS: List<String> = listOf(
-        "block", "focus", "allow", "bedtime", "sleep", "status", "log",
-        "alarm", "timer", "rem", "reboot", "poweroff", "wifi", "dnd",
+        "block", "focus", "allow", "bedtime", "sleep", "status",
+        "alarm", "timer", "reboot", "poweroff", "wifi", "dnd",
         "help", "?",
     )
 
@@ -39,10 +39,8 @@ object CommandParser {
         "bedtime" to "bedtime",
         "sleep" to "sleep",
         "status" to "status",
-        "log" to "log [app]",
         "alarm" to "alarm <time>",
         "timer" to "timer <duration>",
-        "rem" to "rem <duration> <text>",
         "reboot" to "reboot",
         "poweroff" to "poweroff",
         "wifi" to "wifi [on|off]",
@@ -74,12 +72,6 @@ object CommandParser {
             "reboot" -> noArgs(verb, args, Command.Reboot)
             "poweroff" -> noArgs(verb, args, Command.PowerOff)
 
-            "log" -> when (args.size) {
-                0 -> ok(Command.Log(null))
-                1 -> ok(Command.Log(args[0]))
-                else -> err(ParseError.TooManyArguments(verb))
-            }
-
             "alarm" -> when (args.size) {
                 0 -> err(ParseError.MissingArgument(verb, "time"))
                 1 -> when (val t = TimeParser.parse(args[0])) {
@@ -87,19 +79,6 @@ object CommandParser {
                     is TimeParser.Result.Err -> err(ParseError.BadTime(args[0], t.kind))
                 }
                 else -> err(ParseError.TooManyArguments(verb))
-            }
-
-            // The only verb with a free-text tail, so it is the only one that
-            // does not reject surplus tokens: everything after the duration is
-            // the reminder itself.
-            "rem" -> when {
-                args.isEmpty() -> err(ParseError.MissingArgument(verb, "duration"))
-                args.size == 1 -> err(ParseError.MissingArgument(verb, "text"))
-                else -> when (val d = DurationParser.parse(args[0])) {
-                    is DurationParser.Result.Ok ->
-                        ok(Command.Remind(d.ms, args.drop(1).joinToString(" ")))
-                    is DurationParser.Result.Err -> err(ParseError.BadDuration(args[0], d.kind))
-                }
             }
 
             "wifi" -> toggle(verb, args) { Command.Wifi(it) }

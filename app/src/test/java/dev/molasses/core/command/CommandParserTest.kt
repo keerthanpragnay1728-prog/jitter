@@ -55,21 +55,29 @@ class CommandParserTest {
     }
 
     @Test
-    fun `log takes an optional app`() {
-        assertEquals(Command.Log(null), ok("log"))
-        assertEquals(Command.Log("instagram"), ok("log instagram"))
+    fun `log and rem are not verbs any more`() {
+        // Both parsed and then reported "not wired yet" from the subsystem
+        // surface, permanently. A terminal that accepts a command it can
+        // never run teaches the user to distrust the ones it can. They now
+        // fail at the parser like any other word, which is what they are.
+        for (word in listOf("log", "rem", "log instagram", "rem 10m call mum")) {
+            val parsed = CommandParser.parse(word)
+            assertTrue(
+                "'$word' still parses: $parsed",
+                parsed is ParseResult.Err &&
+                    parsed.error is ParseError.UnknownCommand,
+            )
+        }
+        assertTrue("log" !in CommandParser.VERBS)
+        assertTrue("rem" !in CommandParser.VERBS)
+        assertTrue("log" !in CommandParser.USAGE)
+        assertTrue("rem" !in CommandParser.USAGE)
     }
 
     @Test
     fun `alarm takes a time`() {
         assertEquals(Command.Alarm(6 * 60), ok("alarm 6am"))
         assertEquals(Command.Alarm(18 * 60 + 30), ok("alarm 18:30"))
-    }
-
-    @Test
-    fun `rem takes a duration and a free text tail`() {
-        assertEquals(Command.Remind(10 * m, "call mum"), ok("rem 10m call mum"))
-        assertEquals(Command.Remind(1 * h, "take the bins out"), ok("rem 1h take the bins out"))
     }
 
     @Test
@@ -108,8 +116,6 @@ class CommandParserTest {
         assertEquals(ParseError.MissingArgument("focus", "duration"), err("focus"))
         assertEquals(ParseError.MissingArgument("timer", "duration"), err("timer"))
         assertEquals(ParseError.MissingArgument("alarm", "time"), err("alarm"))
-        assertEquals(ParseError.MissingArgument("rem", "duration"), err("rem"))
-        assertEquals(ParseError.MissingArgument("rem", "text"), err("rem 10m"))
     }
 
     @Test
@@ -120,7 +126,7 @@ class CommandParserTest {
         assertEquals(ParseError.TooManyArguments("status"), err("status all"))
         assertEquals(ParseError.TooManyArguments("reboot"), err("reboot now"))
         assertEquals(ParseError.TooManyArguments("poweroff"), err("poweroff now"))
-        assertEquals(ParseError.TooManyArguments("log"), err("log instagram youtube"))
+        assertEquals(ParseError.TooManyArguments("allow"), err("allow ig 10m 20m"))
         assertEquals(ParseError.TooManyArguments("alarm"), err("alarm 6am 7am"))
         assertEquals(ParseError.TooManyArguments("wifi"), err("wifi on off"))
         assertEquals(ParseError.TooManyArguments("dnd"), err("dnd on off"))
@@ -142,7 +148,7 @@ class CommandParserTest {
         )
         assertEquals(
             ParseError.BadDuration("-5m", DurationParser.Kind.MALFORMED),
-            err("rem -5m call mum"),
+            err("focus -5m"),
         )
     }
 
@@ -265,7 +271,6 @@ class CommandParserTest {
     fun `a complete verb ghosts the arguments it owes`() {
         assertEquals("<app> <duration>", CommandParser.ghostFor("block "))
         assertEquals("<duration>", CommandParser.ghostFor("focus "))
-        assertEquals("[app]", CommandParser.ghostFor("log "))
         assertEquals("[on|off]", CommandParser.ghostFor("wifi "))
     }
 
@@ -296,19 +301,25 @@ class CommandParserTest {
     }
 
     @Test
-    fun `a multi-word free-text argument does not re-ghost`() {
-        // rem is the one verb with a free-text tail, so every token past the
-        // second is part of the reminder and nothing further is owed.
-        // A complete verb with no space yet ghosts nothing: the hint line
-        // below the prompt already shows the whole shape at that point, and
-        // two renderings of the same thing on one screen is one too many.
-        assertNull(CommandParser.ghostFor("rem"))
-        assertEquals("<duration> <text>", CommandParser.ghostFor("rem "))
-        assertEquals(" <text>", CommandParser.ghostFor("rem 10m"))
-        assertEquals("<text>", CommandParser.ghostFor("rem 10m "))
-        assertNull(CommandParser.ghostFor("rem 10m call"))
-        assertNull(CommandParser.ghostFor("rem 10m call mum"))
-        assertNull(CommandParser.ghostFor("rem 10m call mum about the thing"))
+    fun `no verb has a free-text tail any more`() {
+        // "rem" was the only one, and it is gone. The test that pinned its
+        // re-ghosting behaviour went with it rather than being kept against
+        // a verb that does not have the property: a test whose subject has
+        // been deleted is a test that asserts nothing while looking like
+        // coverage.
+        //
+        // This is what replaces it. Every usage shape is a fixed arity, so
+        // argumentGhost can keep counting tokens; the moment one of them
+        // grows a tail, this fails and the re-ghosting rules need writing
+        // again.
+        for ((verb, usage) in CommandParser.USAGE) {
+            val shapes = usage.split(' ').drop(1)
+            assertEquals(
+                "$verb has a repeated or open-ended argument: $usage",
+                shapes.size,
+                shapes.distinct().size,
+            )
+        }
     }
 
     @Test
@@ -333,8 +344,8 @@ class CommandParserTest {
         // but append would render as garbage.
         val lines = listOf(
             "block", "block ", "block i", "block insta", "block insta ",
-            "rem", "rem 1", "rem 10m", "rem 10m c", "focus", "focus ",
-            "log", "log ", "wifi", "wifi o", "alarm", "alarm ",
+            "focus", "focus ", "allow", "allow ig", "allow ig ",
+            "wifi", "wifi o", "alarm", "alarm ",
         )
         for (line in lines) {
             val ghost = CommandParser.ghostFor(line) ?: continue

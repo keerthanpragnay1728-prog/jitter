@@ -148,8 +148,6 @@ private object SubsystemSurface : EffectSurface {
         // FrictionEngine.
         "allow" -> Availability.Unavailable(R.string.cmd_na_no_allowance)
 
-        "log" -> Availability.Unavailable(R.string.cmd_na_no_log)
-        "rem" -> Availability.Unavailable(R.string.cmd_na_no_scheduling)
         else -> Availability.Unavailable(R.string.cmd_na_wiring)
     }
 }
@@ -217,10 +215,8 @@ fun launcherRegistry(): CommandRegistry = CommandRegistry(
         bedtimeUsage = R.string.cmd_usage_bedtime, bedtimeDesc = R.string.cmd_desc_bedtime,
         statusUsage = R.string.cmd_usage_status, statusDesc = R.string.cmd_desc_status,
         helpUsage = R.string.cmd_usage_help, helpDesc = R.string.cmd_desc_help,
-        logUsage = R.string.cmd_usage_log, logDesc = R.string.cmd_desc_log,
         alarmUsage = R.string.cmd_usage_alarm, alarmDesc = R.string.cmd_desc_alarm,
         timerUsage = R.string.cmd_usage_timer, timerDesc = R.string.cmd_desc_timer,
-        remUsage = R.string.cmd_usage_rem, remDesc = R.string.cmd_desc_rem,
         rebootUsage = R.string.cmd_usage_reboot, rebootDesc = R.string.cmd_desc_reboot,
         poweroffUsage = R.string.cmd_usage_poweroff, poweroffDesc = R.string.cmd_desc_poweroff,
         wifiUsage = R.string.cmd_usage_wifi, wifiDesc = R.string.cmd_desc_wifi,
@@ -362,8 +358,7 @@ private fun execute(
         }
     }
 
-    is Command.Allow, is Command.Log, is Command.Remind,
-    Command.Reboot, Command.PowerOff ->
+    is Command.Allow, Command.Reboot, Command.PowerOff ->
         DispatchResult.Unavailable(R.string.cmd_na_wiring)
 }
 
