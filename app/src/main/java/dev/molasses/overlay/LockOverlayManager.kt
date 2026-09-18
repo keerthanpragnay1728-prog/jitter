@@ -64,16 +64,29 @@ class LockOverlayManager(
 ) {
     private var host: OverlayHost? = null
     private var job: Job? = null
+    private var callJob: Job? = null
     private var currentPkg: String? = null
+
+    /** See [watchForCall]. The same permission-free check the shutter uses. */
+    private val calls = CallDetector(service)
 
     val isShowing: Boolean get() = host?.isShowing == true
 
     /**
-     * Show the message for [LockEnforcement.FLASH_HOLD_MS], then go home.
+     * Show the message. It stays until the user presses the way out.
      *
-     * Idempotent while showing: a second scroll inside the hold window, or a
-     * duplicate foreground event, must not stack two flashes or fire home
-     * twice.
+     * ## Why it is not a flash any more
+     * It used to hold about 1.4 s, fire home, and hold another 0.4 s to cover
+     * the transition. On a device that reads as the screen changing
+     * underneath you while you are still reading why it changed. The message
+     * is the whole point of drawing anything at all, and the reader decides
+     * when they have finished with it.
+     *
+     * The name stays because every call site and the ledger row say flash,
+     * and renaming it would touch more than it clarifies.
+     *
+     * Idempotent while showing: a second scroll, or a duplicate foreground
+     * event, must not stack two windows.
      */
     fun flash(pkg: String, label: String, reason: LockReason, remainingMs: Long) {
         if (isShowing) return
@@ -84,18 +97,37 @@ class LockOverlayManager(
 
         val remainingText = CommandRender.duration(remainingMs)
 
-        h.show(
-            onFirstDraw = { startHold() },
-        ) {
+        // No onFirstDraw callback any more, and the reason it existed is
+        // worth keeping written down. It was there because GLOBAL_ACTION_HOME
+        // fired from a timer started at show(): sending home from the call
+        // that added the window meant the frame never composited, so the user
+        // was thrown to the launcher with no explanation and it read as a
+        // crash. Once the user is the one pressing home, the frame has
+        // demonstrably been composited, because they looked at it and pressed
+        // a button on it.
+        //
+        // The settle hold on the way out is a different thing and survives:
+        // it is about not revealing the locked app for a frame during the
+        // transition, and that is still true however home was triggered.
+        h.show {
             MolassesTheme(fontScale = fontScale()) {
-                LockScreen(label = label, reason = reason, remainingText = remainingText)
+                LockScreen(
+                    label = label,
+                    reason = reason,
+                    remainingText = remainingText,
+                    onExit = { exit("user") },
+                )
             }
         }
 
         if (!h.isShowing) {
-            // addView failed. Enforce anyway: a lock that stops working
-            // because a window could not be added is worse than an
-            // unexplained bounce, and the log says which happened.
+            // addView failed. Enforce anyway, and this fallback matters more
+            // than it did: the bounce used to happen on every path, so a
+            // failed attach cost the message and nothing else. It is now the
+            // only thing standing between a failed window and a user sitting
+            // inside a locked app with nothing stopping them, which is the
+            // same fail-open shape the launch gate had. The bounce is removed
+            // from the success path, never from this one.
             Log.w(TAG, "lock overlay addView failed for $pkg; bouncing without the message")
             host = null
             currentPkg = null
@@ -105,18 +137,54 @@ class LockOverlayManager(
 
         onWindowsChanged()
         ledger.log(pkg, EventType.LOCK_ENFORCED, "remaining=${remainingText} reason=${reason.name}")
+        watchForCall()
     }
 
-    private fun startHold() {
+    /**
+     * Take the window down and go home.
+     *
+     * The settle hold is what keeps the locked app from being revealed for a
+     * frame while the transition runs, so dismissal comes after home rather
+     * than with it.
+     */
+    private fun exit(reason: String) {
+        if (host == null) return
         job?.cancel()
         job = scope.launch(Dispatchers.Main.immediate) {
-            delay(LockEnforcement.FLASH_HOLD_MS)
             goHome()
-            // The window covers the transition rather than vanishing to
-            // reveal the locked app for a frame.
             delay(LockEnforcement.HOME_SETTLE_MS)
             job = null
-            dismiss("hold elapsed")
+            dismiss(reason)
+        }
+    }
+
+    /**
+     * The panic path this window did not need while it lived 1.8 seconds.
+     *
+     * A full-screen overlay that stays until the user acts is a full-screen
+     * overlay over the incoming call the user is trying to answer. The
+     * shutter has had this check since it existed; this window now lives long
+     * enough to need it too.
+     *
+     * `whenUnknown = true`, which is the shutter's answer and the opposite of
+     * the launch gate's, and the asymmetry is the point. Taking this window
+     * down costs nothing: the lock lives in `LockRegistry`, not in this
+     * window, so the next entry or scroll enforces it again. Dismissing is
+     * not unlocking. A detector that cannot answer therefore degrades this
+     * screen to the timed bounce it used to be, rather than to a bypass.
+     */
+    private fun watchForCall() {
+        callJob?.cancel()
+        callJob = scope.launch(Dispatchers.Main.immediate) {
+            while (isShowing) {
+                delay(CALL_POLL_MS)
+                if (!isShowing) return@launch
+                if (calls.inProgress(whenUnknown = true)) {
+                    Log.i(TAG, "lock flash yielding: ${calls.describe()}")
+                    exit("call in progress")
+                    return@launch
+                }
+            }
         }
     }
 
@@ -124,6 +192,8 @@ class LockOverlayManager(
     fun dismiss(reason: String) {
         job?.cancel()
         job = null
+        callJob?.cancel()
+        callJob = null
         val h = host ?: return
         host = null
         currentPkg = null
@@ -132,5 +202,17 @@ class LockOverlayManager(
         onWindowsChanged()
     }
 
-    private companion object { const val TAG = "Molasses.LockOverlay" }
+    private companion object {
+        const val TAG = "Molasses.LockOverlay"
+
+        /**
+         * How often the call check runs while this window is up.
+         *
+         * Coarse on purpose. The check is a cached binder read, but this is a
+         * window the user is reading rather than interacting with, and a
+         * second of latency on yielding to a call is not the difference
+         * between answering it and missing it.
+         */
+        const val CALL_POLL_MS = 1_000L
+    }
 }

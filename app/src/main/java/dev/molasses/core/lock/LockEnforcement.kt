@@ -13,17 +13,6 @@ package dev.molasses.core.lock
  */
 object LockEnforcement {
 
-    /**
-     * How long the message holds before the home action fires.
-     *
-     * Long enough to read three short lines, short enough that it does not
-     * feel like a modal the user has to dismiss. The home action is posted
-     * from the overlay's first draw callback rather than from the call that
-     * added the window: sending HOME in the same frame the window was added
-     * means the frame never reaches the display and the user is bounced with
-     * no explanation at all, which reads as a crash.
-     */
-    const val FLASH_HOLD_MS = 1_400L
 
     /**
      * How long the message stays up after the home action, so it covers the

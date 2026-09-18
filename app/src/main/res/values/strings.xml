@@ -486,6 +486,13 @@
       on purpose, for four more hours".
     -->
     <string name="lock_flash_title">LOCKED</string>
+    <!--
+      The way out of the lock screen, and the only one now that the automatic
+      bounce is gone. Addressed the way the greeting addresses the user rather
+      than as a navigation instruction: this is the place the lock is sending
+      them back to, not a button on a form.
+    -->
+    <string name="lock_exit" translatable="false">[ ARCHITECT\'S SPACE ]</string>
     <string name="lock_reason_block">You blocked this app. There is no unlock.</string>
     <string name="lock_reason_focus">Focus session. Every tracked app is locked.</string>
     <string name="lock_reason_bedtime">Bedtime. Locked until morning.</string>

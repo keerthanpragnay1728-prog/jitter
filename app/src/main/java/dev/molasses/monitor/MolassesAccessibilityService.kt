@@ -823,6 +823,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         shutter.detach()
         if (gate.isShowing) gate.abandon(reason)
         leaseGate.dismiss(reason)
+        lockOverlay.dismiss(reason)
     }
 
     private fun enterTarget(pkg: String) {
@@ -901,6 +902,21 @@ class MolassesAccessibilityService : AccessibilityService() {
 
         val reason = locks.reasonFor(pkg, now) ?: LockReason.BLOCK
         tearDownOverlays("locked")
+        // The session ends here, and it has to end here now that the message
+        // is not on a timer.
+        //
+        // Our overlay is a window rather than an activity, so the locked app
+        // is still the foreground package behind it, and the checkpoint loop
+        // credits the foreground package every tick. While this screen lived
+        // 1.8 s that was at most one tick. Left until the user presses the
+        // way out, it would accrue against the app for as long as they sat
+        // reading why they cannot use it, which is the opposite of what a
+        // lock means.
+        //
+        // Closing it is also the honest model rather than a workaround: the
+        // lock ended the session, so the LOCK_ENFORCED row is the last thing
+        // in it rather than something sitting in the middle of one.
+        sessions.openId?.let { leaveTarget(it, "locked") }
         lockOverlay.flash(pkg, labelFor(pkg), reason, decision.remainingMs)
         return true
     }
@@ -940,6 +956,13 @@ class MolassesAccessibilityService : AccessibilityService() {
         shutter.setCurrentPackage(null)
         if (gate.isShowing) gate.abandon("left target")
         leaseGate.dismiss("left target")
+        // The lock message goes too, and it did not have to before. It used
+        // to take itself down 1.8 s after it appeared, so by the time any of
+        // this ran it was already gone. It now stays until the user acts, and
+        // a user who presses home themselves, or switches to another app,
+        // would otherwise arrive at the launcher with a full-screen lock
+        // notice still over it.
+        lockOverlay.dismiss("left target")
         // A new visit gets a fresh set of attempts. See gateAttachFailures.
         gateAttachFailures = 0
     }
