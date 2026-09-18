@@ -8,8 +8,8 @@ class DispatchTest {
 
     private val registry = CommandRegistry(
         CommandRegistry.Keys(
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-            13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+            11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
         ),
     )
 
@@ -56,7 +56,6 @@ class DispatchTest {
         val all = listOf<Command>(
             Command.Block("ig", 60_000),
             Command.Focus(60_000),
-            Command.Allow("yt", 60_000),
             Command.Bedtime,
         )
         for (command in all) {
@@ -116,10 +115,38 @@ class DispatchTest {
     @Test
     fun `relief is refused by policy even when its surface is fine`() {
         // Without this the command bar is an escape hatch from the whole app.
+        //
+        // Driven through a synthetic spec rather than a command, because no
+        // shipped command is relief since "allow" was deleted. That is the
+        // point of testing it this way: the gate belongs to the dispatcher
+        // and not to any one verb, so a future relief command inherits it
+        // rather than having to remember it, and the branch stays covered in
+        // the meantime.
         val d = dispatcher(relief = Availability.Unavailable(reasonKey = 7))
-        val r = d.dispatch(Command.Allow("youtube", 600_000))
-        assertEquals(7, (r as DispatchResult.Unavailable).reasonKey)
-        assertTrue("relief must not reach the handler", ranged.isEmpty())
+        val spec = CommandSpec("someday", 1, 2, Surface.SUBSYSTEM, isRelief = true)
+        val available = d.availabilityOf(spec)
+        assertEquals(7, (available as Availability.Unavailable).reasonKey)
+    }
+
+    @Test
+    fun `a relief spec whose policy allows it still passes the gate`() {
+        // The other direction, so the test above is proving the policy is
+        // consulted rather than that relief is refused unconditionally.
+        val d = dispatcher(relief = Availability.Available)
+        val spec = CommandSpec("someday", 1, 2, Surface.SUBSYSTEM, isRelief = true)
+        assertEquals(Availability.Available, d.availabilityOf(spec))
+    }
+
+    @Test
+    fun `dispatch refuses before execute whenever availabilityOf does`() {
+        // What the deleted half of the relief test used to assert, stated
+        // against the mechanism rather than against a relief command. dispatch
+        // routes every gate through availabilityOf, so anything that fails
+        // there cannot reach the handler, relief included.
+        val d = dispatcher(subsystem = Availability.Unavailable(reasonKey = 9))
+        val r = d.dispatch(Command.Bedtime)
+        assertEquals(9, (r as DispatchResult.Unavailable).reasonKey)
+        assertTrue("a refused command must not reach the handler", ranged.isEmpty())
     }
 
     @Test
@@ -127,13 +154,6 @@ class DispatchTest {
         val d = dispatcher(relief = Availability.Unavailable(reasonKey = 7))
         assertTrue(d.dispatch(Command.Block("ig", 60_000)) is DispatchResult.Confirmed)
         assertTrue(d.dispatch(Command.Focus(60_000)) is DispatchResult.Confirmed)
-    }
-
-    @Test
-    fun `the relief gate is checked before anything is armed`() {
-        val d = dispatcher(relief = Availability.Unavailable(reasonKey = 7))
-        d.dispatch(Command.Allow("youtube", 600_000))
-        assertTrue(ranged.isEmpty())
     }
 
     // --------------------------------------------------------- confirmation
@@ -165,12 +185,15 @@ class DispatchTest {
     }
 
     @Test
-    fun `focus needs confirming too, allow never does`() {
+    fun `focus needs confirming too`() {
         assertTrue(
             dispatcher().dispatch(Command.Focus(30 * day)) is DispatchResult.NeedsConfirmation,
         )
-        // A lease is bounded relief, not an unfixable lock.
-        assertTrue(dispatcher().dispatch(Command.Allow("yt", 30 * day)) is DispatchResult.Confirmed)
+        // The other half of this named "allow", which never needed confirming
+        // because a lease is bounded relief rather than an unfixable lock.
+        // Timer stands in: it also carries a duration and also arms nothing
+        // that LockRegistry will hold, which is the property that decided it.
+        assertTrue(dispatcher().dispatch(Command.Timer(30 * day)) is DispatchResult.Confirmed)
     }
 
     @Test

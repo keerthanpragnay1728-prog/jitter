@@ -9,7 +9,6 @@ import org.junit.Test
 private fun keys() = CommandRegistry.Keys(
     blockUsage = 1, blockDesc = 2,
     focusUsage = 3, focusDesc = 4,
-    allowUsage = 5, allowDesc = 6,
     bedtimeUsage = 7, bedtimeDesc = 8,
     statusUsage = 9, statusDesc = 10,
     helpUsage = 27, helpDesc = 28,
@@ -29,7 +28,6 @@ class CommandRegistryTest {
     private val allCommands: List<Command> = listOf(
         Command.Block("app", 60_000),
         Command.Focus(60_000),
-        Command.Allow("app", 60_000),
         Command.Bedtime,
         Command.Status,
         Command.Help,
@@ -88,7 +86,15 @@ class CommandRegistryTest {
     fun `allow is the only relief command`() {
         // If this starts failing, a new command suspends friction and the
         // dispatcher's relief gate needs to be the reason it is safe.
-        assertEquals(listOf("allow"), registry.specs.filter { it.isRelief }.map { it.verb })
+        // No shipped spec is relief today. "allow" was the only one and it
+        // is gone, so this asserts the absence rather than the membership.
+        //
+        // That is a branch waiting for a command, not a guard that cannot
+        // fire, and the difference is that CommandDispatch.availabilityOf
+        // still consults isRelief for any spec it is handed. DispatchTest
+        // drives it with a synthetic spec, so the mechanism stays covered
+        // while no command uses it.
+        assertEquals(emptyList<String>(), registry.specs.filter { it.isRelief }.map { it.verb })
     }
 
     @Test
@@ -109,7 +115,6 @@ class CommandRegistryTest {
         fun surfaceOf(verb: String) = registry.specForVerb(verb)?.surface
         assertEquals(Surface.SUBSYSTEM, surfaceOf("block"))
         assertEquals(Surface.SUBSYSTEM, surfaceOf("focus"))
-        assertEquals(Surface.SUBSYSTEM, surfaceOf("allow"))
         assertEquals(Surface.SUBSYSTEM, surfaceOf("bedtime"))
         assertEquals(Surface.STATE, surfaceOf("status"))
         assertEquals(Surface.STATE, surfaceOf("help"))
@@ -125,7 +130,6 @@ class CommandRegistryTest {
     fun `durationOf reports exactly the commands that arm something`() {
         assertEquals(60_000L, CommandRegistry.durationOf(Command.Block("a", 60_000)))
         assertEquals(60_000L, CommandRegistry.durationOf(Command.Focus(60_000)))
-        assertEquals(60_000L, CommandRegistry.durationOf(Command.Allow("a", 60_000)))
         assertEquals(null, CommandRegistry.durationOf(Command.Status))
         assertEquals(null, CommandRegistry.durationOf(Command.Bedtime))
         assertEquals(null, CommandRegistry.durationOf(Command.Alarm(0)))

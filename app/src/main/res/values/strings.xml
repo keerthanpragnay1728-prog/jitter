@@ -417,7 +417,6 @@
       on "no wifi panel" would be noise. The commands where seeing the parse
       matters are the long locks, and those echo it in the confirmation.
     -->
-    <string name="cmd_na_no_allowance">Allowances are not built yet. A lease has to park the penalty ratchet, not just hide the gate.</string>
     <string name="cmd_na_relief_while_locked">A lock is armed. Relief does not outrank a lock.</string>
     <!-- Not "not yet". A sideloaded app cannot reboot or power off a device
          at all, so this must not imply the feature is coming, and it must not
@@ -450,7 +449,6 @@
     -->
     <string name="cmd_usage_block" translatable="false">block &lt;app&gt; &lt;duration&gt;</string>
     <string name="cmd_usage_focus" translatable="false">focus &lt;duration&gt;</string>
-    <string name="cmd_usage_allow" translatable="false">allow &lt;app&gt; &lt;duration&gt;</string>
     <string name="cmd_usage_bedtime" translatable="false">bedtime</string>
     <string name="cmd_usage_status" translatable="false">status</string>
     <string name="cmd_usage_help" translatable="false">help</string>
@@ -463,7 +461,6 @@
     <!-- One line each, for the manual the registry generates. -->
     <string name="cmd_desc_block">Lock one app until the duration is up.</string>
     <string name="cmd_desc_focus">Lock every tracked app and silence notifications.</string>
-    <string name="cmd_desc_allow">Suspend checkpoints for one app. Friction keeps accruing.</string>
     <string name="cmd_desc_bedtime">Lock until the configured wake time.</string>
     <string name="cmd_desc_status">Show the ledger.</string>
     <string name="cmd_desc_help">List every command. Also $ ?.</string>
