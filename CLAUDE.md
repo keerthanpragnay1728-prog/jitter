@@ -318,17 +318,35 @@ with three different symptoms, which is why it is a rule rather than a fix:
 
 1. The drawer's `[TRACKED]` badge, which read a hardcoded `DEFAULT_TARGETS`
    instead of either list. Fixed.
-2. `$ focus` and `$ bedtime`, which refuse with "no targets" on a fresh install
-   while five apps are being gated. **Not fixed.**
-3. CFG's own target list, which shows nothing tracked in the same state.
-   **Not fixed, and not a one-line fix**: `toggleTarget` computes the next list
-   from `targets.value`, so resolving the display without resolving the write
-   inverts the control. A tap meant to turn one of the five defaults off would
-   remove it from an empty list, fail, and add it instead.
+2. `$ focus` and `$ bedtime`, which refused with "no targets" on a fresh
+   install while five apps were being gated. Fixed, along with the token
+   resolver's `preferred` set beside them.
+3. CFG's own target list, which showed nothing tracked in the same state.
+   Fixed at both ends at once, which is the part worth keeping: `toggleTarget`
+   computes the next list from the same flow the rows render, so resolving the
+   display alone would have inverted the control. A tap meant to turn one of
+   the five defaults off would have removed it from an empty list, failed, and
+   added it instead.
 
 That third case is the reason the rule is stated as "every reader" rather than
 "read through resolve". Resolving one end of a read-modify-write is worse than
 resolving neither.
+
+### What resolving cannot express, and why that is still the better state
+
+An empty stored list means "use the defaults", so turning the last target off
+writes empty and the defaults come back. Tracking nothing is not expressible.
+
+That limitation is not new and resolving did not create it. Before, the same
+tap left the service tracking five while CFG showed zero: the same hole wearing
+a silent divergence instead of a visible bounce. Making it visible is the
+improvement.
+
+Removing it needs the store to tell "empty because chosen" apart from "empty
+because untouched", which is a proto field and its own change.
+`TargetScope.usedFallback` is the seam that would read it, and it is the
+function to reach for rather than inferring the difference from an empty list
+no reader should be holding.
 
 Two related traps, both already paid for elsewhere in this file. A reader that
 caches the resolved set is wrong after every edit, which is what `by lazy` did

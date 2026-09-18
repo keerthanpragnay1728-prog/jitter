@@ -67,7 +67,16 @@ class LauncherActions(
     val lockRemainingMs: (String) -> Long,
     /** True while any lock is armed. The relief policy reads this. */
     val anyLockArmed: () -> Boolean,
-    /** The tracked packages, for `$ focus`. */
+    /**
+     * The tracked packages, for `$ focus` and `$ bedtime`.
+     *
+     * **Resolved, never the raw stored list.** `$ focus` and `$ bedtime`
+     * refuse when this is empty, and the stored list is empty on every device
+     * between first launch and the first edit, so the raw list made both
+     * commands report that the device has no targets while the service was
+     * gating five apps. See CLAUDE.md, "The stored target list is not the
+     * tracked set".
+     */
     val targets: () -> List<String>,
     /** An app token to a package. See [AppTokenResolver]. */
     val resolveApp: (String) -> AppTokenResolver.Result,

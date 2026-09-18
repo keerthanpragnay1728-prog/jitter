@@ -316,14 +316,14 @@ class LauncherActivity : ComponentActivity() {
                                     anyLockArmed = {
                                         locks.active(settingsRepository.nowStamped()).isNotEmpty()
                                     },
-                                    targets = { targets },
+                                    targets = { tracked.toList() },
                                     resolveApp = { token ->
                                         AppTokenResolver.resolve(
                                             token = token,
                                             candidates = installedApps.map {
                                                 AppTokenResolver.Candidate(it.packageName, it.label)
                                             },
-                                            preferred = targets.toSet(),
+                                            preferred = tracked,
                                         )
                                     },
                                     armLock = { packages, durationMs, reason ->
