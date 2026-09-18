@@ -301,6 +301,41 @@ and that the settings observer does not assign it at all. A reader put back
 into the observer would look like a harmless restoration of a safety net and
 would reintroduce this exact bug.
 
+## The stored target list is not the tracked set
+
+**`settingsRepository.targets` is the raw stored list and is never the answer
+to "what is tracked". Every reader goes through `TargetScope.resolve`. A reader
+that does not is wrong on a fresh install and wrong after every edit.**
+
+`resolve(stored, defaults)` falls back to the defaults when the stored list is
+empty, and that fallback is not a corner case: it is the state of every device
+between first launch and the first time the user edits the list. The service
+resolves, in `observeSettings`, and so is tracking five apps while the raw flow
+reports none.
+
+This has now produced the same bug three times, in three different readers,
+with three different symptoms, which is why it is a rule rather than a fix:
+
+1. The drawer's `[TRACKED]` badge, which read a hardcoded `DEFAULT_TARGETS`
+   instead of either list. Fixed.
+2. `$ focus` and `$ bedtime`, which refuse with "no targets" on a fresh install
+   while five apps are being gated. **Not fixed.**
+3. CFG's own target list, which shows nothing tracked in the same state.
+   **Not fixed, and not a one-line fix**: `toggleTarget` computes the next list
+   from `targets.value`, so resolving the display without resolving the write
+   inverts the control. A tap meant to turn one of the five defaults off would
+   remove it from an empty list, fail, and add it instead.
+
+That third case is the reason the rule is stated as "every reader" rather than
+"read through resolve". Resolving one end of a read-modify-write is worse than
+resolving neither.
+
+Two related traps, both already paid for elsewhere in this file. A reader that
+caches the resolved set is wrong after every edit, which is what `by lazy` did
+to the badge. And `TargetScope.usedFallback` exists so a caller can tell the
+two states apart when it matters, rather than inferring it from an empty list
+it should not have been holding.
+
 ## Colours live in one file
 
 `ui/theme/Color.kt` is the only place a colour is defined. Everything else
