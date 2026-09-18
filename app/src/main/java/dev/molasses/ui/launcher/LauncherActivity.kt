@@ -136,6 +136,7 @@ import dev.molasses.core.ui.FontScale
 import dev.molasses.core.ui.PowerBar
 import dev.molasses.debug.BitTrace
 import dev.molasses.data.datastore.ConsoleState
+import dev.molasses.core.session.TargetScope
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.repo.CycleReadout
 import dev.molasses.data.repo.SettingsRepository
@@ -201,6 +202,30 @@ class LauncherActivity : ComponentActivity() {
             val targets by settingsRepository.targets
                 .collectAsState(initial = emptyList())
 
+            // [TRACKED] is derived here, and not baked in by the query.
+            //
+            // It used to be `pkg in DEFAULT_TARGETS`, decided inside
+            // queryLaunchableApps, which is wrong three times over and showed
+            // up as one symptom: apps on the default list badged and an app
+            // the user added themselves never did.
+            //
+            // The list is the first fault. The second is that
+            // `installedApps` is `by lazy`, so even the right set would have
+            // frozen at the first read and a target toggled in CFG would not
+            // have reached the badge without restarting the launcher. The
+            // third is that the stored list is not the tracked set: the
+            // service runs it through TargetScope.resolve, which falls back
+            // to the defaults when it is empty, so reading the raw flow would
+            // have made the badge vanish entirely on a fresh install.
+            //
+            // So: the expensive PackageManager query stays lazy and stops
+            // deciding this, and the one volatile field is recomputed from
+            // the same resolve the service uses.
+            val tracked = remember(targets) { TargetScope.resolve(targets, DEFAULT_TARGETS) }
+            val badgedApps = remember(tracked) {
+                installedApps.map { it.copy(isTarget = it.packageName in tracked) }
+            }
+
             // What Bit's readout reads. The anchor rather than a remaining
             // figure, so the HUD subtracts against a fresh stamp when it
             // renders instead of needing a per-second ticker for something
@@ -238,7 +263,7 @@ class LauncherActivity : ComponentActivity() {
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         MainLauncherWorkspace(
-                            appList = installedApps,
+                            appList = badgedApps,
                             pagerState = pagerState,
                             onOpenDrawer = { showDrawer = true },
                             onOpenSettings = {
@@ -326,7 +351,7 @@ class LauncherActivity : ComponentActivity() {
                             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                         ) {
                             AppDrawerOverlay(
-                                apps = installedApps,
+                                apps = badgedApps,
                                 onLaunchPackage = { pkg ->
                                     showDrawer = false
                                     launchPackage(pkg)
@@ -506,7 +531,6 @@ class LauncherActivity : ComponentActivity() {
     }
 
     private fun queryLaunchableApps(): List<LaunchableApp> {
-        val targets = DEFAULT_TARGETS.toSet()
         val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
@@ -517,7 +541,10 @@ class LauncherActivity : ComponentActivity() {
                 LaunchableApp(
                     label = it.loadLabel(packageManager).toString(),
                     packageName = pkg,
-                    isTarget = pkg in targets,
+                    // Never decided here. This query is cached for the life of
+                    // the Activity and the tracked set is not; see where
+                    // badgedApps is built.
+                    isTarget = false,
                 )
             }
             .distinctBy { it.packageName }
