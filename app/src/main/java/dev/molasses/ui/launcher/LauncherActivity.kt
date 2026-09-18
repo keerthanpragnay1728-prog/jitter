@@ -99,6 +99,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -188,8 +189,10 @@ class LauncherActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Edge to edge stays here: it is a window layout attribute and it is
+        // correct from onCreate. Hiding the bar is not, and does not; see
+        // onWindowFocusChanged.
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        hideStatusBar()
 
         setContent {
             val fontScale by settingsRepository.fontScale
@@ -534,6 +537,41 @@ class LauncherActivity : ComponentActivity() {
     }
 
     /**
+     * Re-assert immersive every time this window takes focus.
+     *
+     * ## Why here and not in onCreate, where it was
+     * `onCreate` runs before the decor view is attached to a window. A
+     * `WindowInsetsControllerCompat` resolves through `ViewRootImpl`, which
+     * does not exist until the activity is resumed and `WindowManager.addView`
+     * has run, so a hide requested from `onCreate` is dropped. The status bar
+     * never hid, on any device, at any point: not a shell quirk, which would
+     * have differed between two shells, but the same code path failing the
+     * same way on both.
+     *
+     * ## Why focus and not attach
+     * `doOnAttach` would fix the first call and nothing else. Focus fixes
+     * three things with one mechanism:
+     *
+     *  1. It fires after attach, so the controller has somewhere to send the
+     *     request.
+     *  2. It fires again whenever focus returns, so `launchMode="singleTask"`
+     *     coming back from a target app re-hides rather than leaving the bar
+     *     restored. `onCreate` does not run a second time and that is the
+     *     defect a one-shot fix would have left behind.
+     *  3. It fires when one of our own focusable windows gives focus back. The
+     *     lease gate and the lock overlay are focusable, and although neither
+     *     is drawn over the launcher today, a window that takes focus and
+     *     returns it is exactly the shape that would undo immersive silently.
+     *
+     * Focus rather than `onResume` because resume can happen before the window
+     * has focus, which is the original bug one lifecycle step later.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideStatusBar()
+    }
+
+    /**
      * Hide the status bar on the console, and only on the console.
      *
      * ## What it is for
@@ -558,9 +596,21 @@ class LauncherActivity : ComponentActivity() {
      * the kind this app is. It is not a block: nothing is unreachable and no
      * notification is hidden from the system.
      *
-     * Worth confirming on hardware rather than trusting: some OEM shells
-     * treat the first swipe differently, and a shell that swallowed both
-     * gestures would make the shade feel broken rather than deliberate.
+     * ## The order of these two calls does not matter, and it was not the bug
+     * `setDecorFitsSystemWindows(window, false)` stays in `onCreate`. It is a
+     * window layout attribute and it decides whether this app draws behind the
+     * bars; this is a controller request and it decides whether the bars are
+     * there. Neither depends on the other having run, and the existing order
+     * already matched the androidx pattern. Written down because it is the
+     * first thing anyone will suspect next time.
+     *
+     * ## The log line is the diagnostic, not decoration
+     * A dropped insets request fails silently: the controller is obtained, the
+     * call returns, and nothing happens. That cost a build and a device round
+     * trip to establish once. `attached` and the before-and-after visibility
+     * make a second failure readable from logcat alone, and a null visibility
+     * is itself the signal, because it means the insets are not available yet
+     * and the request went nowhere.
      *
      * ## This conceals the inset fault, it does not fix it
      * Every screen in this app clears the system bars with a hardcoded
@@ -571,16 +621,36 @@ class LauncherActivity : ComponentActivity() {
      * overlay, and this screen again the moment a transient bar is showing.
      *
      * See CLAUDE.md, "Window insets are a constant, and that is a known
-     * fault". That section stands, and landing this does not close it. It is
-     * the reason the section says to land immersive if it is wanted for its
-     * own sake and leave the note standing.
+     * fault". That section stands, and landing this does not close it.
      */
     private fun hideStatusBar() {
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        val decor = window.decorView
+        val controller = WindowInsetsControllerCompat(window, decor)
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.statusBars())
+        Log.i(
+            TAG_IMMERSIVE,
+            "hide requested: attached=${decor.isAttachedToWindow} before=${statusBarVisible()}",
+        )
+        // Posted rather than read inline. The request is asynchronous, so a
+        // reading taken on this frame reports the state the call was trying to
+        // change and would say "still visible" even on a success.
+        decor.post {
+            Log.i(TAG_IMMERSIVE, "after one frame: statusBarVisible=${statusBarVisible()}")
+        }
     }
+
+    /**
+     * Whether the status bar is on screen, or null when nothing can say yet.
+     *
+     * Null is the interesting answer. It means the window has no root insets,
+     * which is the state `onCreate` was asking from, and it is the difference
+     * between "the request was refused" and "there was nobody to refuse it".
+     */
+    private fun statusBarVisible(): Boolean? =
+        ViewCompat.getRootWindowInsets(window.decorView)
+            ?.isVisible(WindowInsetsCompat.Type.statusBars())
 
     private fun queryLaunchableApps(): List<LaunchableApp> {
         val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
@@ -604,6 +674,15 @@ class LauncherActivity : ComponentActivity() {
     }
 
     private companion object {
+        /**
+         * Its own tag, not the activity's.
+         *
+         * The one failure mode here is silence: the controller is obtained,
+         * the call returns, and nothing happens. A tag that can be filtered on
+         * its own is what makes `adb logcat -s Molasses.Immersive` answer the
+         * question without a second build.
+         */
+        const val TAG_IMMERSIVE = "Molasses.Immersive"
     }
 }
 
