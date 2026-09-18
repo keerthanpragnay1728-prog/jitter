@@ -1,5 +1,6 @@
 package dev.molasses.core.lock
 
+import dev.molasses.core.repoFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -109,6 +110,49 @@ class TargetLockTest {
             assertTrue("$reason should stand", remaining > 0L)
             assertNull("$reason must hold the toggle", TargetLock.toggled(listOf(ig), ig, remaining))
         }
+    }
+
+    // ------------------------------------------------------- the only write
+
+    @Test
+    fun `there is no way to write the target list that skips the guard`() {
+        // The guard was complete because toggleTarget was the only caller of
+        // setTargets. Complete-because-there-is-one-caller is a guard waiting
+        // for the second caller, and this repository has paid for that twice.
+        for (path in listOf(
+            "app/src/main/java/dev/molasses/data/datastore/CycleStateStore.kt",
+            "app/src/main/java/dev/molasses/data/repo/SettingsRepository.kt",
+        )) {
+            val text = repoFile(path).readText()
+            assertFalse(
+                "$path still declares setTargets; the target list must only " +
+                    "be writable through toggleTarget",
+                text.contains("fun setTargets("),
+            )
+        }
+    }
+
+    @Test
+    fun `the store decides inside the transform, not against a snapshot`() {
+        // The window this closes: the view model read a targets snapshot and
+        // a locks snapshot and then wrote, so a lock armed in between was
+        // missed, and bedtime arms on a timer with nobody watching.
+        val text = repoFile(
+            "app/src/main/java/dev/molasses/data/datastore/CycleStateStore.kt",
+        ).readText()
+        val start = text.indexOf("suspend fun toggleTarget(")
+        assertTrue("toggleTarget has been renamed or removed", start >= 0)
+        val end = text.indexOf("\n    /**", start)
+        val body = text.substring(start, if (end > start) end else text.length)
+        assertTrue("toggleTarget must write through updateData", body.contains("store.updateData"))
+        assertTrue(
+            "the lock must be read from the same state the write builds on",
+            body.contains("state.locksList"),
+        )
+        assertTrue(
+            "the decision must go through TargetLock",
+            body.contains("TargetLock.toggled("),
+        )
     }
 
     private fun stamp(elapsedMs: Long) = dev.molasses.core.time.StampedInstant(

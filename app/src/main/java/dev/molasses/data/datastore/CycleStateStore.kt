@@ -18,9 +18,11 @@ import dev.molasses.core.lease.LeaseLadder
 import dev.molasses.core.lease.LeaseManager
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
+import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
+import dev.molasses.core.session.TargetScope
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.FontScale
 import dev.molasses.engine.TierPolicy
@@ -175,9 +177,42 @@ class CycleStateStore(context: Context) {
         }
     }
 
-    suspend fun setTargets(packages: List<String>) {
-        store.updateData {
-            it.toBuilder().clearTargetPackages().addAllTargetPackages(packages).build()
+    /**
+     * Track or untrack [pkg], unless a lock stands on it.
+     *
+     * ## Why the read and the write are in the same block
+     * The same reason [armLocks] gives, and it arrived the same way. The
+     * guard lived in the view model, which read a `StateFlow` snapshot of the
+     * targets and a second snapshot of the locks and then wrote. A lock armed
+     * between those reads and that write would have been missed, and the one
+     * armed by `$ bedtime` fires on a timer with nobody watching.
+     *
+     * Inside `updateData` there is no window. The resolved list, the lock's
+     * remaining time and the write all read the same state, and DataStore
+     * serialises the transform.
+     *
+     * ## Why the store may ask about locks
+     * It already does: `locks` is built from `state.locksList` a few lines
+     * up, because both live in the same proto. Nothing new is dragged in
+     * here. The resolver is the thing that must stay ignorant of locks, and
+     * it does: `TargetScope.resolve` turns a stored list into an effective
+     * one and this asks `TargetLock` separately.
+     *
+     * ## Why there is no general setter any more
+     * This replaced `setTargets`, which took a whole list and wrote it
+     * unconditionally. One caller ever used it, and the guard on that caller
+     * was complete. But a complete guard resting on there being one caller is
+     * a guard waiting for the second one, and this repository has now paid for
+     * that twice. There is no way to write the target list that does not come
+     * through here.
+     */
+    suspend fun toggleTarget(pkg: String, now: StampedInstant) {
+        store.updateData { state ->
+            val current = TargetScope.resolve(state.targetPackagesList, DEFAULT_TARGETS).toList()
+            val locks = LockRegistry.of(state.locksList.map { it.toLock() })
+            val next = TargetLock.toggled(current, pkg, locks.remainingMs(pkg, now))
+                ?: return@updateData state
+            state.toBuilder().clearTargetPackages().addAllTargetPackages(next).build()
         }
     }
 

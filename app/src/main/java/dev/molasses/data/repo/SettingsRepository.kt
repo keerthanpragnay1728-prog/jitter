@@ -200,7 +200,13 @@ class SettingsRepository(
 
     suspend fun setFontScale(scale: FontScale) = store.setFontScale(scale)
 
-    suspend fun setTargets(packages: List<String>) = store.setTargets(packages)
+    /**
+     * Track or untrack [pkg], unless a lock stands on it.
+     *
+     * The only way to change the target list. There is deliberately no
+     * `setTargets`: see [CycleStateStore.toggleTarget].
+     */
+    suspend fun toggleTarget(pkg: String) = store.toggleTarget(pkg, nowStamped())
     suspend fun setResetPolicy(policy: CycleResetPolicy) = store.setResetPolicy(policy)
     suspend fun setGateMode(mode: GatePolicy.GateMode) = store.setGateMode(mode)
 
