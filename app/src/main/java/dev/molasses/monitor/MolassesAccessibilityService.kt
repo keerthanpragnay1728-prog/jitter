@@ -107,11 +107,33 @@ class MolassesAccessibilityService : AccessibilityService() {
     private var locks: LockRegistry = LockRegistry()
 
     /**
-     * The granted leases, refreshed by the settings observer.
+     * The granted leases. Written by [grantLease] the moment one is taken,
+     * and rebuilt from the store by the settings observer.
      *
      * Volatile for the same reason as [locks], and rebuilt wholesale on every
-     * emission rather than diffed. One stale read costs at most one extra
-     * gate, which is the direction that fails safely.
+     * emission rather than diffed.
+     *
+     * ## Why the grant is applied here and not only persisted
+     * This used to be assigned by the observer alone, and carried a note
+     * saying a stale read cost at most one extra gate, which was the
+     * direction that failed safely. That was the bug asserted as a
+     * reassurance.
+     *
+     * An extra gate is not free. It ends in an extra lease taken, and
+     * `GateCountdown` counts leases taken, so every stale read bought a
+     * permanent rung of escalation for the rest of the cycle. It was not
+     * occasional either: the gate window is focusable, so removing it hands
+     * focus back to the target app, which emits `WINDOW_STATE_CHANGED`, which
+     * routes to `enterTarget`, which asks for a gate again. That fires a frame
+     * or two after the dismiss and a DataStore write cannot land in the
+     * meantime, so the second gate was reliable rather than racy, and the
+     * countdown reached its 30 s cap in half the leases it should have.
+     *
+     * So the grant lands here first and is persisted behind it, which is the
+     * same shape the engine already uses. The two copies cannot disagree:
+     * [LeaseManager] is immutable and its `grant` refuses to lengthen a live
+     * lease, so applying the same grant twice is idempotent and the observer's
+     * later assignment is a no-op.
      */
     @Volatile
     private var leases: LeaseManager = LeaseManager()
@@ -742,7 +764,18 @@ class MolassesAccessibilityService : AccessibilityService() {
     private fun grantLease(pkg: String, durationMs: Long) {
         if (!ready) return
         val accumulated = engine.state.value.perApp[pkg]?.accumulatedMs ?: 0L
+        val now = nowStamped()
         engine.onLeaseGranted(pkg, durationMs, now())
+        // In memory first, disk behind it. The next read of [leases] is the
+        // one `maybeLaunchGate` makes on the event that our own gate window
+        // produces by closing, and it arrives long before a DataStore write
+        // can. Without this line that read sees no lease, gates again, and
+        // charges a second rung for one decision. See [leases].
+        //
+        // No timer and no grace window. A window in which the gate declines
+        // to fire is a bypass, and it would paper over an ordering rather
+        // than fix it.
+        leases = leases.grant(pkg, now, durationMs, accumulated)
         // Re-attach: the user is in the app with permission now, and the
         // shutter came down when the gate went up.
         if (!overlaysSuppressed()) {
@@ -750,7 +783,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             shutter.attach()
         }
         scope.launch {
-            cycleStore.grantLease(pkg, nowStamped(), durationMs, accumulated)
+            cycleStore.grantLease(pkg, now, durationMs, accumulated)
         }
     }
 
