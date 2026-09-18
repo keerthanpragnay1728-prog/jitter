@@ -23,12 +23,6 @@ sealed interface Command {
     /** `$ focus <duration>`. Locks every tracked target and silences notifications. */
     data class Focus(val durationMs: Long) : Command
 
-    /**
-     * `$ allow <app> <duration>`. Suspends checkpoint gates only. The stall
-     * curve stays armed and time keeps accumulating, so this is a lease on
-     * the tolls, not on the friction.
-     */
-    data class Allow(val appToken: String, val durationMs: Long) : Command
 
     /** `$ bedtime` / `$ sleep`. Locks until the configured wake time. */
     data object Bedtime : Command

@@ -803,7 +803,6 @@ fun TerminalHomeView(
      * never look at.
      */
     var messagingChoices by remember { mutableStateOf<List<LaunchableApp>?>(null) }
-    }
 
     // The dispatcher, rebuilt only when the action table changes. Surfaces
     // read live state when asked, so nothing here needs to recompose for the
@@ -924,6 +923,7 @@ fun TerminalHomeView(
                 ),
             )
         }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {

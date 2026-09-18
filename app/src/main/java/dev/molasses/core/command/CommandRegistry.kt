@@ -104,7 +104,6 @@ class CommandRegistry(keys: Keys) {
     data class Keys(
         val blockUsage: Int, val blockDesc: Int,
         val focusUsage: Int, val focusDesc: Int,
-        val allowUsage: Int, val allowDesc: Int,
         val bedtimeUsage: Int, val bedtimeDesc: Int,
         val statusUsage: Int, val statusDesc: Int,
         val helpUsage: Int, val helpDesc: Int,
@@ -126,17 +125,16 @@ class CommandRegistry(keys: Keys) {
         // run is teaching the user to distrust the list, and the manual is
         // now the whole of discovery.
         //
-        // "allow" is the last of that shape still standing, and it is here on
-        // purpose rather than by oversight: relief has a designed home in
-        // PauseWindow and the penalty ratchet, so its absence is a feature
-        // not yet built rather than a name with nothing behind it.
+        // "allow" went the same way. It was the last of that shape, and the
+        // argument for keeping it was a fact about our notes rather than
+        // about the device: relief is designed in CLAUDE.md, but from the
+        // prompt it was indistinguishable from the other two. It comes back
+        // with the feature, and the design is not lost because it was never
+        // in here.
         CommandSpec("block", keys.blockUsage, keys.blockDesc, Surface.SUBSYSTEM,
             requiresConfirmAboveMs = CONFIRM_ABOVE_MS),
         CommandSpec("focus", keys.focusUsage, keys.focusDesc, Surface.SUBSYSTEM,
             requiresConfirmAboveMs = CONFIRM_ABOVE_MS),
-        // Relief. Suspends checkpoints, so it routes through the relief
-        // policy before it reaches a handler.
-        CommandSpec("allow", keys.allowUsage, keys.allowDesc, Surface.SUBSYSTEM, isRelief = true),
         CommandSpec("bedtime", keys.bedtimeUsage, keys.bedtimeDesc, Surface.SUBSYSTEM),
 
         // STATE. Scroll the pager, open the manual. Nothing can stop either.
@@ -179,7 +177,6 @@ class CommandRegistry(keys: Keys) {
         fun verbOf(command: Command): String = when (command) {
             is Command.Block -> "block"
             is Command.Focus -> "focus"
-            is Command.Allow -> "allow"
             Command.Bedtime -> "bedtime"
             Command.Status -> "status"
             Command.Help -> "help"
@@ -195,7 +192,6 @@ class CommandRegistry(keys: Keys) {
         fun durationOf(command: Command): Long? = when (command) {
             is Command.Block -> command.durationMs
             is Command.Focus -> command.durationMs
-            is Command.Allow -> command.durationMs
             is Command.Timer -> command.durationMs
             else -> null
         }
