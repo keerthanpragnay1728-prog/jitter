@@ -333,9 +333,6 @@ class CycleStateStore(context: Context) {
         }
     }
 
-    val leases: Flow<LeaseManager> =
-        store.data.map { state -> LeaseManager.of(state.leasesList.map { it.toLease() }) }
-
     /**
      * Grant a lease on [pkg].
      *

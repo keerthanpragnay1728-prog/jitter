@@ -413,7 +413,8 @@ class FrictionEngine(
         ledger.log(
             pkg,
             EventType.LEASE_TAKEN,
-            "duration=${durationMs}ms until=${app.leaseUntilAccumulatedMs} n=${app.leasesTaken}",
+            "duration=${durationMs}ms untilAccum=${app.leaseUntilAccumulatedMs} " +
+                "n=${app.leasesTaken}",
         )
         publish()
     }
