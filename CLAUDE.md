@@ -186,6 +186,75 @@ notes. Relief is designed in this file, at length, with its own clamp
 direction, and that did not make `$ allow` anything other than a verb that
 always refused. Design on paper is not a caller.
 
+## Apply it where it changes, persist behind it
+
+**A value the service both changes and reads must be applied where it is
+changed, with persistence behind it. A store round-trip is durability, not the
+write.**
+
+This is now the second instance, in two unrelated subsystems, so it is written
+down rather than re-derived.
+
+1. **`fontScale` captured as a value.** The overlay managers are constructed
+   once when the service connects and shown for hours afterwards, so a
+   captured `Float` froze whatever the setting was at boot. Fixed by holding
+   it as `() -> Float` and invoking it at composition. `FontScaleWiringTest`
+   reads all five call sites as text.
+2. **A lease read before its write landed.** `grantLease` told the engine
+   synchronously and the lease registry through a DataStore write, and
+   `maybeLaunchGate` reads both in one breath. Between the two it saw a
+   package with no lease and one more lease taken, so it gated again one
+   escalation step higher, and every lease cost two rungs. The mirror case is
+   cycle rollover, where the engine clears `leasesTaken` in its own call stack
+   and the registry was cleared through the store: there the gap skips the
+   first gate of the new cycle, which is the relief direction and the worse
+   one. Both fixed by assigning in memory first and launching the store write
+   behind it. `LeaseGrantVisibilityTest` covers both directions.
+
+Both compiled. Both ran. Both had a comment next to them asserting they were
+fine: "read at the moment this window is shown" on a parameter that was not
+one, and "one stale read costs at most one extra gate, which is the direction
+that fails safely" on a read whose extra gate ended in an extra lease taken,
+which the countdown counts. **A comment claiming a hazard is handled is not
+evidence that it is.** That is the same failure as a guard with no caller, one
+section up: the next reader takes the note as cover.
+
+### What makes it safe to write in both places
+
+The in-memory copy and the stored copy have to be unable to disagree, or this
+trades a stale read for a split brain. Two properties do it, and both are
+already load bearing elsewhere:
+
+- The type is **immutable**, so applying a change returns a new value and there
+  is no shared mutable state across the two threads.
+- The operation is **idempotent**, so applying it twice is applying it once.
+  `LeaseManager.grant` refuses to lengthen a live lease, which it does for its
+  own reasons, and that is exactly what makes the observer's later assignment a
+  no-op rather than a second grant.
+
+Hand the store the same reading the in-memory call used, rather than taking a
+fresh one. `grantLease` passes one `StampedInstant` to both, so what the
+observer assigns back is identical rather than merely equivalent.
+
+### Not a timer, and not a grace window
+
+The tempting shape is to have the reader ignore the hazard for a few hundred
+milliseconds after the write starts. Do not. It papers over an ordering rather
+than fixing it, the interval is a guess about disk latency, and for anything
+that gates it is a window in which the gate declines to fire, which is a
+bypass. Always err toward more friction.
+
+### Test it as text as well as in the pure layer
+
+A pure test can say the pieces answer correctly. It cannot say the service
+made the assignment, because the service is one of the 38 files nothing here
+compiles. So these are asserted the way `FontScaleWiringTest` asserts its call
+sites: read the source, slice out the function, and check both that the
+assignment exists **and that it is before the `scope.launch`**. The second
+half is the one that matters. An assignment moved inside the coroutine would
+compile, would read like the same fix, and would restore the bug with a shorter
+window, and no pure test can see it.
+
 ## Colours live in one file
 
 `ui/theme/Color.kt` is the only place a colour is defined. Everything else

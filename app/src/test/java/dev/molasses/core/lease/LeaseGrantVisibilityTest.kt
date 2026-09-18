@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * A lease is visible to the next gate decision without waiting on the store.
+ * The service's lease registry agrees with the engine at the instant it is read.
  *
  * ## The bug this exists for
  * `grantLease` applied a lease to two places at two speeds: to the engine
@@ -34,6 +34,14 @@ import org.junit.Test
  * defect was never in the pieces. It was one assignment the service did not
  * make, in a file no tool in this environment compiles. `FontScaleWiringTest`
  * exists for the same reason and reads the same way.
+ *
+ * ## Both directions
+ * A grant and a rollover are the same defect pointing opposite ways. A grant
+ * the registry has not seen yet costs an extra gate and an extra rung; a
+ * rollover it has not seen yet leaves a lease the new cycle never issued
+ * standing, and `LaunchGate` passes on it, so the first gate of the cycle is
+ * skipped. The second is the worse half, because it is relief rather than
+ * friction. Both are asserted here.
  *
  * Pure. Unit-tested behaviour lives in `LeaseManagerTest`; this is about the
  * seam between that and the gate.
@@ -148,6 +156,81 @@ class LeaseGrantVisibilityTest {
         )
     }
 
+    // ------------------------------------------------------------- rollover
+
+    @Test
+    fun `after a rollover the first gate of the new cycle fires`() {
+        // The engine replaces every AppState on a rollover, so leasesTaken is
+        // zero in the same call stack. The registry has to be cleared in that
+        // call stack too, or the lease the old cycle issued outlives the cycle
+        // it was escalating against.
+        val now = at(1_000)
+        val before = LeaseManager().grant(pkg, now, 15 * 60_000L, accumulatedMs = 0L)
+        assertTrue(
+            "a live lease passes, which is correct before the rollover",
+            decide(before, now, leasesTaken = 1) is LaunchGate.Decision.Pass,
+        )
+
+        val after = LeaseManager()
+        val decision = decide(after, at(1_100), leasesTaken = 0)
+        assertTrue(
+            "the first gate of a new cycle must fire, got $decision",
+            decision is LaunchGate.Decision.Intercept,
+        )
+        assertEquals(
+            "and it is the first gate, not a continuation of the old ladder",
+            GateCountdown.FIRST_MS,
+            (decision as LaunchGate.Decision.Intercept).countdownMs,
+        )
+        assertTrue("nothing expired, because the cycle started over", !decision.expired)
+    }
+
+    @Test
+    fun `without the in-memory clear the new cycle opens free`() {
+        // The shape of the bug. The count has reset and the registry has not,
+        // so the gate passes on a lease that belongs to a cycle that is over.
+        // This is the dangerous direction: the last bug charged a rung too
+        // many, this one hands out an ungated launch.
+        val now = at(1_000)
+        val stale = LeaseManager().grant(pkg, now, 15 * 60_000L, accumulatedMs = 0L)
+        assertTrue(
+            decide(stale, at(1_100), leasesTaken = 0) is LaunchGate.Decision.Pass,
+        )
+    }
+
+    @Test
+    fun `the service clears its own registry on rollover, not only the store`() {
+        // Same text assertion as the grant, for the same reason: the clear
+        // has to happen in the call stack the engine rolls the cycle on.
+        // Moved inside the coroutine it would compile, would read like this
+        // fix, and would restore the bug with a shorter window.
+        val body = onCycleRolledBody()
+        val clear = body.indexOf("leases = LeaseManager()")
+        val launch = body.indexOf("scope.launch")
+        assertTrue(
+            "onCycleRolled must clear `leases` itself. Without it the first " +
+                "gate of the new cycle passes on a lease the new cycle never " +
+                "issued.",
+            clear >= 0,
+        )
+        assertTrue("no store clear found in onCycleRolled", launch >= 0)
+        assertTrue(
+            "the in-memory clear must come before the store write, and " +
+                "outside the coroutine that performs it",
+            clear < launch,
+        )
+    }
+
+    /** The `onCycleRolled` lambda, from its name to the argument that follows. */
+    private fun onCycleRolledBody(): String {
+        val text = serviceSource()
+        val start = text.indexOf("onCycleRolled = {")
+        assertTrue("onCycleRolled has been renamed or removed", start >= 0)
+        val end = text.indexOf("\n            },", start)
+        assertTrue("could not find the end of the onCycleRolled lambda", end > start)
+        return text.substring(start, end)
+    }
+
     /**
      * The text of `grantLease`, from its signature to the next declaration.
      *
@@ -155,14 +238,16 @@ class LeaseGrantVisibilityTest {
      * thousand line file cannot satisfy either assertion above.
      */
     private fun grantLeaseBody(): String {
-        val text = repoFile(
-            "app/src/main/java/dev/molasses/monitor/MolassesAccessibilityService.kt",
-        ).readText()
+        val text = serviceSource()
         val start = text.indexOf("private fun grantLease(")
         assertTrue("grantLease has been renamed or removed", start >= 0)
         val end = text.indexOf("\n    /**", start)
         return text.substring(start, if (end > start) end else text.length)
     }
+
+    private fun serviceSource(): String = repoFile(
+        "app/src/main/java/dev/molasses/monitor/MolassesAccessibilityService.kt",
+    ).readText()
 
     private fun repoFile(relative: String): File {
         var dir: File? = File(System.getProperty("user.dir")!!).absoluteFile
