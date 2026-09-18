@@ -54,6 +54,7 @@ import dev.molasses.core.settings.CfgRowKey
 import dev.molasses.core.settings.TargetGrouping
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lock.LockLadder
+import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.lock.LockRequest
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.safety.SensitivePackages
@@ -363,6 +364,10 @@ fun SettingsScreen(
                     label = app.label,
                     pkg = app.pkg,
                     tracked = app.pkg in targets,
+                    // A locked app cannot be untracked, because unticking it
+                    // would take it out of packageNames and stop the lock
+                    // being enforced at all. See TargetLock.
+                    pinned = TargetLock.isPinned(app.pkg in targets, remainingMs),
                     remainingMs = remainingMs,
                     expanded = scrubbing == app.pkg,
                     stepIndex = stepIndex,
@@ -1317,6 +1322,8 @@ private fun TargetRow(
     label: String,
     pkg: String,
     tracked: Boolean,
+    /** Tracked with a lock standing, so the toggle is held. See [TargetLock]. */
+    pinned: Boolean,
     remainingMs: Long,
     expanded: Boolean,
     stepIndex: Int,
@@ -1384,13 +1391,21 @@ private fun TargetRow(
                     if (tracked) R.string.settings_target_on else R.string.settings_target_off,
                 ),
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (tracked) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.outline
+                // Three states in two colours, and the third one is why the
+                // remaining time to the left of this is load bearing rather
+                // than decorative: primary is tracked, outline is not, and
+                // secondary is tracked and held. A held toggle that looked
+                // identical to a live one would be a control that ignores
+                // taps, which reads as a broken screen.
+                color = when {
+                    pinned -> MaterialTheme.colorScheme.secondary
+                    tracked -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.outline
                 },
                 modifier = Modifier
-                    .clickable(onClick = onToggleTarget)
+                    .then(
+                        if (pinned) Modifier else Modifier.clickable(onClick = onToggleTarget),
+                    )
                     .padding(vertical = 6.dp, horizontal = 4.dp),
             )
         }
@@ -1423,6 +1438,19 @@ private fun TargetRow(
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
+                // Why the toggle above is dim and does nothing. The colour
+                // says the state and this says the reason, and the row's own
+                // tap is what opens it, so a user who pressed the toggle and
+                // got nothing finds the answer with the gesture they were
+                // already going to try.
+                if (pinned) {
+                    Text(
+                        stringResource(R.string.settings_target_pinned),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
                 Text(
                     stringResource(
                         R.string.settings_lock_scrub_fmt,

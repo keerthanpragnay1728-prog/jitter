@@ -8,6 +8,7 @@ import dev.molasses.core.diag.RouteTally
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
+import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
@@ -329,14 +330,27 @@ class SettingsViewModel @Inject constructor(
             else StallLatency(requested, actual, release)
         }
 
+    /**
+     * Track or untrack [pkg], unless a lock stands on it.
+     *
+     * The whole decision is [TargetLock.toggled], including the list
+     * arithmetic, because the arithmetic is where this would go wrong. It
+     * reads the resolved flow, which is the half that keeps the control the
+     * right way round: against the raw list, turning off one of the five
+     * defaults would remove from an empty list, fail, and add it back.
+     *
+     * A refusal is a null and this returns without writing. The row renders
+     * its own toggle from [TargetLock.isPinned], so the refusal is visible
+     * before it happens rather than felt as a tap that did nothing.
+     */
     fun toggleTarget(pkg: String) {
         viewModelScope.launch {
-            // Reads the resolved flow, which is the half that makes this
-            // correct. Against the raw list, turning off one of the five
-            // defaults would remove from an empty list, fail, and add it.
-            val current = targets.value.toMutableList()
-            if (!current.remove(pkg)) current += pkg
-            repo.setTargets(current)
+            val next = TargetLock.toggled(
+                current = targets.value,
+                pkg = pkg,
+                lockRemainingMs = lockRemainingMs(pkg),
+            ) ?: return@launch
+            repo.setTargets(next)
         }
     }
 
