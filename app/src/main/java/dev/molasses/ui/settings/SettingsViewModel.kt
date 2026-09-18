@@ -4,6 +4,7 @@ import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.molasses.core.diag.LedgerExport
 import dev.molasses.core.diag.RouteTally
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.LockReason
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -344,6 +346,35 @@ class SettingsViewModel @Inject constructor(
      */
     fun toggleTarget(pkg: String) {
         viewModelScope.launch { repo.toggleTarget(pkg) }
+    }
+
+    /**
+     * The ledger as a file's worth of text.
+     *
+     * Reads a wider window than the screen does and asks the table how many
+     * rows it actually holds, so the header can say N of M rather than
+     * implying the file is complete. See [LedgerExport].
+     *
+     * @param formatWall supplied by the caller because the pure module holds
+     *   no date formatter, and the screen already has one configured from a
+     *   resource.
+     */
+    suspend fun ledgerExportText(formatWall: (Long) -> String): String {
+        val rows = dao.recent(LedgerExport.LIMIT).first()
+        val total = dao.count()
+        return LedgerExport.format(
+            rows = rows.map {
+                LedgerExport.Row(
+                    wallMs = it.wallMs,
+                    bootId = it.bootId,
+                    type = it.type.name,
+                    pkg = it.pkg,
+                    meta = it.meta,
+                )
+            },
+            totalInDatabase = total,
+            formatWall = formatWall,
+        )
     }
 
     fun setResetPolicy(policy: CycleResetPolicy) {

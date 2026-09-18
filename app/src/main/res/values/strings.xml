@@ -249,6 +249,8 @@
     <string name="debug_empty">(empty)</string>
     <string name="debug_section_ledger">Ledger (newest first)</string>
 
+    <string name="debug_export_ledger">Export ledger to a file</string>
+    <string name="debug_export_stamp_format" translatable="false">yyyy-MM-dd-HHmm</string>
     <string name="debug_clear_ledger">Clear ledger</string>
     <string name="debug_reset_all">Reset all state (ladder and ledger)</string>
 
