@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -1015,6 +1014,13 @@ private fun HorizonControl(
  * be lengthened, and the scrubber is how.
  *
  * There is no unlock control, at any depth. That is the point of the feature.
+ *
+ * ## Two tap targets, on purpose
+ * The row opens the lock scrubber. The toggle at its end tracks the app. They
+ * are separate because they are separate: with one hit area, every attempt to
+ * start tracking an app would also unroll a duration slider underneath it,
+ * and arming a lock on an app you were only trying to tick is the one mistake
+ * on this screen that cannot be undone.
  */
 @Composable
 private fun TargetRow(
@@ -1048,19 +1054,21 @@ private fun TargetRow(
                 .fillMaxWidth()
                 .clickable(onClick = onExpand),
         ) {
-            Checkbox(checked = tracked, onCheckedChange = { onToggleTarget() })
-            Column(
+            // The label alone. The package used to sit under it on every one
+            // of eighty rows, which turned a list of apps a user recognises
+            // into a column of reverse-DNS they have to read past. It is not
+            // deleted, it has moved to the expanded row, because two apps can
+            // share a label and then it is the only thing that tells them
+            // apart. Needed rarely, so shown rarely.
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = labelColor,
+                maxLines = 1,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 4.dp),
-            ) {
-                Text(label, style = MaterialTheme.typography.bodyLarge, color = labelColor)
-                Text(
-                    pkg,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
+                    .padding(end = 8.dp),
+            )
             if (remainingMs > 0L) {
                 Text(
                     stringResource(
@@ -1069,8 +1077,32 @@ private fun TargetRow(
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(end = 8.dp),
                 )
             }
+            // A text toggle rather than a Checkbox, and its own tap target
+            // rather than the row's. The row opens the lock scrubber, so a
+            // single hit area would mean every attempt to track an app also
+            // unrolled a duration slider underneath it.
+            //
+            // It reads its own state rather than showing an action: [ON]
+            // means this app is tracked, not "press to turn on". That is the
+            // ambiguity a checkbox does not have and a button does, and the
+            // reason the colour carries it too.
+            Text(
+                stringResource(
+                    if (tracked) R.string.settings_target_on else R.string.settings_target_off,
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (tracked) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.outline
+                },
+                modifier = Modifier
+                    .clickable(onClick = onToggleTarget)
+                    .padding(vertical = 6.dp, horizontal = 4.dp),
+            )
         }
 
         // Only once an app is tracked. An untracked app has no curve, so a
@@ -1090,6 +1122,17 @@ private fun TargetRow(
         if (expanded) {
             val chosen = LockLadder.durationAt(stepIndex)
             Column(Modifier.padding(start = 12.dp, end = 4.dp, bottom = 8.dp)) {
+                // Where the package went. Rendered raw rather than through a
+                // resource, because a package name is data in the same way
+                // the label is: there is nothing here to translate and a
+                // format string wrapping a bare %1$s would be a resource that
+                // says nothing.
+                Text(
+                    pkg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
                 Text(
                     stringResource(
                         R.string.settings_lock_scrub_fmt,
