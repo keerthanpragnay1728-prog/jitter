@@ -96,6 +96,16 @@
     <string name="settings_horizon_title">Session horizon</string>
     <string name="settings_horizon_body">How long a session in this app is meant to be. A longer horizon means friction starts later and stays lighter at its heaviest, so an hour of lectures stays watchable. It is not extra time and it refunds nothing: time you have already spent in this cycle still counts against the new shape. Widening asks twice and then takes effect at the next cycle reset. Narrowing takes effect on the first press.</string>
     <string name="settings_horizon_fmt" translatable="false">horizon  %1$s</string>
+    <!--
+      The tracking toggle, in place of a checkbox. Bracketed because in a
+      zero-border layout the brackets are the whole affordance: they are what
+      tells [CFG], [DO IT] and [ TAKE ME OUT ] apart from a label that merely
+      sits there. translatable="false" for the same reason those are: this is
+      terminal chrome on a character grid, and a two-letter word replaced by a
+      six-letter one moves the column.
+    -->
+    <string name="settings_target_on" translatable="false">[ON]</string>
+    <string name="settings_target_off" translatable="false">[OFF]</string>
     <string name="settings_horizon_onset_fmt" translatable="false">onset %1$s</string>
     <string name="settings_horizon_narrow" translatable="false">[ - ]</string>
     <string name="settings_horizon_widen" translatable="false">[ + ]</string>
