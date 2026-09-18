@@ -135,9 +135,21 @@ class SettingsViewModel @Inject constructor(
      * apart from "empty because untouched", which is a proto field and its own
      * change. `TargetScope.usedFallback` is the seam that would read it.
      */
-    val targets: StateFlow<List<String>> = repo.targets
+    val targets: StateFlow<List<String>> = repo.targetSelection
         .map { TargetScope.resolve(it, DEFAULT_TARGETS).toList() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DEFAULT_TARGETS)
+
+    /**
+     * True when the user has turned every target off, as distinct from never
+     * having been asked.
+     *
+     * A separate flow rather than something derived from [targets] being
+     * empty, because that derivation is exactly the ambiguity the store's flag
+     * was added to remove, and re-deriving it here would put it straight back.
+     */
+    val trackingNothing: StateFlow<Boolean> = repo.targetSelection
+        .map { TargetScope.trackingNothing(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     val resetPolicy: StateFlow<CycleResetPolicy> = repo.resetPolicy
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CycleResetPolicy.DEFAULT)

@@ -208,11 +208,23 @@ class CycleStateStore(context: Context) {
      */
     suspend fun toggleTarget(pkg: String, now: StampedInstant) {
         store.updateData { state ->
-            val current = TargetScope.resolve(state.targetPackagesList, DEFAULT_TARGETS).toList()
+            val selection = TargetScope.Selection(
+                stored = state.targetPackagesList,
+                chosen = state.targetsChosen,
+            )
+            val current = TargetScope.resolve(selection, DEFAULT_TARGETS).toList()
             val locks = LockRegistry.of(state.locksList.map { it.toLock() })
             val next = TargetLock.toggled(current, pkg, locks.remainingMs(pkg, now))
                 ?: return@updateData state
-            state.toBuilder().clearTargetPackages().addAllTargetPackages(next).build()
+            // Set on every write, including the one that empties the list.
+            // That write is the whole point: it is how "I turned everything
+            // off" becomes a sentence the store can hold rather than a state
+            // indistinguishable from never having been asked.
+            state.toBuilder()
+                .clearTargetPackages()
+                .addAllTargetPackages(next)
+                .setTargetsChosen(true)
+                .build()
         }
     }
 

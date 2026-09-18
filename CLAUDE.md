@@ -332,27 +332,48 @@ That third case is the reason the rule is stated as "every reader" rather than
 "read through resolve". Resolving one end of a read-modify-write is worse than
 resolving neither.
 
-### What resolving cannot express, and why that is still the better state
+### Empty meant two things, and the store now says which
 
-An empty stored list means "use the defaults", so turning the last target off
-writes empty and the defaults come back. Tracking nothing is not expressible.
+An empty stored list used to mean "use the defaults", full stop, so turning
+the last target off wrote empty and the defaults came back. Tracking nothing
+was not expressible.
 
-That limitation is not new and resolving did not create it. Before, the same
-tap left the service tracking five while CFG showed zero: the same hole wearing
-a silent divergence instead of a visible bounce. Making it visible is the
-improvement.
+`targets_chosen` in the proto is the tiebreak, and `TargetScope.Selection`
+carries it with the list rather than beside it. False plus empty is a fresh
+install and the defaults apply; true plus empty is "track nothing" and it is
+honoured; a non-empty list is the list either way, because a list with
+packages in it is data and the flag only ever settles empty.
 
-Removing it needs the store to tell "empty because chosen" apart from "empty
-because untouched", which is a proto field and its own change.
-`TargetScope.usedFallback` is the seam that would read it, and it is the
-function to reach for rather than inferring the difference from an empty list
-no reader should be holding.
+The migration is a no-op by construction. Proto3 defaults the flag to false,
+so every install that already exists reads as untouched, and both shapes it
+can be in behave exactly as before: a populated list keeps itself through the
+non-empty clause, and an empty one was a fresh install anyway.
+
+**The list and the flag are one type, not two values.** Every bug in this area
+came from reading one half without the other, and the repository stopped
+exposing the raw list at all: `SettingsRepository.targetSelection` is the only
+flow, and there is no `targets` beside it to read by mistake.
 
 Two related traps, both already paid for elsewhere in this file. A reader that
 caches the resolved set is wrong after every edit, which is what `by lazy` did
-to the badge. And `TargetScope.usedFallback` exists so a caller can tell the
-two states apart when it matters, rather than inferring it from an empty list
-it should not have been holding.
+to the badge. And `usedFallback` and `trackingNothing` are separate questions
+with a test asserting they are never both true, because they describe the two
+ways a list can be empty and a screen told both at once has nothing to render.
+
+### The fallback that had to come out of `packageNames`
+
+`packageNames` substituted the defaults whenever it was handed an empty set. It
+looked like belt and braces for the null trap and it was a second answer to a
+question `resolve` had already answered.
+
+Once empty can mean "the user chose nothing", that substitution stops being
+redundant and starts being wrong: the service would go on receiving every
+default's events for a user who asked for none. Not a guard that cannot fire,
+but one that fires against the thing it is guarding.
+
+It is deleted. The null trap stays closed by the own-package entry, which is
+never absent, so with no targets the scope is our own package alone, which is
+narrow and correct.
 
 ## Colours live in one file
 
