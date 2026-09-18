@@ -1,5 +1,8 @@
 package dev.molasses.ui.settings
 
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,14 +25,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
+import dev.molasses.core.diag.LedgerExport
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.session.IgnoreReason
 import dev.molasses.debug.DebugSurface
@@ -38,6 +44,9 @@ import dev.molasses.sensing.Thresholds
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The screen that answers the feasibility question.
@@ -47,6 +56,9 @@ import java.util.Locale
  * reasoning about `updateViewLayout` substitutes for the distribution of
  * requested-versus-actual armed durations off a real device.
  */
+/** TSV, because the meta column is full of commas. See [LedgerExport]. */
+private const val LEDGER_MIME = "text/tab-separated-values"
+
 @Composable
 fun DebugScreen(
     onBack: () -> Unit,
@@ -62,6 +74,40 @@ fun DebugScreen(
 
     val dateFormat = stringResource(R.string.debug_date_format)
     val fmt = remember(dateFormat) { SimpleDateFormat(dateFormat, Locale.US) }
+
+    // A second formatter, for the file name rather than for a row. Colons and
+    // spaces are legal in a SAF display name and awful in one, and a name
+    // that survives being copied to a desktop is the point of exporting.
+    val stampFormat = stringResource(R.string.debug_export_stamp_format)
+    val stampFmt = remember(stampFormat) { SimpleDateFormat(stampFormat, Locale.US) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Registered here rather than on the Activity because everything this
+    // needs is here: the view model that reads the rows and the formatter
+    // that renders their times. An Activity-level launcher would have to be
+    // handed both, through a field, for no gain.
+    val exporter = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(LEDGER_MIME),
+    ) { uri ->
+        // Null when the user backed out of the picker. Not an error and not
+        // worth saying anything about: they cancelled a save dialog.
+        if (uri != null) {
+            scope.launch {
+                val text = vm.ledgerExportText { millis -> fmt.format(Date(millis)) }
+                withContext(Dispatchers.IO) {
+                    // use() rather than a bare write: a half-written export is
+                    // a file that looks like a ledger and is not one.
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use { stream ->
+                            stream.write(text.toByteArray())
+                        }
+                    }.onFailure { Log.w("Molasses.Export", "ledger export failed", it) }
+                }
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -392,6 +438,21 @@ fun DebugScreen(
 
         item {
             Spacer(Modifier.height(16.dp))
+            // Export before clear, because the order on screen is the order a
+            // reader will try them in and one of the two is irreversible.
+            //
+            // ACTION_CREATE_DOCUMENT through the system picker: the user
+            // chooses the destination, so this needs no storage permission,
+            // reaches no network, and cannot write anywhere they did not
+            // point it. Nothing about this leaves the device unless they send
+            // it somewhere themselves.
+            OutlinedButton(
+                onClick = { exporter.launch(LedgerExport.fileName(stampFmt.format(Date()))) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.debug_export_ledger))
+            }
+            Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = { vm.clearLedger() }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.debug_clear_ledger))
             }
