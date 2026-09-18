@@ -2,7 +2,9 @@ package dev.molasses.ui.settings
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,9 +13,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -28,10 +31,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -51,8 +57,10 @@ import dev.molasses.core.lock.LockLadder
 import dev.molasses.core.lock.LockRequest
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.safety.SensitivePackages
+import dev.molasses.core.ui.AlphaIndex
 import dev.molasses.core.ui.FontScale
 import dev.molasses.engine.TierPolicy
+import kotlinx.coroutines.launch
 
 /**
  * Onboarding as an ordered checklist with live state, because the two
@@ -151,12 +159,12 @@ fun SettingsScreen(
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 48.dp, bottom = 48.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
+    // The running order: every row in CFG, whichever section it belongs to,
+    // in the order it is drawn. Built once per composition so an app's index
+    // is its position in a list rather than a sum over which sections
+    // happen to be open. See CfgRow.
+    val cfgRows = buildCfgRows {
+        item(CfgRowKey.chrome("masthead")) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -202,7 +210,7 @@ fun SettingsScreen(
             title = R.string.settings_section_setup,
             onToggle = { accordion = CfgAccordion.toggle(accordion, Section.SETUP) },
         ) {
-            item {
+            item(CfgRowKey.body(Section.SETUP, "perm-a11y")) {
                 ChecklistRow(
                     index = 1,
                     title = R.string.settings_perm_a11y_title,
@@ -217,7 +225,7 @@ fun SettingsScreen(
             // process is alive. A service that was revoked, crashed, or is stuck
             // before it accepts events reads as fully granted there while
             // producing no friction at all.
-            item {
+            item(CfgRowKey.body(Section.SETUP, "service-state")) {
                 ChecklistRow(
                     index = 2,
                     title = R.string.settings_service_state_title,
@@ -226,7 +234,7 @@ fun SettingsScreen(
                     onClick = onOpenAccessibility,
                 )
             }
-            item {
+            item(CfgRowKey.body(Section.SETUP, "perm-usage")) {
                 ChecklistRow(
                     index = 3,
                     title = R.string.settings_perm_usage_title,
@@ -235,7 +243,7 @@ fun SettingsScreen(
                     onClick = onOpenUsageAccess,
                 )
             }
-            item {
+            item(CfgRowKey.body(Section.SETUP, "perm-activity")) {
                 ChecklistRow(
                     index = 4,
                     title = R.string.settings_perm_activity_title,
@@ -244,7 +252,7 @@ fun SettingsScreen(
                     onClick = onRequestActivityRecognition,
                 )
             }
-            item {
+            item(CfgRowKey.body(Section.SETUP, "perm-notifications")) {
                 ChecklistRow(
                     index = 5,
                     title = R.string.settings_perm_notifications_title,
@@ -261,7 +269,7 @@ fun SettingsScreen(
             title = R.string.settings_section_ladder,
             onToggle = { accordion = CfgAccordion.toggle(accordion, Section.LADDER) },
         ) {
-            item { LadderRows() }
+            item(CfgRowKey.body(Section.LADDER, "rows")) { LadderRows() }
         }
 
         section(
@@ -270,7 +278,7 @@ fun SettingsScreen(
             title = R.string.settings_section_targets,
             onToggle = { accordion = CfgAccordion.toggle(accordion, Section.TARGETS) },
         ) {
-            item {
+            item(CfgRowKey.body(Section.TARGETS, "hint")) {
                 Text(
                     stringResource(R.string.settings_targets_hint),
                     style = MaterialTheme.typography.bodySmall,
@@ -279,7 +287,7 @@ fun SettingsScreen(
             }
             // Once, here, rather than under all nine rows. The consequence has to
             // be stated where the control is, and the control is per app.
-            item {
+            item(CfgRowKey.body(Section.TARGETS, "horizon")) {
                 Column(Modifier.padding(top = 8.dp)) {
                     Text(
                         stringResource(R.string.settings_horizon_title),
@@ -292,7 +300,7 @@ fun SettingsScreen(
                     )
                 }
             }
-            item {
+            item(CfgRowKey.body(Section.TARGETS, "search")) {
                 // Eighty plus packages is not a list, it is a haystack. Filters
                 // on label and package name both: the label is what a user knows
                 // and the package name is what a target actually is, and the two
@@ -305,7 +313,7 @@ fun SettingsScreen(
                     singleLine = true,
                 )
             }
-            item {
+            item(CfgRowKey.body(Section.TARGETS, "count")) {
                 Text(
                     stringResource(
                         R.string.settings_targets_count_fmt,
@@ -430,7 +438,7 @@ fun SettingsScreen(
                 )
             }
             if (installed.isNotEmpty() && shownApps.isEmpty()) {
-                item {
+                item(CfgRowKey.body(Section.TARGETS, "no-match")) {
                     Text(
                         stringResource(R.string.settings_targets_no_match),
                         style = MaterialTheme.typography.bodySmall,
@@ -439,7 +447,7 @@ fun SettingsScreen(
                 }
             }
             if (installed.isEmpty()) {
-                item {
+                item(CfgRowKey.body(Section.TARGETS, "empty")) {
                     Text(
                         stringResource(R.string.settings_targets_empty),
                         style = MaterialTheme.typography.bodySmall,
@@ -455,7 +463,7 @@ fun SettingsScreen(
             title = R.string.settings_section_policy,
             onToggle = { accordion = CfgAccordion.toggle(accordion, Section.POLICY) },
         ) {
-            item {
+            item(CfgRowKey.body(Section.POLICY, "rows")) {
                 Column {
                     PolicyRow(
                         selected = policy == CycleResetPolicy.ABSTINENCE_6H,
@@ -483,7 +491,7 @@ fun SettingsScreen(
             // the promise changed twice, so the copy changed with it. Nobody
             // should discover what a lease does and does not buy by being caught
             // out by it.
-            item {
+            item(CfgRowKey.body(Section.GATE, "unavoidable")) {
                 Column {
                     Text(
                         stringResource(R.string.settings_gate_unavoidable_title),
@@ -500,7 +508,7 @@ fun SettingsScreen(
             // The walking gate became optional and defaults off; collapsing this
             // to on/off would have taken the typing task away with it, and the
             // typing task is the accessibility requirement, not the preference.
-            item {
+            item(CfgRowKey.body(Section.GATE, "mode")) {
                 Column {
                     Text(
                         stringResource(R.string.settings_gate_mode_title),
@@ -529,7 +537,7 @@ fun SettingsScreen(
             title = R.string.settings_section_appearance,
             onToggle = { accordion = CfgAccordion.toggle(accordion, Section.APPEARANCE) },
         ) {
-            item {
+            item(CfgRowKey.body(Section.APPEARANCE, "font-scale")) {
                 Column {
                     Text(
                         stringResource(R.string.settings_font_scale_title),
@@ -559,22 +567,24 @@ fun SettingsScreen(
             title = R.string.settings_section_safety,
             onToggle = { accordion = CfgAccordion.toggle(accordion, Section.SAFETY) },
         ) {
-            item {
+            item(CfgRowKey.body(Section.SAFETY, "body")) {
                 Text(
                     stringResource(R.string.settings_safety_body),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
-            item {
+            item(CfgRowKey.body(Section.SAFETY, "pause")) {
                 PauseControl(
                     remainingMs = pauseRemainingMs,
                     onPause = { vm.setPaused(true) },
                     onResume = { vm.setPaused(false) },
                 )
             }
-            item { DisableControl(onDisable = { vm.requestDisable() }) }
-            item {
+            item(CfgRowKey.body(Section.SAFETY, "disable")) {
+                DisableControl(onDisable = { vm.requestDisable() })
+            }
+            item(CfgRowKey.body(Section.SAFETY, "prefixes")) {
                 SensitivePrefixEditor(
                     userPrefixes = sensitivePrefixes,
                     onChange = { vm.setSensitivePrefixes(it) },
@@ -588,7 +598,7 @@ fun SettingsScreen(
             title = R.string.settings_section_try,
             onToggle = { accordion = CfgAccordion.toggle(accordion, Section.TRY) },
         ) {
-            item {
+            item(CfgRowKey.body(Section.TRY, "stall")) {
                 Button(
                     onClick = { vm.requestStallPreview() },
                     modifier = Modifier.fillMaxWidth(),
@@ -596,11 +606,120 @@ fun SettingsScreen(
                     Text(stringResource(R.string.settings_test_stall))
                 }
             }
-            item {
+            item(CfgRowKey.body(Section.TRY, "debug")) {
                 OutlinedButton(onClick = onOpenDebug, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.settings_debug))
                 }
             }
+        }
+    }
+
+    // The letters the rail offers, and the apps it indexes.
+    //
+    // Both derived from the grouped rows rather than the installed list, for
+    // the same reason the group headers are: the rail describes what is on
+    // screen. A letter left standing for an app the search box filtered away
+    // is a letter that scrolls nowhere, which teaches the user that the rail
+    // does not work.
+    val railApps = remember(groupedTargets) { TargetGrouping.appsOf(groupedTargets) }
+    val railLabels = remember(railApps) { railApps.map { it.entry.label } }
+    val letters = remember(railLabels) { AlphaIndex.lettersOf(railLabels) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = 48.dp,
+                bottom = 48.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(cfgRows, key = { it.key }) { it.content() }
+        }
+
+        // Only while the list it indexes is on screen. A rail down the side
+        // of eight collapsed headers is a control for a list that is not
+        // there.
+        //
+        // And only when there is more than one letter: a rail with a single
+        // entry is a button that scrolls to where the list already is.
+        if (CfgAccordion.isOpen(accordion, Section.TARGETS) && letters.size > 1) {
+            AlphaRail(
+                letters = letters,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            ) { letter ->
+                // The three lines the flattening was for. Find the first app
+                // under the letter, build the key the way the renderer built
+                // it, and take its position in the very list that was handed
+                // to items().
+                val pkg = AlphaIndex.firstIndexOf(railLabels, letter)
+                    ?.let { railApps[it].entry.pkg }
+                    ?: return@AlphaRail
+                val key = CfgRowKey.app(pkg)
+                val index = cfgRows.indexOfFirst { it.key == key }
+                if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
+            }
+        }
+    }
+}
+
+/**
+ * The A-Z strip down the right margin.
+ *
+ * ## Tap and drag, because they are different gestures for the same thing
+ * A tap is how someone who knows the app's name gets to it. A drag is how
+ * someone who does not scrubs for it, and it is the gesture that makes a rail
+ * feel like a rail rather than twenty six small buttons. `AlphaIndex.letterAt`
+ * maps the finger's position to a letter, and returns null once the finger
+ * leaves the strip vertically, which is what stops a slide off the top from
+ * dragging the list to A.
+ *
+ * ## Why the height is measured rather than computed
+ * The strip is as tall as its letters, which depends on the type scale, which
+ * the user can change. Dividing by a measured height keeps the drag honest at
+ * every font size; dividing by an assumed one would put the finger a letter
+ * or two off at the extremes, which is exactly where a rail is used.
+ *
+ * Deliberately quiet: outline colour, the smallest label style, no background
+ * and no selection highlight. It sits over a list it must not compete with.
+ */
+@Composable
+private fun AlphaRail(
+    letters: List<Char>,
+    modifier: Modifier = Modifier,
+    onLetter: (Char) -> Unit,
+) {
+    var railHeight by remember { mutableIntStateOf(0) }
+    Column(
+        modifier = modifier
+            .width(28.dp)
+            .onSizeChanged { railHeight = it.height }
+            .pointerInput(letters, railHeight) {
+                detectVerticalDragGestures { change, _ ->
+                    if (railHeight > 0) {
+                        AlphaIndex
+                            .letterAt(change.position.y / railHeight, letters)
+                            ?.let(onLetter)
+                    }
+                }
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        for (letter in letters) {
+            Text(
+                letter.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier
+                    .clickable { onLetter(letter) }
+                    .padding(vertical = 1.dp, horizontal = 6.dp),
+            )
         }
     }
 }
@@ -632,25 +751,90 @@ private fun LadderRows() {
 }
 
 /**
- * One collapsible section: its header, and its body when it is open.
+ * One row of CFG, with the identity the rail looks it up by.
  *
- * A `LazyListScope` extension rather than a composable, because the body has
- * to stay made of `item` and `items` calls. Wrapping eighty target rows in a
- * single `item` would build the whole list on every recomposition and give up
- * the recycling that makes the list usable at all.
+ * ## Why the screen is a list of these and not a tree of `item` calls
+ * The alphabet rail scrolls to an app by absolute index, and `LazyColumn`
+ * counts indices across every `item` and `items` in the whole column. With
+ * nine sections each emitting their own, an app's index was a function of
+ * which sections happened to be open, computable only by re-running the same
+ * conditionals the renderer ran, in the same order, somewhere else. That is
+ * two descriptions of one layout, and the second one is wrong the first time
+ * a row moves.
  *
- * The body is simply not emitted when the section is closed, rather than
- * emitted and hidden. A closed section costs one row.
+ * Flattening makes the index what it should have been all along: a position
+ * in a list. `indexOfFirst { it.key == ... }` is the whole lookup, and it
+ * cannot disagree with the renderer because it is reading what the renderer
+ * was handed.
+ *
+ * ## The content is a lambda, and that is not a model holding a view
+ * Nothing here decides what a row looks like. [CfgRows] collects the same
+ * composable bodies the sections already had, unchanged, and the single
+ * `items` call invokes them. The list is a running order, not a view model.
  */
-private fun LazyListScope.section(
+private class CfgRow(val key: String, val content: @Composable () -> Unit)
+
+/**
+ * Collects [CfgRow]s with the same shape `LazyListScope` offered.
+ *
+ * `item` and `items` keep their names and their argument order deliberately,
+ * so the section bodies moved here are the ones that were already written:
+ * the only edit any of them needed was a key, which they should have carried
+ * anyway. A `return@items` inside a target row still means what it meant,
+ * because the label is the function name and the function is still `items`.
+ *
+ * ## What this costs, stated rather than reassured about
+ * Recycling is unchanged. Every row is still its own row, so `LazyColumn`
+ * still composes only what is visible, which is the property the old
+ * `LazyListScope` version existed to protect: wrapping eighty target rows in
+ * one `item` would give it up, and nothing here does that.
+ *
+ * What is new is the list itself. It is rebuilt on every recomposition of the
+ * screen, which allocates one small object per row in it, offscreen ones
+ * included, so roughly ninety with TARGETS open. Each holds a key and an
+ * uninvoked lambda; none of them compose anything until `items` reaches them.
+ * That is a real cost rather than a free one, and it is accepted because an
+ * app's index has to come from somewhere, and the alternative was computing
+ * it twice in two places.
+ *
+ * Nothing here is remembered, deliberately. A row that cached its content
+ * would keep yesterday's state when the list under it changed, which is the
+ * failure the keys exist to prevent, arriving by a different route.
+ */
+private class CfgRows {
+    val rows = mutableListOf<CfgRow>()
+
+    fun item(key: String, content: @Composable () -> Unit) {
+        rows += CfgRow(key, content)
+    }
+
+    fun <T> items(list: List<T>, key: (T) -> String, content: @Composable (T) -> Unit) {
+        for (element in list) {
+            rows += CfgRow(key(element)) { content(element) }
+        }
+    }
+}
+
+private fun buildCfgRows(build: CfgRows.() -> Unit): List<CfgRow> =
+    CfgRows().apply(build).rows
+
+/**
+ * A section header, and its body when the section is open.
+ *
+ * Unchanged in behaviour from the `LazyListScope` version it replaces: the
+ * body is still simply not emitted when the section is closed, rather than
+ * emitted and hidden, so a closed section still costs exactly one row. What
+ * changed is only where the rows go.
+ */
+private fun CfgRows.section(
     state: CfgAccordion.State,
     section: Section,
     @StringRes title: Int,
     onToggle: () -> Unit,
-    body: LazyListScope.() -> Unit,
+    body: CfgRows.() -> Unit,
 ) {
     val open = CfgAccordion.isOpen(state, section)
-    item { SectionHeader(title, open, onToggle) }
+    item(CfgRowKey.section(section)) { SectionHeader(title, open, onToggle) }
     if (open) body()
 }
 

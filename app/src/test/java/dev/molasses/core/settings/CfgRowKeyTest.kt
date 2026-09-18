@@ -28,7 +28,8 @@ class CfgRowKeyTest {
     )
 
     private fun everyKey(): List<String> =
-        Section.entries.map { CfgRowKey.section(it) } +
+        listOf("masthead").map { CfgRowKey.chrome(it) } +
+            Section.entries.map { CfgRowKey.section(it) } +
             Section.entries.flatMap { s ->
                 listOf("title", "body", "hint", "count").map { CfgRowKey.body(s, it) }
             } +
@@ -44,6 +45,17 @@ class CfgRowKeyTest {
         // more rows than CFG will ever render, which is the point.
         val keys = everyKey()
         assertEquals(keys.size, keys.distinct().size)
+    }
+
+    @Test
+    fun `a section-less row cannot collide with a section's own rows`() {
+        // The masthead sits above the accordion, so it has no section to be
+        // named by. Its own prefix is what keeps it out of the way of a body
+        // id that happens to be spelled the same.
+        for (section in Section.entries) {
+            assertTrue(CfgRowKey.chrome("masthead") != CfgRowKey.body(section, "masthead"))
+            assertTrue(CfgRowKey.chrome(section.name) != CfgRowKey.section(section))
+        }
     }
 
     @Test
