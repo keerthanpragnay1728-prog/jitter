@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -42,6 +43,8 @@ import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.command.CommandRegistry
+import dev.molasses.core.settings.CfgAccordion
+import dev.molasses.core.settings.CfgAccordion.Section
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lock.LockLadder
 import dev.molasses.core.lock.LockRequest
@@ -95,6 +98,18 @@ fun SettingsScreen(
 
     var appFilter by rememberSaveable { mutableStateOf("") }
 
+    /**
+     * Which section is expanded.
+     *
+     * `remember` and deliberately not `rememberSaveable`. CFG opens the same
+     * way every time: setup expanded, everything else closed. Which drawer
+     * someone had open while changing a setting is a reading position rather
+     * than a preference, and it is the one thing on this screen nobody asked
+     * to have remembered. `CfgAccordionTest` pins what `initial` contains, so
+     * a later persistence has to disagree with a test.
+     */
+    var accordion by remember { mutableStateOf(CfgAccordion.initial()) }
+
     // The scrubber. One app open at a time: eight steps and a confirm button
     // per row, across eighty apps, is a wall.
     val locks by vm.locks.collectAsStateWithLifecycle()
@@ -134,329 +149,378 @@ fun SettingsScreen(
             )
         }
 
-        item { SectionHeader(R.string.settings_section_setup) }
-        item {
-            ChecklistRow(
-                index = 1,
-                title = R.string.settings_perm_a11y_title,
-                subtitle = R.string.settings_perm_a11y_body,
-                satisfied = permissions.accessibility,
-                onClick = onOpenAccessibility,
-            )
-        }
-        // Distinct from the checklist row above, and deliberately so. That
-        // row reads Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, which is a
-        // user preference string: it says the box is ticked, not that the
-        // process is alive. A service that was revoked, crashed, or is stuck
-        // before it accepts events reads as fully granted there while
-        // producing no friction at all.
-        item {
-            ChecklistRow(
-                index = 2,
-                title = R.string.settings_service_state_title,
-                subtitle = serviceStateBody(diag.health),
-                satisfied = diag.health.acceptingEvents,
-                onClick = onOpenAccessibility,
-            )
-        }
-        item {
-            ChecklistRow(
-                index = 3,
-                title = R.string.settings_perm_usage_title,
-                subtitle = R.string.settings_perm_usage_body,
-                satisfied = permissions.usageAccess,
-                onClick = onOpenUsageAccess,
-            )
-        }
-        item {
-            ChecklistRow(
-                index = 4,
-                title = R.string.settings_perm_activity_title,
-                subtitle = R.string.settings_perm_activity_body,
-                satisfied = permissions.activityRecognition,
-                onClick = onRequestActivityRecognition,
-            )
-        }
-        item {
-            ChecklistRow(
-                index = 5,
-                title = R.string.settings_perm_notifications_title,
-                subtitle = R.string.settings_perm_notifications_body,
-                satisfied = permissions.notifications,
-                onClick = onRequestNotifications,
-            )
-        }
-        item { SectionHeader(R.string.settings_section_ladder) }
-        item { LadderRows() }
-
-        item { SectionHeader(R.string.settings_section_targets) }
-        item {
-            Text(
-                stringResource(R.string.settings_targets_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-        }
-        // Once, here, rather than under all nine rows. The consequence has to
-        // be stated where the control is, and the control is per app.
-        item {
-            Column(Modifier.padding(top = 8.dp)) {
-                Text(
-                    stringResource(R.string.settings_horizon_title),
-                    style = MaterialTheme.typography.bodyLarge,
+        section(
+            state = accordion,
+            section = Section.SETUP,
+            title = R.string.settings_section_setup,
+            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.SETUP) },
+        ) {
+            item {
+                ChecklistRow(
+                    index = 1,
+                    title = R.string.settings_perm_a11y_title,
+                    subtitle = R.string.settings_perm_a11y_body,
+                    satisfied = permissions.accessibility,
+                    onClick = onOpenAccessibility,
                 )
+            }
+            // Distinct from the checklist row above, and deliberately so. That
+            // row reads Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, which is a
+            // user preference string: it says the box is ticked, not that the
+            // process is alive. A service that was revoked, crashed, or is stuck
+            // before it accepts events reads as fully granted there while
+            // producing no friction at all.
+            item {
+                ChecklistRow(
+                    index = 2,
+                    title = R.string.settings_service_state_title,
+                    subtitle = serviceStateBody(diag.health),
+                    satisfied = diag.health.acceptingEvents,
+                    onClick = onOpenAccessibility,
+                )
+            }
+            item {
+                ChecklistRow(
+                    index = 3,
+                    title = R.string.settings_perm_usage_title,
+                    subtitle = R.string.settings_perm_usage_body,
+                    satisfied = permissions.usageAccess,
+                    onClick = onOpenUsageAccess,
+                )
+            }
+            item {
+                ChecklistRow(
+                    index = 4,
+                    title = R.string.settings_perm_activity_title,
+                    subtitle = R.string.settings_perm_activity_body,
+                    satisfied = permissions.activityRecognition,
+                    onClick = onRequestActivityRecognition,
+                )
+            }
+            item {
+                ChecklistRow(
+                    index = 5,
+                    title = R.string.settings_perm_notifications_title,
+                    subtitle = R.string.settings_perm_notifications_body,
+                    satisfied = permissions.notifications,
+                    onClick = onRequestNotifications,
+                )
+            }
+        }
+
+        section(
+            state = accordion,
+            section = Section.LADDER,
+            title = R.string.settings_section_ladder,
+            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.LADDER) },
+        ) {
+            item { LadderRows() }
+        }
+
+        section(
+            state = accordion,
+            section = Section.TARGETS,
+            title = R.string.settings_section_targets,
+            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.TARGETS) },
+        ) {
+            item {
                 Text(
-                    stringResource(R.string.settings_horizon_body),
+                    stringResource(R.string.settings_targets_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
-        }
-        item {
-            // Eighty plus packages is not a list, it is a haystack. Filters
-            // on label and package name both: the label is what a user knows
-            // and the package name is what a target actually is, and the two
-            // often share no words at all.
-            OutlinedTextField(
-                value = appFilter,
-                onValueChange = { appFilter = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.settings_targets_search)) },
-                singleLine = true,
-            )
-        }
-        item {
-            Text(
-                stringResource(
-                    R.string.settings_targets_count_fmt,
-                    shownApps.size.toString(),
-                    installed.size.toString(),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-        }
-        items(shownApps, key = { it.pkg }) { app ->
-            val remainingMs = vm.lockRemainingMs(app.pkg)
-            val locked = remainingMs > 0L
-            TargetRow(
-                label = app.label,
-                pkg = app.pkg,
-                tracked = app.pkg in targets,
-                remainingMs = remainingMs,
-                expanded = scrubbing == app.pkg,
-                stepIndex = stepIndex,
-                awaitingConfirm = if (scrubbing == app.pkg) awaitingConfirm else null,
-                horizon = horizons[app.pkg]
-                    ?: HorizonPolicy.State(FrictionCurve.DEFAULT_HORIZON_MS),
-                cycleRemainingMs = diag.cycleRemainingMs.takeIf { it > 0L },
-                horizonAwaitingConfirm =
-                    horizonConfirm?.takeIf { it.first == app.pkg }?.second,
-                onToggleTarget = { vm.toggleTarget(app.pkg) },
-                onHorizon = { requested ->
-                    // Nothing commits until HorizonPolicy says so, and the
-                    // screen asks the same function the engine will. A first
-                    // press on a widen writes nothing at all: the state is
-                    // unchanged, so the next press computes the identical
-                    // request and finds it already echoed, which is what
-                    // makes "press again" literally the same button.
-                    val current = horizons[app.pkg]
-                        ?: HorizonPolicy.State(FrictionCurve.DEFAULT_HORIZON_MS)
-                    val confirmed = horizonConfirm == app.pkg to requested
-                    when (HorizonPolicy.evaluate(current, requested, confirmed)) {
-                        is HorizonPolicy.Verdict.Confirm ->
-                            horizonConfirm = app.pkg to requested
-                        is HorizonPolicy.Verdict.Apply -> {
-                            horizonConfirm = null
-                            vm.setAppHorizon(app.pkg, requested)
+            // Once, here, rather than under all nine rows. The consequence has to
+            // be stated where the control is, and the control is per app.
+            item {
+                Column(Modifier.padding(top = 8.dp)) {
+                    Text(
+                        stringResource(R.string.settings_horizon_title),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        stringResource(R.string.settings_horizon_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+            item {
+                // Eighty plus packages is not a list, it is a haystack. Filters
+                // on label and package name both: the label is what a user knows
+                // and the package name is what a target actually is, and the two
+                // often share no words at all.
+                OutlinedTextField(
+                    value = appFilter,
+                    onValueChange = { appFilter = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.settings_targets_search)) },
+                    singleLine = true,
+                )
+            }
+            item {
+                Text(
+                    stringResource(
+                        R.string.settings_targets_count_fmt,
+                        shownApps.size.toString(),
+                        installed.size.toString(),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            items(shownApps, key = { it.pkg }) { app ->
+                val remainingMs = vm.lockRemainingMs(app.pkg)
+                val locked = remainingMs > 0L
+                TargetRow(
+                    label = app.label,
+                    pkg = app.pkg,
+                    tracked = app.pkg in targets,
+                    remainingMs = remainingMs,
+                    expanded = scrubbing == app.pkg,
+                    stepIndex = stepIndex,
+                    awaitingConfirm = if (scrubbing == app.pkg) awaitingConfirm else null,
+                    horizon = horizons[app.pkg]
+                        ?: HorizonPolicy.State(FrictionCurve.DEFAULT_HORIZON_MS),
+                    cycleRemainingMs = diag.cycleRemainingMs.takeIf { it > 0L },
+                    horizonAwaitingConfirm =
+                        horizonConfirm?.takeIf { it.first == app.pkg }?.second,
+                    onToggleTarget = { vm.toggleTarget(app.pkg) },
+                    onHorizon = { requested ->
+                        // Nothing commits until HorizonPolicy says so, and the
+                        // screen asks the same function the engine will. A first
+                        // press on a widen writes nothing at all: the state is
+                        // unchanged, so the next press computes the identical
+                        // request and finds it already echoed, which is what
+                        // makes "press again" literally the same button.
+                        val current = horizons[app.pkg]
+                            ?: HorizonPolicy.State(FrictionCurve.DEFAULT_HORIZON_MS)
+                        val confirmed = horizonConfirm == app.pkg to requested
+                        when (HorizonPolicy.evaluate(current, requested, confirmed)) {
+                            is HorizonPolicy.Verdict.Confirm ->
+                                horizonConfirm = app.pkg to requested
+                            is HorizonPolicy.Verdict.Apply -> {
+                                horizonConfirm = null
+                                vm.setAppHorizon(app.pkg, requested)
+                            }
+                            HorizonPolicy.Verdict.None -> horizonConfirm = null
                         }
-                        HorizonPolicy.Verdict.None -> horizonConfirm = null
-                    }
-                },
-                onExpand = {
-                    scrubbing = if (scrubbing == app.pkg) null else app.pkg
-                    // A fresh row starts one step above whatever already
-                    // stands, because the only thing the scrubber can do to an
-                    // existing lock is lengthen it.
-                    stepIndex = LockLadder.STEPS_MS.indexOfFirst { it > remainingMs }
-                        .coerceAtLeast(0)
-                    awaitingConfirm = null
-                },
-                onStep = {
-                    stepIndex = it
-                    // Moving the bar cancels a pending confirmation. Leaving
-                    // it armed would mean the second press arms a duration the
-                    // user was not shown.
-                    awaitingConfirm = null
-                },
-                onArm = {
-                    val chosen = LockLadder.durationAt(stepIndex)
-                    // The same evaluation the typed path runs. A second way to
-                    // arm a lock that skipped this would make the confirmation
-                    // step decorative.
-                    when (
-                        val verdict = LockRequest.evaluate(
-                            durationMs = chosen,
-                            standingMs = vm.lockRemainingMs(app.pkg),
-                            confirmAboveMs = CommandRegistry.CONFIRM_ABOVE_MS,
-                            confirmed = awaitingConfirm == chosen,
+                    },
+                    onExpand = {
+                        scrubbing = if (scrubbing == app.pkg) null else app.pkg
+                        // A fresh row starts one step above whatever already
+                        // stands, because the only thing the scrubber can do to an
+                        // existing lock is lengthen it.
+                        stepIndex = LockLadder.STEPS_MS.indexOfFirst { it > remainingMs }
+                            .coerceAtLeast(0)
+                        awaitingConfirm = null
+                    },
+                    onStep = {
+                        stepIndex = it
+                        // Moving the bar cancels a pending confirmation. Leaving
+                        // it armed would mean the second press arms a duration the
+                        // user was not shown.
+                        awaitingConfirm = null
+                    },
+                    onArm = {
+                        val chosen = LockLadder.durationAt(stepIndex)
+                        // The same evaluation the typed path runs. A second way to
+                        // arm a lock that skipped this would make the confirmation
+                        // step decorative.
+                        when (
+                            val verdict = LockRequest.evaluate(
+                                durationMs = chosen,
+                                standingMs = vm.lockRemainingMs(app.pkg),
+                                confirmAboveMs = CommandRegistry.CONFIRM_ABOVE_MS,
+                                confirmed = awaitingConfirm == chosen,
+                            )
+                        ) {
+                            is LockRequest.Verdict.Confirm -> awaitingConfirm = verdict.durationMs
+                            is LockRequest.Verdict.Arm -> {
+                                vm.armLock(app.pkg, verdict.durationMs)
+                                awaitingConfirm = null
+                                scrubbing = null
+                            }
+                            // Nothing to do and nothing to say beyond the row,
+                            // which already shows the standing remainder.
+                            is LockRequest.Verdict.TooShort, LockRequest.Verdict.Invalid ->
+                                awaitingConfirm = null
+                        }
+                    },
+                    dim = locked,
+                )
+            }
+            if (installed.isNotEmpty() && shownApps.isEmpty()) {
+                item {
+                    Text(
+                        stringResource(R.string.settings_targets_no_match),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+            if (installed.isEmpty()) {
+                item {
+                    Text(
+                        stringResource(R.string.settings_targets_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+        }
+
+        section(
+            state = accordion,
+            section = Section.POLICY,
+            title = R.string.settings_section_policy,
+            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.POLICY) },
+        ) {
+            item {
+                Column {
+                    PolicyRow(
+                        selected = policy == CycleResetPolicy.ABSTINENCE_6H,
+                        title = R.string.settings_policy_abstinence_title,
+                        subtitle = R.string.settings_policy_abstinence_body,
+                        onSelect = { vm.setResetPolicy(CycleResetPolicy.ABSTINENCE_6H) },
+                    )
+                    PolicyRow(
+                        selected = policy == CycleResetPolicy.FIXED_WINDOW_6H,
+                        title = R.string.settings_policy_fixed_title,
+                        subtitle = R.string.settings_policy_fixed_body,
+                        onSelect = { vm.setResetPolicy(CycleResetPolicy.FIXED_WINDOW_6H) },
+                    )
+                }
+            }
+        }
+
+        section(
+            state = accordion,
+            section = Section.GATE,
+            title = R.string.settings_section_gate,
+            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.GATE) },
+        ) {
+            // Condition of the precedence flip, and of the move to the launch:
+            // the promise changed twice, so the copy changed with it. Nobody
+            // should discover what a lease does and does not buy by being caught
+            // out by it.
+            item {
+                Column {
+                    Text(
+                        stringResource(R.string.settings_gate_unavoidable_title),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        stringResource(R.string.settings_gate_unavoidable_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+            // Three choices rather than a switch, and that shape is the point.
+            // The walking gate became optional and defaults off; collapsing this
+            // to on/off would have taken the typing task away with it, and the
+            // typing task is the accessibility requirement, not the preference.
+            item {
+                Column {
+                    Text(
+                        stringResource(R.string.settings_gate_mode_title),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        stringResource(R.string.settings_gate_mode_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                    GatePolicy.GateMode.entries.forEach { mode ->
+                        PolicyRow(
+                            selected = gateMode == mode,
+                            title = gateModeLabel(mode),
+                            subtitle = gateModeBody(mode),
+                            onSelect = { vm.setGateMode(mode) },
                         )
-                    ) {
-                        is LockRequest.Verdict.Confirm -> awaitingConfirm = verdict.durationMs
-                        is LockRequest.Verdict.Arm -> {
-                            vm.armLock(app.pkg, verdict.durationMs)
-                            awaitingConfirm = null
-                            scrubbing = null
-                        }
-                        // Nothing to do and nothing to say beyond the row,
-                        // which already shows the standing remainder.
-                        is LockRequest.Verdict.TooShort, LockRequest.Verdict.Invalid ->
-                            awaitingConfirm = null
                     }
-                },
-                dim = locked,
-            )
-        }
-        if (installed.isNotEmpty() && shownApps.isEmpty()) {
-            item {
-                Text(
-                    stringResource(R.string.settings_targets_no_match),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
-        }
-        if (installed.isEmpty()) {
-            item {
-                Text(
-                    stringResource(R.string.settings_targets_empty),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
-        }
-
-        item { SectionHeader(R.string.settings_section_policy) }
-        item {
-            Column {
-                PolicyRow(
-                    selected = policy == CycleResetPolicy.ABSTINENCE_6H,
-                    title = R.string.settings_policy_abstinence_title,
-                    subtitle = R.string.settings_policy_abstinence_body,
-                    onSelect = { vm.setResetPolicy(CycleResetPolicy.ABSTINENCE_6H) },
-                )
-                PolicyRow(
-                    selected = policy == CycleResetPolicy.FIXED_WINDOW_6H,
-                    title = R.string.settings_policy_fixed_title,
-                    subtitle = R.string.settings_policy_fixed_body,
-                    onSelect = { vm.setResetPolicy(CycleResetPolicy.FIXED_WINDOW_6H) },
-                )
-            }
-        }
-
-        item { SectionHeader(R.string.settings_section_gate) }
-        // Condition of the precedence flip, and of the move to the launch:
-        // the promise changed twice, so the copy changed with it. Nobody
-        // should discover what a lease does and does not buy by being caught
-        // out by it.
-        item {
-            Column {
-                Text(
-                    stringResource(R.string.settings_gate_unavoidable_title),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Text(
-                    stringResource(R.string.settings_gate_unavoidable_body),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
-        }
-        // Three choices rather than a switch, and that shape is the point.
-        // The walking gate became optional and defaults off; collapsing this
-        // to on/off would have taken the typing task away with it, and the
-        // typing task is the accessibility requirement, not the preference.
-        item {
-            Column {
-                Text(
-                    stringResource(R.string.settings_gate_mode_title),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Text(
-                    stringResource(R.string.settings_gate_mode_body),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-                GatePolicy.GateMode.entries.forEach { mode ->
-                    PolicyRow(
-                        selected = gateMode == mode,
-                        title = gateModeLabel(mode),
-                        subtitle = gateModeBody(mode),
-                        onSelect = { vm.setGateMode(mode) },
-                    )
                 }
             }
         }
 
-        item { SectionHeader(R.string.settings_section_appearance) }
-        item {
-            Column {
-                Text(
-                    stringResource(R.string.settings_font_scale_title),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Text(
-                    stringResource(R.string.settings_font_scale_body),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-                Spacer(Modifier.height(8.dp))
-                for (scale in FontScale.entries) {
-                    PolicyRow(
-                        selected = fontScale == scale,
-                        title = fontScaleLabel(scale),
-                        subtitle = R.string.settings_font_scale_body,
-                        onSelect = { vm.setFontScale(scale) },
+        section(
+            state = accordion,
+            section = Section.APPEARANCE,
+            title = R.string.settings_section_appearance,
+            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.APPEARANCE) },
+        ) {
+            item {
+                Column {
+                    Text(
+                        stringResource(R.string.settings_font_scale_title),
+                        style = MaterialTheme.typography.bodyLarge,
                     )
+                    Text(
+                        stringResource(R.string.settings_font_scale_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    for (scale in FontScale.entries) {
+                        PolicyRow(
+                            selected = fontScale == scale,
+                            title = fontScaleLabel(scale),
+                            subtitle = R.string.settings_font_scale_body,
+                            onSelect = { vm.setFontScale(scale) },
+                        )
+                    }
                 }
             }
         }
 
-        item { SectionHeader(R.string.settings_section_safety) }
-        item {
-            Text(
-                stringResource(R.string.settings_safety_body),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-        }
-        item {
-            PauseControl(
-                remainingMs = pauseRemainingMs,
-                onPause = { vm.setPaused(true) },
-                onResume = { vm.setPaused(false) },
-            )
-        }
-        item { DisableControl(onDisable = { vm.requestDisable() }) }
-        item {
-            SensitivePrefixEditor(
-                userPrefixes = sensitivePrefixes,
-                onChange = { vm.setSensitivePrefixes(it) },
-            )
-        }
-
-        item { SectionHeader(R.string.settings_section_try) }
-        item {
-            Button(
-                onClick = { vm.requestStallPreview() },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.settings_test_stall))
+        section(
+            state = accordion,
+            section = Section.SAFETY,
+            title = R.string.settings_section_safety,
+            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.SAFETY) },
+        ) {
+            item {
+                Text(
+                    stringResource(R.string.settings_safety_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            item {
+                PauseControl(
+                    remainingMs = pauseRemainingMs,
+                    onPause = { vm.setPaused(true) },
+                    onResume = { vm.setPaused(false) },
+                )
+            }
+            item { DisableControl(onDisable = { vm.requestDisable() }) }
+            item {
+                SensitivePrefixEditor(
+                    userPrefixes = sensitivePrefixes,
+                    onChange = { vm.setSensitivePrefixes(it) },
+                )
             }
         }
-        item {
-            OutlinedButton(onClick = onOpenDebug, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.settings_debug))
+
+        section(
+            state = accordion,
+            section = Section.TRY,
+            title = R.string.settings_section_try,
+            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.TRY) },
+        ) {
+            item {
+                Button(
+                    onClick = { vm.requestStallPreview() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.settings_test_stall))
+                }
+            }
+            item {
+                OutlinedButton(onClick = onOpenDebug, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.settings_debug))
+                }
             }
         }
     }
@@ -489,18 +553,62 @@ private fun LadderRows() {
 }
 
 /**
+ * One collapsible section: its header, and its body when it is open.
+ *
+ * A `LazyListScope` extension rather than a composable, because the body has
+ * to stay made of `item` and `items` calls. Wrapping eighty target rows in a
+ * single `item` would build the whole list on every recomposition and give up
+ * the recycling that makes the list usable at all.
+ *
+ * The body is simply not emitted when the section is closed, rather than
+ * emitted and hidden. A closed section costs one row.
+ */
+private fun LazyListScope.section(
+    state: CfgAccordion.State,
+    section: Section,
+    @StringRes title: Int,
+    onToggle: () -> Unit,
+    body: LazyListScope.() -> Unit,
+) {
+    val open = CfgAccordion.isOpen(state, section)
+    item { SectionHeader(title, open, onToggle) }
+    if (open) body()
+}
+
+/**
  * A section break: a label over a hairline rule, like a guide in a code
  * editor. The rule carries the structure that the removed card borders used
  * to, at a fraction of the visual weight.
+ *
+ * The chevron is text, right aligned on the label's own line. An icon asset
+ * would be the only thing on this screen not made of type, and it would need
+ * a tint that `check-colors.sh` cannot see into.
+ *
+ * The whole row is the tap target, not the chevron. A one-character hit area
+ * at the far edge of the screen is a target nobody reaches on the first try,
+ * and the label is what the user is looking at when they decide to open it.
  */
 @Composable
-private fun SectionHeader(@StringRes text: Int) {
+private fun SectionHeader(@StringRes text: Int, open: Boolean, onToggle: () -> Unit) {
     Spacer(Modifier.height(20.dp))
-    Text(
-        stringResource(text).uppercase(),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.primary,
-    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(text).uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            CfgAccordion.chevron(open),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
     HorizontalDivider(
         Modifier.padding(top = 4.dp, bottom = 8.dp),
         thickness = 1.dp,
