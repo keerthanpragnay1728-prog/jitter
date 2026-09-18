@@ -44,6 +44,7 @@ import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.command.CommandRegistry
 import dev.molasses.core.settings.CfgAccordion
 import dev.molasses.core.settings.CfgAccordion.Section
+import dev.molasses.core.settings.CfgRowKey
 import dev.molasses.core.settings.TargetGrouping
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lock.LockLadder
@@ -287,18 +288,16 @@ fun SettingsScreen(
             }
             items(
                 groupedTargets,
-                key = { row ->
-                    when (row) {
-                        is TargetGrouping.Row.App -> row.entry.pkg
-                        // Headers need keys too, and a header's identity is
-                        // its kind plus its horizon. Without one, a
-                        // recomposition that changes the grouping can reuse a
-                        // header slot for a different header.
-                        TargetGrouping.Row.TrackedHeader -> "<tracked>"
-                        TargetGrouping.Row.UntrackedHeader -> "<untracked>"
-                        is TargetGrouping.Row.HorizonHeader -> "<h${row.horizonMs}>"
-                    }
-                },
+                // Headers need keys as much as apps do: without one, a
+                // recomposition that changes the grouping can reuse a header
+                // slot for a different header.
+                //
+                // Built by CfgRowKey rather than here. The alphabet rail has
+                // to find an app's row by key in order to scroll to it, and a
+                // key written in one place and looked up in another is a
+                // mismatch nothing reports: indexOfFirst returns -1, the rail
+                // declines, and one letter quietly does nothing.
+                key = { row -> CfgRowKey.of(row) },
             ) { row ->
                 val app = when (row) {
                     is TargetGrouping.Row.App -> row.entry
