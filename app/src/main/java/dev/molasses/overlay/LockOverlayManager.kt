@@ -69,6 +69,7 @@ class LockOverlayManager(
 
     /** See [watchForCall]. The same permission-free check the shutter uses. */
     private val calls = CallDetector(service)
+    private val focus = AudioFocusHold(service)
 
     val isShowing: Boolean get() = host?.isShowing == true
 
@@ -135,6 +136,17 @@ class LockOverlayManager(
             return
         }
 
+        // After the addView check, for the reason the lease gate gives: the
+        // failure path above returns without reaching dismiss(), so a request
+        // made earlier would never be given back.
+        //
+        // This window needs it more than the gate does. The gate runs for at
+        // most thirty seconds; this one lives until the user presses the way
+        // out, over an app they are not allowed to use at all, so a locked app
+        // playing audio behind a full-screen refusal is the same defect with
+        // no upper bound on it.
+        focus.take("lock overlay for $pkg")
+
         onWindowsChanged()
         ledger.log(pkg, EventType.LOCK_ENFORCED, "remaining=${remainingText} reason=${reason.name}")
         watchForCall()
@@ -195,6 +207,11 @@ class LockOverlayManager(
         callJob?.cancel()
         callJob = null
         val h = host ?: return
+        // Past the null check deliberately. Focus is only ever taken once a
+        // window is genuinely attached, so a null host means there is nothing
+        // held, and releasing above this line would be a claim about state
+        // this method has not established yet.
+        focus.release("lock overlay down ($reason)")
         host = null
         currentPkg = null
         Log.i(TAG, "lock flash down ($reason)")
