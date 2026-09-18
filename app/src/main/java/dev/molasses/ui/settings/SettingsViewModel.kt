@@ -8,7 +8,6 @@ import dev.molasses.core.diag.RouteTally
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
-import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
@@ -333,25 +332,18 @@ class SettingsViewModel @Inject constructor(
     /**
      * Track or untrack [pkg], unless a lock stands on it.
      *
-     * The whole decision is [TargetLock.toggled], including the list
-     * arithmetic, because the arithmetic is where this would go wrong. It
-     * reads the resolved flow, which is the half that keeps the control the
-     * right way round: against the raw list, turning off one of the five
-     * defaults would remove from an empty list, fail, and add it back.
+     * The decision is not made here. It used to be, against two `StateFlow`
+     * snapshots and a write, which left a window for a lock armed in between,
+     * and `$ bedtime` arms on a timer with nobody watching. It now happens
+     * inside the store's `updateData`, where the resolved list, the lock and
+     * the write all read one state.
      *
-     * A refusal is a null and this returns without writing. The row renders
-     * its own toggle from [TargetLock.isPinned], so the refusal is visible
-     * before it happens rather than felt as a tap that did nothing.
+     * The row still renders its own toggle from `TargetLock.isPinned`, so a
+     * refusal is visible before it is attempted rather than felt as a tap
+     * that did nothing.
      */
     fun toggleTarget(pkg: String) {
-        viewModelScope.launch {
-            val next = TargetLock.toggled(
-                current = targets.value,
-                pkg = pkg,
-                lockRemainingMs = lockRemainingMs(pkg),
-            ) ?: return@launch
-            repo.setTargets(next)
-        }
+        viewModelScope.launch { repo.toggleTarget(pkg) }
     }
 
     fun setResetPolicy(policy: CycleResetPolicy) {
