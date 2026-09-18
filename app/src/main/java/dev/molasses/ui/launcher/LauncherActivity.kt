@@ -224,6 +224,21 @@ class LauncherActivity : ComponentActivity() {
                 .collectAsState(initial = ConsoleState())
 
             MolassesTheme(fontScale = fontScale.multiplier) {
+                // Nothing sets this true any more.
+                //
+                // The console widget that opened the inbox is gone: it said
+                // FILTER DORMANT, and it was telling the truth.
+                // NotificationFilterService does not exist, so nothing is
+                // being filtered, nothing is being held back, and the inbox
+                // it opened renders an empty list behind a TODO. A row
+                // advertising a feature that is not built is worse than no
+                // row, because a tester reads it as broken rather than as
+                // absent.
+                //
+                // The inbox and its back-handler branch are left intact and
+                // untriggered rather than deleted, because deleting them is a
+                // decision about the unbuilt service rather than a cleanup of
+                // this change. See the report accompanying this commit.
                 var showNotifInbox by remember { mutableStateOf(false) }
                 var showDrawer by remember { mutableStateOf(false) }
                 val pagerState = rememberPagerState(pageCount = { 2 })
@@ -253,7 +268,6 @@ class LauncherActivity : ComponentActivity() {
                         MainLauncherWorkspace(
                             appList = installedApps,
                             pagerState = pagerState,
-                            onOpenNotifInbox = { showNotifInbox = true },
                             onOpenDrawer = { showDrawer = true },
                             onOpenSettings = {
                                 startActivity(Intent(this@LauncherActivity, SettingsActivity::class.java))
@@ -496,7 +510,6 @@ fun MainLauncherWorkspace(
     onDeliverConsoleLine: (ConsoleLine, ConsoleSpeech.Budget) -> Unit,
     onAnswerConsolePrompt: () -> Unit,
     onEnqueueConsoleLine: (ConsoleLine) -> Unit,
-    onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
     onLaunchPackage: (String) -> Unit,
@@ -577,7 +590,6 @@ fun MainLauncherWorkspace(
                     onDeliverConsoleLine = onDeliverConsoleLine,
                     onAnswerConsolePrompt = onAnswerConsolePrompt,
                     onEnqueueConsoleLine = onEnqueueConsoleLine,
-                    onOpenNotifInbox = onOpenNotifInbox,
                     onOpenDrawer = onOpenDrawer,
                     onLaunchPackage = onLaunchPackage,
                     onDialer = onDialer,
@@ -613,7 +625,6 @@ fun TerminalHomeView(
     onDeliverConsoleLine: (ConsoleLine, ConsoleSpeech.Budget) -> Unit,
     onAnswerConsolePrompt: () -> Unit,
     onEnqueueConsoleLine: (ConsoleLine) -> Unit,
-    onOpenNotifInbox: () -> Unit,
     onOpenDrawer: () -> Unit,
     onLaunchPackage: (String) -> Unit,
     onDialer: () -> Unit,
@@ -1144,50 +1155,6 @@ fun TerminalHomeView(
         )
 
         Spacer(Modifier.height(14.dp))
-
-        // Pull-Down / Notification Shade Launcher Row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onOpenNotifInbox() }
-                .padding(horizontal = 12.dp, vertical = 9.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.launcher_filter_glyph),
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = PhosphorGreen,
-                )
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.launcher_filter_row_title),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PhosphorGreen,
-                    )
-                    Text(
-                        text = stringResource(R.string.filter_status_idle),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
-                        color = PhosphorDim,
-                    )
-                }
-            }
-
-            Text(
-                text = stringResource(R.string.launcher_chevron_glyph),
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                color = PhosphorGreen,
-            )
-        }
 
         Spacer(Modifier.height(12.dp))
 

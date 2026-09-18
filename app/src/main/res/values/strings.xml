@@ -315,10 +315,8 @@
     <string name="launcher_clock_fmt" translatable="false">%1$s  %2$s</string>
     <string name="launcher_cursor" translatable="false">\u2588</string>
     <string name="launcher_cfg">[CFG]</string>
-    <string name="launcher_filter_row_title">Notification filter</string>
     <!-- Decorative glyphs. Shown on screen, never reworded or translated. -->
     <string name="launcher_prompt_symbol" translatable="false">$ </string>
-    <string name="launcher_filter_glyph" translatable="false">O</string>
     <string name="launcher_chevron_glyph" translatable="false">v</string>
     <string name="ledger_screentime_label">TODAY\'S SCREEN TIME</string>
     <string name="ledger_screentime_fmt">%1$s hr, %2$s min</string>
@@ -356,7 +354,6 @@
     <string name="ledger_view_details">[OPEN SYSTEM WELLBEING]</string>
     <string name="filter_title">NOTIFICATION FILTER</string>
     <string name="filter_status_active">FILTER ACTIVE: %1$s CLEARED</string>
-    <string name="filter_status_idle">FILTER DORMANT</string>
     <string name="filter_allowlist_header">ALLOWED APPS (BYPASS FILTER)</string>
     <!-- Service and engine diagnostics. Field labels are shown on screen but
          must not be reworded: they are read alongside adb output. -->
