@@ -92,9 +92,18 @@ class BitStateMachineTest {
 
     @Test
     fun `confirm runs neutral to happy to neutral in about 900ms`() {
+        // The expression is still 900 ms. What changed is that the line no
+        // longer ends with it: the face is neutral for the whole linger, so
+        // the sequence below is unaffected and the name of this test is still
+        // true.
         val ack = "ACK: LOCK ARMED FOR 30M"
         val r = Reaction.Confirm(ack)
-        assertEquals(900L, BitStateMachine.CONFIRM_TOTAL_MS)
+        assertEquals(
+            900L,
+            BitStateMachine.CONFIRM_RISE_MS +
+                BitStateMachine.CONFIRM_HOLD_MS +
+                BitStateMachine.CONFIRM_FALL_MS,
+        )
 
         assertEquals(BitStateMachine.NEUTRAL, frame(reaction = r, ageMs = 0).face)
         assertEquals(BitStateMachine.NEUTRAL, frame(reaction = r, ageMs = 149).face)
@@ -105,14 +114,43 @@ class BitStateMachineTest {
     }
 
     @Test
+    fun `the ack line outlives the expression`() {
+        // The bug this fixes: the line lasted exactly as long as a face
+        // changing and back, which is a number chosen for an expression and
+        // then handed to a sentence. The expression still ends at 900; the
+        // text stays while the eye is on it.
+        val r = Reaction.Confirm("ACK: WIFI PANEL")
+        assertTrue(BitStateMachine.CONFIRM_TOTAL_MS > 900L)
+        assertEquals(BitStateMachine.NEUTRAL, frame(reaction = r, ageMs = 1_000).face)
+        assertEquals("ACK: WIFI PANEL", frame(reaction = r, ageMs = 1_000).line)
+    }
+
+    @Test
+    fun `a neutral face with no line is Bit at rest, so the linger is safe`() {
+        // The invariant the linger could have broken, stated the other way
+        // round. FLAT with no line means the sink is armed, which is why
+        // Reaction.Unavailable must expire with its face. NEUTRAL carries no
+        // such second meaning, so a neutral face outliving nothing and a
+        // neutral face carrying an ack are both unambiguous.
+        // blinking = false explicitly: at tick zero the derived blink phase
+        // is inside the shut half, so the resting face is the blink rather
+        // than the open eyes, which is correct and not the point here.
+        val rest = BitStateMachine.frame(
+            Mood.IDLE, Reaction.None, reactionAgeMs = 0, tickMs = 0, blinking = false,
+        )
+        assertEquals(BitStateMachine.NEUTRAL, rest.face)
+        assertNull(rest.line)
+    }
+
+    @Test
     fun `confirm renders the ack line throughout and drops it at the end`() {
         val ack = "FOCUS ENGAGED"
         val r = Reaction.Confirm(ack)
-        for (age in listOf(0L, 150L, 500L, 899L)) {
+        for (age in listOf(0L, 150L, 500L, 899L, BitStateMachine.CONFIRM_TOTAL_MS - 1)) {
             assertEquals("age=$age", ack, frame(reaction = r, ageMs = age).line)
             assertTrue("age=$age", frame(reaction = r, ageMs = age).reactionActive)
         }
-        val after = frame(reaction = r, ageMs = 900)
+        val after = frame(reaction = r, ageMs = BitStateMachine.CONFIRM_TOTAL_MS)
         assertNull(after.line)
         assertFalse(after.reactionActive)
     }
@@ -120,8 +158,8 @@ class BitStateMachineTest {
     @Test
     fun `confirm expires exactly at the total`() {
         val r = Reaction.Confirm("ok")
-        assertFalse(BitStateMachine.isExpired(r, 899))
-        assertTrue(BitStateMachine.isExpired(r, 900))
+        assertFalse(BitStateMachine.isExpired(r, BitStateMachine.CONFIRM_TOTAL_MS - 1))
+        assertTrue(BitStateMachine.isExpired(r, BitStateMachine.CONFIRM_TOTAL_MS))
     }
 
     @Test
@@ -144,9 +182,14 @@ class BitStateMachineTest {
         val msg = "block <app> <duration>"
         val r = Reaction.Failed(msg)
         assertEquals(BitStateMachine.DRY, frame(reaction = r, ageMs = 0).face)
-        assertEquals(BitStateMachine.DRY, frame(reaction = r, ageMs = 1_999).face)
+        assertEquals(
+            BitStateMachine.DRY,
+            frame(reaction = r, ageMs = BitStateMachine.FAILED_TOTAL_MS - 1).face,
+        )
         assertEquals(msg, frame(reaction = r, ageMs = 1_000).line)
-        assertFalse(frame(reaction = r, ageMs = 2_000).reactionActive)
+        assertFalse(
+            frame(reaction = r, ageMs = BitStateMachine.FAILED_TOTAL_MS).reactionActive,
+        )
     }
 
     @Test
@@ -174,7 +217,9 @@ class BitStateMachineTest {
     fun `unavailable holds its reason as long as a failure holds its hint`() {
         val r = Reaction.Unavailable("service not bound")
         assertEquals("service not bound", frame(reaction = r, ageMs = 1_000).line)
-        assertFalse(frame(reaction = r, ageMs = 2_000).reactionActive)
+        assertFalse(
+            frame(reaction = r, ageMs = BitStateMachine.UNAVAILABLE_TOTAL_MS).reactionActive,
+        )
         assertEquals(
             BitStateMachine.FAILED_TOTAL_MS,
             BitStateMachine.UNAVAILABLE_TOTAL_MS,

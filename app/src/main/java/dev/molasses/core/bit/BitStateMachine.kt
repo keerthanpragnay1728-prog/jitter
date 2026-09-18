@@ -207,23 +207,67 @@ object BitStateMachine {
     // ------------------------------------------------------------- durations
 
     /**
-     * The shared confirmation sequence, about 900 ms end to end.
-     * `(o_o)` to `(^o^)` and back.
+     * The confirmation expression: `(o_o)` to `(^o^)` and back, 900 ms.
+     *
+     * These three are the face and nothing else. They were also, for a while,
+     * the whole of how long the ack line lasted, which was the bug: the
+     * number was chosen for an expression and then a sentence was tied to it.
+     * 900 ms is right for a face changing and back. It is about half what a
+     * short line needs to be read.
      */
     const val CONFIRM_RISE_MS = 150L
     const val CONFIRM_HOLD_MS = 600L
     const val CONFIRM_FALL_MS = 150L
-    const val CONFIRM_TOTAL_MS = CONFIRM_RISE_MS + CONFIRM_HOLD_MS + CONFIRM_FALL_MS
 
     /**
-     * Failure holds longer than success. A confirmation is a nicety; an error
-     * is the only place the user learns what the grammar actually is, and it
-     * has to survive the moment of looking away from the keyboard.
+     * How long the ack line outlives the expression.
+     *
+     * The face is already back to `NEUTRAL` for the whole of this, because
+     * the phase function returns `NEUTRAL` past rise plus hold and simply
+     * keeps doing so. So the expression still takes 900 ms and only the text
+     * stays, which is what the eye is still on.
+     *
+     * The invariant this does not break is the one about `FLAT`: flat eyes
+     * with no line can only mean the sink is armed, so an unavailable reason
+     * and its face must expire together. A neutral face with a line beside it
+     * is just Bit with something to say, and a neutral face without one is
+     * Bit at rest. Neither is ambiguous with anything, which is why a linger
+     * is safe here and would not be on [Reaction.Unavailable].
      */
-    const val FAILED_TOTAL_MS = 2_000L
+    const val CONFIRM_LINGER_MS = 700L
+
+    /**
+     * About 1.6 s end to end.
+     *
+     * Reading `ACK: WIFI PANEL` takes something like 1.2 s once the eye has
+     * arrived, and the eye has not arrived: the user pressed Go and is still
+     * looking at the keyboard, which costs a few hundred milliseconds before
+     * reading starts at all. That is the whole of the reasoning; there is no
+     * measurement behind it beyond the device saying the old number was too
+     * short.
+     */
+    const val CONFIRM_TOTAL_MS =
+        CONFIRM_RISE_MS + CONFIRM_HOLD_MS + CONFIRM_FALL_MS + CONFIRM_LINGER_MS
+
+    /**
+     * Failure holds longer than success, and longer than it used to.
+     *
+     * A confirmation is a nicety; an error is the only place the user learns
+     * what the grammar actually is, and it has to survive the moment of
+     * looking away from the keyboard. Two seconds nominally covered that and
+     * did not in practice, because the clock starts at dispatch rather than
+     * when the eye arrives, and these lines are sentences rather than labels.
+     *
+     * Three seconds is a deliberate ceiling rather than a maximum. Unlike the
+     * confirmation, this face does not move and does not blink for the whole
+     * window, so past roughly this point a held expression stops reading as a
+     * reaction and starts reading as a state. The right fix for the longest
+     * reasons is shorter copy, not a longer hold.
+     */
+    const val FAILED_TOTAL_MS = 3_000L
 
     /** Same hold as a failure: an unavailable reason is equally worth reading. */
-    const val UNAVAILABLE_TOTAL_MS = 2_000L
+    const val UNAVAILABLE_TOTAL_MS = 3_000L
 
     /**
      * Short enough to read as a flicker rather than as an expression. A tell,
