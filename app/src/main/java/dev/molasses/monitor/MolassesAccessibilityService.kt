@@ -33,6 +33,7 @@ import dev.molasses.core.time.MonotonicClock
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.time.WallClock
 import dev.molasses.core.ui.CycleLine
+import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.datastore.gateModeFromOrdinal
@@ -118,6 +119,16 @@ class MolassesAccessibilityService : AccessibilityService() {
     /** The configured gate mode. Only in force at the terminal tier. */
     @Volatile
     private var gateMode: GatePolicy.GateMode = GatePolicy.GateMode.COUNTDOWN
+
+    /**
+     * The chosen text size, for the windows this service owns.
+     *
+     * Held here because the overlay managers are constructed once and shown
+     * many times, so each one reads this through a lambda at the moment it
+     * composes rather than capturing it. Seeded at the default so a window
+     * shown before the first store emission is ordinary rather than absent.
+     */
+    private var fontScaleMultiplier: Float = FontScale.DEFAULT.multiplier
 
     /**
      * Consecutive failures to put a gate window on the glass, this visit.
@@ -233,6 +244,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             // gates again, which is the whole reason the launch check also
             // runs on scroll.
             onAbandoned = { },
+            fontScale = { fontScaleMultiplier },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
 
@@ -249,6 +261,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                 runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
                     .onFailure { Log.w(TAG, "GLOBAL_ACTION_HOME refused", it) }
             },
+            fontScale = { fontScaleMultiplier },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
 
@@ -264,6 +277,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             },
             onLeaseTaken = ::grantLease,
             onDeclined = { _, _ -> },
+            fontScale = { fontScaleMultiplier },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
 
@@ -390,6 +404,11 @@ class MolassesAccessibilityService : AccessibilityService() {
                 }
                 leases = LeaseManager.of(state.leasesList.map { it.toLease() })
                 gateMode = gateModeFromOrdinal(state.gateModeOrdinal)
+                // Off the same emission as everything else here. The overlays
+                // are the surface where this matters most: a user cannot
+                // pinch, scroll or dismiss a gate to cope with text that is
+                // too small for them.
+                fontScaleMultiplier = FontScale.fromOrdinal(state.fontScaleOrdinal).multiplier
 
                 val wasPaused = PauseWindow.isActive(pauseStartedAt, nowStamped())
                 pauseStartedAt = state.pauseInstant()

@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -16,8 +17,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import dagger.hilt.android.AndroidEntryPoint
+import dev.molasses.core.ui.FontScale
+import dev.molasses.data.repo.SettingsRepository
 import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.MolassesTheme
+import javax.inject.Inject
 
 /**
  * Onboarding, target picking, policy selection, and the debug view.
@@ -33,6 +37,13 @@ import dev.molasses.ui.theme.MolassesTheme
 @AndroidEntryPoint
 class SettingsActivity : ComponentActivity() {
 
+    /**
+     * Injected for one thing: the font scale, which has to be read above
+     * MolassesTheme. Everything else on this screen goes through
+     * SettingsViewModel, and a theme is not a thing a view model can set.
+     */
+    @Inject lateinit var settingsRepository: SettingsRepository
+
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { /* the checklist re-reads real state on resume; nothing to do here */ }
@@ -42,7 +53,15 @@ class SettingsActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {
-            MolassesTheme {
+            // Read here, not defaulted. This screen carries the font size
+            // selector, so leaving it at 1.0 meant the one place a user
+            // changes the setting was the one place guaranteed never to show
+            // it. They pressed VERY_LARGE, nothing moved, and the only
+            // reasonable conclusion was that the setting does not work.
+            val fontScale by settingsRepository.fontScale
+                .collectAsState(initial = FontScale.DEFAULT)
+
+            MolassesTheme(fontScale = fontScale.multiplier) {
                 var showDebug by rememberSaveable { mutableStateOf(false) }
                 // The Surface the launcher has and this screen did not. Without
                 // it the platform window background shows through everywhere
