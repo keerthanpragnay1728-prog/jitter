@@ -104,6 +104,15 @@
       terminal chrome on a character grid, and a two-letter word replaced by a
       six-letter one moves the column.
     -->
+    <!--
+      Group headers inside the target list. They appear only when they
+      separate something: nothing is tracked on a fresh install, so a fresh
+      install sees none of these. The horizon one shows only when tracked apps
+      disagree about their horizon, so seeing it at all is the information.
+    -->
+    <string name="settings_group_tracked">TRACKED</string>
+    <string name="settings_group_untracked">NOT TRACKED</string>
+    <string name="settings_group_horizon_fmt" translatable="false">%1$s HORIZON</string>
     <string name="settings_target_on" translatable="false">[ON]</string>
     <string name="settings_target_off" translatable="false">[OFF]</string>
     <string name="settings_horizon_onset_fmt" translatable="false">onset %1$s</string>
