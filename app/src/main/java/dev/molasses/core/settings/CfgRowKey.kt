@@ -37,6 +37,16 @@ object CfgRowKey {
 
     private const val SEPARATOR = ":"
 
+    /**
+     * A row that belongs to no section.
+     *
+     * The masthead, and nothing else so far. It is above the accordion rather
+     * than inside it, so there is no section to name it by, and giving it a
+     * section's key would make the screen's own shape a lie in the one place
+     * a reader would check it.
+     */
+    fun chrome(id: String): String = "chrome$SEPARATOR$id"
+
     /** A section header row. One per section, open or closed. */
     fun section(section: CfgAccordion.Section): String = "section$SEPARATOR${section.name}"
 
@@ -82,5 +92,6 @@ object CfgRowKey {
      * be prefixes of each other. "app" and "apps" would be a real bug and an
      * easy one to write.
      */
-    val PREFIXES: List<String> = listOf("section", "body", "app", "group", "horizon")
+    val PREFIXES: List<String> =
+        listOf("chrome", "section", "body", "app", "group", "horizon")
 }
