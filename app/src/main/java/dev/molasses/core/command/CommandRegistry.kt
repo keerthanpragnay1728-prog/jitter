@@ -108,10 +108,8 @@ class CommandRegistry(keys: Keys) {
         val bedtimeUsage: Int, val bedtimeDesc: Int,
         val statusUsage: Int, val statusDesc: Int,
         val helpUsage: Int, val helpDesc: Int,
-        val logUsage: Int, val logDesc: Int,
         val alarmUsage: Int, val alarmDesc: Int,
         val timerUsage: Int, val timerDesc: Int,
-        val remUsage: Int, val remDesc: Int,
         val rebootUsage: Int, val rebootDesc: Int,
         val poweroffUsage: Int, val poweroffDesc: Int,
         val wifiUsage: Int, val wifiDesc: Int,
@@ -119,9 +117,19 @@ class CommandRegistry(keys: Keys) {
     )
 
     val specs: List<CommandSpec> = listOf(
-        // SUBSYSTEM. Lock enforcement, the log page and scheduling are each
-        // an unbuilt part of this app rather than a missing permission, so
-        // the surface answers per command and names which one.
+        // SUBSYSTEM. An unbuilt part of this app rather than a missing
+        // permission, so the surface answers per command and names which one.
+        //
+        // "log" and "rem" used to sit here, permanently unavailable, saying
+        // "no system log page yet" and "reminder scheduling is not wired
+        // yet". They are gone. A terminal that lists a command it can never
+        // run is teaching the user to distrust the list, and the manual is
+        // now the whole of discovery.
+        //
+        // "allow" is the last of that shape still standing, and it is here on
+        // purpose rather than by oversight: relief has a designed home in
+        // PauseWindow and the penalty ratchet, so its absence is a feature
+        // not yet built rather than a name with nothing behind it.
         CommandSpec("block", keys.blockUsage, keys.blockDesc, Surface.SUBSYSTEM,
             requiresConfirmAboveMs = CONFIRM_ABOVE_MS),
         CommandSpec("focus", keys.focusUsage, keys.focusDesc, Surface.SUBSYSTEM,
@@ -130,8 +138,6 @@ class CommandRegistry(keys: Keys) {
         // policy before it reaches a handler.
         CommandSpec("allow", keys.allowUsage, keys.allowDesc, Surface.SUBSYSTEM, isRelief = true),
         CommandSpec("bedtime", keys.bedtimeUsage, keys.bedtimeDesc, Surface.SUBSYSTEM),
-        CommandSpec("log", keys.logUsage, keys.logDesc, Surface.SUBSYSTEM),
-        CommandSpec("rem", keys.remUsage, keys.remDesc, Surface.SUBSYSTEM),
 
         // STATE. Scroll the pager, open the manual. Nothing can stop either.
         CommandSpec("status", keys.statusUsage, keys.statusDesc, Surface.STATE),
@@ -177,10 +183,8 @@ class CommandRegistry(keys: Keys) {
             Command.Bedtime -> "bedtime"
             Command.Status -> "status"
             Command.Help -> "help"
-            is Command.Log -> "log"
             is Command.Alarm -> "alarm"
             is Command.Timer -> "timer"
-            is Command.Remind -> "rem"
             Command.Reboot -> "reboot"
             Command.PowerOff -> "poweroff"
             is Command.Wifi -> "wifi"
@@ -193,7 +197,6 @@ class CommandRegistry(keys: Keys) {
             is Command.Focus -> command.durationMs
             is Command.Allow -> command.durationMs
             is Command.Timer -> command.durationMs
-            is Command.Remind -> command.durationMs
             else -> null
         }
     }

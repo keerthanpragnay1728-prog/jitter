@@ -31,9 +31,7 @@ object CommandRender {
         Command.Help -> "help"
         Command.Reboot -> "reboot"
         Command.PowerOff -> "poweroff"
-        is Command.Log -> if (command.appToken == null) "log" else "log ${command.appToken}"
         is Command.Alarm -> "alarm ${time(command.minuteOfDay)}"
-        is Command.Remind -> "rem ${duration(command.durationMs)} ${command.text}"
         is Command.Wifi -> "wifi${toggle(command.enable)}"
         is Command.Dnd -> "dnd${toggle(command.enable)}"
     }

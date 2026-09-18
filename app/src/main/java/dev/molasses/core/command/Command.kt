@@ -45,8 +45,6 @@ sealed interface Command {
      */
     data object Help : Command
 
-    /** `$ log [app]`. Filter the system log, or clear the filter. */
-    data class Log(val appToken: String?) : Command
 
     /** `$ alarm <time>` */
     data class Alarm(val minuteOfDay: Int) : Command
@@ -54,8 +52,6 @@ sealed interface Command {
     /** `$ timer <duration>` */
     data class Timer(val durationMs: Long) : Command
 
-    /** `$ rem <duration> <text>` */
-    data class Remind(val durationMs: Long, val text: String) : Command
 
     /** `$ reboot`, `$ poweroff`. Confirmation is the caller's problem. */
     data object Reboot : Command

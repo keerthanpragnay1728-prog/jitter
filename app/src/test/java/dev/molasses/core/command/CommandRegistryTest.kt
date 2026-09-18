@@ -13,10 +13,8 @@ private fun keys() = CommandRegistry.Keys(
     bedtimeUsage = 7, bedtimeDesc = 8,
     statusUsage = 9, statusDesc = 10,
     helpUsage = 27, helpDesc = 28,
-    logUsage = 11, logDesc = 12,
     alarmUsage = 13, alarmDesc = 14,
     timerUsage = 15, timerDesc = 16,
-    remUsage = 17, remDesc = 18,
     rebootUsage = 19, rebootDesc = 20,
     poweroffUsage = 21, poweroffDesc = 22,
     wifiUsage = 23, wifiDesc = 24,
@@ -35,10 +33,8 @@ class CommandRegistryTest {
         Command.Bedtime,
         Command.Status,
         Command.Help,
-        Command.Log(null),
         Command.Alarm(6 * 60),
         Command.Timer(60_000),
-        Command.Remind(60_000, "x"),
         Command.Reboot,
         Command.PowerOff,
         Command.Wifi(null),
@@ -115,8 +111,6 @@ class CommandRegistryTest {
         assertEquals(Surface.SUBSYSTEM, surfaceOf("focus"))
         assertEquals(Surface.SUBSYSTEM, surfaceOf("allow"))
         assertEquals(Surface.SUBSYSTEM, surfaceOf("bedtime"))
-        assertEquals(Surface.SUBSYSTEM, surfaceOf("log"))
-        assertEquals(Surface.SUBSYSTEM, surfaceOf("rem"))
         assertEquals(Surface.STATE, surfaceOf("status"))
         assertEquals(Surface.STATE, surfaceOf("help"))
         assertEquals(Surface.INTENT, surfaceOf("alarm"))

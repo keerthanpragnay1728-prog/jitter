@@ -43,8 +43,8 @@ class CommandResourcesTest {
     private val verbs: List<String> =
         CommandRegistry(
             CommandRegistry.Keys(
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-                15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
             ),
         ).specs.map { it.verb }
 
@@ -105,8 +105,6 @@ class CommandResourcesTest {
     private val unavailableReasons = listOf(
         "cmd_na_no_allowance",
         "cmd_na_relief_while_locked",
-        "cmd_na_no_log",
-        "cmd_na_no_scheduling",
         "cmd_na_privileged",
         "cmd_na_no_panel",
         "cmd_na_no_clock_app",

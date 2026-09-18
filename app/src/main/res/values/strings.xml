@@ -419,8 +419,6 @@
     -->
     <string name="cmd_na_no_allowance">Allowances are not built yet. A lease has to park the penalty ratchet, not just hide the gate.</string>
     <string name="cmd_na_relief_while_locked">A lock is armed. Relief does not outrank a lock.</string>
-    <string name="cmd_na_no_log">No system log page yet.</string>
-    <string name="cmd_na_no_scheduling">Reminder scheduling is not wired yet.</string>
     <!-- Not "not yet". A sideloaded app cannot reboot or power off a device
          at all, so this must not imply the feature is coming, and it must not
          blame the service binding either. -->
@@ -456,10 +454,8 @@
     <string name="cmd_usage_bedtime" translatable="false">bedtime</string>
     <string name="cmd_usage_status" translatable="false">status</string>
     <string name="cmd_usage_help" translatable="false">help</string>
-    <string name="cmd_usage_log" translatable="false">log [app]</string>
     <string name="cmd_usage_alarm" translatable="false">alarm &lt;time&gt;</string>
     <string name="cmd_usage_timer" translatable="false">timer &lt;duration&gt;</string>
-    <string name="cmd_usage_rem" translatable="false">rem &lt;duration&gt; &lt;text&gt;</string>
     <string name="cmd_usage_reboot" translatable="false">reboot</string>
     <string name="cmd_usage_poweroff" translatable="false">poweroff</string>
     <string name="cmd_usage_wifi" translatable="false">wifi [on|off]</string>
@@ -471,10 +467,8 @@
     <string name="cmd_desc_bedtime">Lock until the configured wake time.</string>
     <string name="cmd_desc_status">Show the ledger.</string>
     <string name="cmd_desc_help">List every command. Also $ ?.</string>
-    <string name="cmd_desc_log">Filter the system log, or clear the filter.</string>
     <string name="cmd_desc_alarm">Set an alarm in the clock app.</string>
     <string name="cmd_desc_timer">Start a timer in the clock app.</string>
-    <string name="cmd_desc_rem">Remind me after the duration.</string>
     <string name="cmd_desc_reboot">Restart the device.</string>
     <string name="cmd_desc_poweroff">Power the device off.</string>
     <string name="cmd_desc_wifi">Open the wifi panel.</string>
