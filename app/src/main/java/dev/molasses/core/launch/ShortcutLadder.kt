@@ -71,7 +71,9 @@ object ShortcutLadder {
      * `SHOW_ALARMS` first because it lands on the alarm list rather than on
      * whatever screen the clock app opens to, which is what `[clock]` means.
      * `APP_CLOCK` second, which most clocks declare and which opens the app.
-     * Then the four packages that ship on the phones people actually have.
+     * Then the packages, for the clocks that declare neither. This ladder is
+     * the least dependent on its list, because `SHOW_ALARMS` carries most
+     * devices on its own. See [CALCULATOR] for the one that is not so lucky.
      */
     val CLOCK: List<Candidate> = listOf(
         Candidate(action = "android.intent.action.SHOW_ALARMS"),
@@ -81,22 +83,47 @@ object ShortcutLadder {
         Candidate(pkg = "com.sec.android.app.clockpackage"),
         Candidate(pkg = "com.coloros.alarmclock"),
         Candidate(pkg = "com.oneplus.deskclock"),
+        Candidate(pkg = "com.oplus.alarmclock"),
+        Candidate(pkg = "com.android.BBKClock"),
+        Candidate(pkg = "com.huawei.deskclock"),
+        Candidate(pkg = "com.transsion.deskclock"),
+        Candidate(pkg = "com.asus.deskclock"),
     )
 
     /**
      * The calculator.
      *
-     * No specific action exists, so the category is the first and best rung.
-     * The packages below it are for the handful of OEM calculators that ship
-     * without declaring `APP_CALCULATOR` at all.
+     * No specific action exists, so the category is the first and only rung
+     * that is not a guess at a package name. That makes this the ladder most
+     * dependent on the list below, and the list was too short: `[calculator]`
+     * did nothing on a device where `[clock]` worked, because `SHOW_ALARMS`
+     * carries the clock and the calculator has no equivalent.
+     *
+     * A name that is not installed costs nothing. `getLaunchIntentForPackage`
+     * returns null and the walk continues, so a wrong guess is one skipped
+     * rung and a missing name is a row that does nothing. The list is
+     * therefore deliberately generous rather than minimal, which is the
+     * opposite of how most lists in this repository are argued.
+     *
+     * Two entries per vendor where the vendor renamed itself. OPPO, OnePlus
+     * and Realme converged on ColorOS and then on `com.oplus`, and devices in
+     * the field are on every generation of that at once.
      */
     val CALCULATOR: List<Candidate> = listOf(
         Candidate(action = MAIN, category = "android.intent.category.APP_CALCULATOR"),
         Candidate(pkg = "com.google.android.calculator"),
         Candidate(pkg = "com.android.calculator2"),
         Candidate(pkg = "com.sec.android.app.popupcalculator"),
+        Candidate(pkg = "com.sec.android.app.calculator"),
         Candidate(pkg = "com.miui.calculator"),
         Candidate(pkg = "com.coloros.calculator"),
+        Candidate(pkg = "com.oplus.calculator"),
+        Candidate(pkg = "com.oneplus.calculator"),
+        Candidate(pkg = "com.realme.calculator"),
+        Candidate(pkg = "com.vivo.calculator"),
+        Candidate(pkg = "com.huawei.calculator"),
+        Candidate(pkg = "com.transsion.calculator"),
+        Candidate(pkg = "com.asus.calculator"),
     )
 
     /**
@@ -106,6 +133,12 @@ object ShortcutLadder {
         Candidate(action = MAIN, category = "android.intent.category.APP_CALENDAR"),
         Candidate(pkg = "com.google.android.calendar"),
         Candidate(pkg = "com.samsung.android.calendar"),
+        Candidate(pkg = "com.android.calendar"),
+        Candidate(pkg = "com.coloros.calendar"),
+        Candidate(pkg = "com.oplus.calendar"),
+        Candidate(pkg = "com.android.BBKCalendar"),
+        Candidate(pkg = "com.huawei.calendar"),
+        Candidate(pkg = "com.transsion.calendar"),
     )
 
     /**

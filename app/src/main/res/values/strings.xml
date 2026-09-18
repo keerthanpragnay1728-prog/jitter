@@ -403,7 +403,7 @@
     <string name="cmd_err_time">Bad time: %1$s. Try 6am, 18:30, 6:30pm.</string>
     <string name="cmd_err_toggle">Expected on or off, got %1$s</string>
     <string name="cmd_err_unknown_app">No app matches %1$s</string>
-    <string name="cmd_err_ambiguous_app">%1$s matches %2$s apps. Be more specific: a wrong lock has no unlock.</string>
+    <string name="cmd_err_ambiguous_app">%1$s matches %2$s apps. A wrong lock cannot be undone.</string>
     <string name="cmd_err_no_targets">No tracked apps. Add some in settings first.</string>
     <string name="cmd_err_lock_not_shortened">Already locked for %1$s. A lock can only be extended.</string>
     <!--
