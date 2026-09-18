@@ -12,10 +12,12 @@ import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.model.CycleResetPolicy
+import dev.molasses.core.session.TargetScope
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.CycleStateStore
+import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.datastore.toEngineSnapshot
 import dev.molasses.data.datastore.toModel
 import dev.molasses.data.db.GateOutcomeRow
@@ -101,8 +103,39 @@ class SettingsViewModel @Inject constructor(
     private val _installed = MutableStateFlow<List<InstalledApp>>(emptyList())
     val installed: StateFlow<List<InstalledApp>> = _installed.asStateFlow()
 
+    /**
+     * The tracked packages, **resolved**, which is what CFG has to show.
+     *
+     * `repo.targets` is the raw stored list and is empty on every device
+     * between first launch and the first edit. The service resolves it and is
+     * tracking five apps in that state, so CFG showed nothing tracked while
+     * five were being gated.
+     *
+     * Resolved here rather than at the screen because [toggleTarget] reads
+     * this same flow to compute its next value, and those two ends cannot be
+     * fixed separately. A resolved display over a raw write inverts the
+     * control: a tap meant to turn one of the five defaults off would try to
+     * remove it from an empty list, fail, and add it instead. See CLAUDE.md,
+     * "The stored target list is not the tracked set".
+     *
+     * The initial value is the defaults rather than an empty list, for the
+     * same reason: empty is not a state this screen can be in truthfully, and
+     * an empty first frame would flicker every row from untracked to tracked.
+     *
+     * ## The one thing this cannot express
+     * Tracking nothing. An empty stored list means "use the defaults", so
+     * turning the last target off writes empty, and the five come back.
+     *
+     * That is not new. Before this, the same tap left the service tracking
+     * five while CFG showed zero, which is the same limitation wearing a
+     * silent divergence instead of a visible bounce. Making it visible is the
+     * improvement; removing it needs the store to tell "empty because chosen"
+     * apart from "empty because untouched", which is a proto field and its own
+     * change. `TargetScope.usedFallback` is the seam that would read it.
+     */
     val targets: StateFlow<List<String>> = repo.targets
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .map { TargetScope.resolve(it, DEFAULT_TARGETS).toList() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DEFAULT_TARGETS)
 
     val resetPolicy: StateFlow<CycleResetPolicy> = repo.resetPolicy
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CycleResetPolicy.DEFAULT)
@@ -298,6 +331,9 @@ class SettingsViewModel @Inject constructor(
 
     fun toggleTarget(pkg: String) {
         viewModelScope.launch {
+            // Reads the resolved flow, which is the half that makes this
+            // correct. Against the raw list, turning off one of the five
+            // defaults would remove from an empty list, fail, and add it.
             val current = targets.value.toMutableList()
             if (!current.remove(pkg)) current += pkg
             repo.setTargets(current)
