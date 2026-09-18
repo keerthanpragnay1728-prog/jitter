@@ -142,6 +142,12 @@ private object SubsystemSurface : EffectSurface {
         // in one edit here, which is the whole economy of surfacing.
         "block", "focus", "bedtime" -> Availability.Available
 
+        // Relief, not restriction, and it does not run on LockRegistry. An
+        // allowance suspends checkpoints, which means parking the penalty
+        // ratchet as well as hiding the gate, and the ratchet lives in
+        // FrictionEngine.
+        "allow" -> Availability.Unavailable(R.string.cmd_na_no_allowance)
+
         else -> Availability.Unavailable(R.string.cmd_na_wiring)
     }
 }
@@ -205,6 +211,7 @@ fun launcherRegistry(): CommandRegistry = CommandRegistry(
     CommandRegistry.Keys(
         blockUsage = R.string.cmd_usage_block, blockDesc = R.string.cmd_desc_block,
         focusUsage = R.string.cmd_usage_focus, focusDesc = R.string.cmd_desc_focus,
+        allowUsage = R.string.cmd_usage_allow, allowDesc = R.string.cmd_desc_allow,
         bedtimeUsage = R.string.cmd_usage_bedtime, bedtimeDesc = R.string.cmd_desc_bedtime,
         statusUsage = R.string.cmd_usage_status, statusDesc = R.string.cmd_desc_status,
         helpUsage = R.string.cmd_usage_help, helpDesc = R.string.cmd_desc_help,
@@ -356,7 +363,7 @@ private fun execute(
         }
     }
 
-    Command.Reboot, Command.PowerOff ->
+    is Command.Allow, Command.Reboot, Command.PowerOff ->
         DispatchResult.Unavailable(R.string.cmd_na_wiring)
 }
 
