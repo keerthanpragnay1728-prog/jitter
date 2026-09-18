@@ -303,6 +303,13 @@
     <string name="launcher_fav_calendar">[calendar]</string>
     <string name="launcher_fav_calculator">[calculator]</string>
     <string name="launcher_fav_clock">[clock]</string>
+    <!--
+      Said rather than swallowed. These rows used to wrap startActivity in a
+      runCatching and discard the result, so a device with no handler got a
+      row that did nothing, silently, every time.
+    -->
+    <string name="launcher_fav_none">Nothing on this device handles that.</string>
+    <string name="launcher_fav_none_messaging">No messaging app found. Try the drawer.</string>
     <!-- The bar itself is drawn cell by cell so the charging cell can be
          brightened individually, so the line is three pieces rather than one
          template. All translatable="false": this is a fixed-width readout. -->
