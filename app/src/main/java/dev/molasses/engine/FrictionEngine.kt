@@ -390,8 +390,25 @@ class FrictionEngine(
         // interval between the lease running out and the new one being taken
         // would be forgiven rather than charged.
         accruePenalty(app, live)
-        // max() so a late or duplicated grant can never lower the mark.
-        app.leaseUntilAccumulatedMs = maxOf(app.leaseUntilAccumulatedMs, live + durationMs)
+        // Never lengthen a mark that is still ahead of the live total, and
+        // never lower one either. The same rule as `LeaseManager.grant`, in
+        // the other timebase, and now written the same way on both sides.
+        //
+        // This used to be max(mark, live + duration), which protected the
+        // second half of that and handed away the first. A second grant
+        // arriving while the mark was still ahead pushed it a further full
+        // duration out, so a duplicate bought relief the user never paid for.
+        // The store refused to lengthen the wall clock lease in the same
+        // breath, so the two halves of one grant disagreed about what it was
+        // worth, and the half that disagreed in the user's favour was the
+        // ratchet. Always err toward more friction.
+        //
+        // The case max() was there for still holds: a short grant landing
+        // while a long mark is live leaves the long mark alone rather than
+        // revoking accumulated time that was already bought.
+        if (app.leaseUntilAccumulatedMs <= live) {
+            app.leaseUntilAccumulatedMs = live + durationMs
+        }
         app.leasesTaken += 1
         ledger.log(
             pkg,

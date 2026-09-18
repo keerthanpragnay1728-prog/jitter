@@ -391,6 +391,46 @@ class FrictionEngineTest {
         assertEquals(15 * min, r.snap(ig).leaseUntilAccumulatedMs)
     }
 
+    @Test
+    fun `a second grant cannot push a live mark further out either`() {
+        // The mirror of the test above, and the half that was missing. The
+        // mark used to be max(mark, live + duration), which refused to lower
+        // it and happily raised it, so a duplicated grant bought another full
+        // duration of forgiveness. LeaseManager refuses to lengthen a live
+        // lease in the same breath, so the wall clock half of one grant and
+        // the ratchet half disagreed about what it was worth, and the half
+        // that disagreed in the user's favour was the ratchet.
+        //
+        // Always err toward more friction: a grant arriving while the mark is
+        // still ahead changes nothing.
+        val r = Rig()
+        r.enter(ig, 0)
+        r.lease(ig, 0, 15 * min)
+        assertEquals(15 * min, r.snap(ig).leaseUntilAccumulatedMs)
+
+        r.lease(ig, 1 * min, 15 * min)
+        assertEquals(
+            "a duplicate grant must not move the mark",
+            15 * min,
+            r.snap(ig).leaseUntilAccumulatedMs,
+        )
+        // The count still moves. Escalation charges for the decision, and two
+        // decisions were made; only the relief is refused.
+        assertEquals(2, r.snap(ig).leasesTaken)
+    }
+
+    @Test
+    fun `a grant taken once the mark is spent starts from where the user is`() {
+        // The other side of the same branch, so the refusal above cannot be
+        // satisfied by a mark that never moves at all.
+        val r = Rig()
+        r.enter(ig, 0)
+        r.lease(ig, 0, 5 * min)
+        r.scroll(ig, 9 * min)
+        r.lease(ig, 9 * min, 15 * min)
+        assertEquals(24 * min, r.snap(ig).leaseUntilAccumulatedMs)
+    }
+
     // -------------------------------------------------------- accounting
 
     @Test
