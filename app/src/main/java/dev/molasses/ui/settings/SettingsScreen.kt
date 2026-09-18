@@ -44,6 +44,7 @@ import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.command.CommandRegistry
 import dev.molasses.core.settings.CfgAccordion
 import dev.molasses.core.settings.CfgAccordion.Section
+import dev.molasses.core.settings.TargetGrouping
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lock.LockLadder
 import dev.molasses.core.lock.LockRequest
@@ -130,6 +131,23 @@ fun SettingsScreen(
                     it.label.contains(q, ignoreCase = true) ||
                     it.pkg.contains(q, ignoreCase = true)
             }
+        }
+    }
+
+    /**
+     * The target list, grouped and ordered.
+     *
+     * Derived from the filtered list rather than the installed one, which is
+     * the only correct order: headers describe what is on screen, and a
+     * TRACKED header over a run the search box emptied is exactly the lie
+     * every other rule in `TargetGrouping` avoids.
+     */
+    val groupedTargets = remember(shownApps, targets, horizons) {
+        TargetGrouping.rows(
+            apps = shownApps.map { TargetGrouping.Entry(it.pkg, it.label) },
+            tracked = targets.toSet(),
+        ) { pkg ->
+            horizons[pkg]?.horizonMs ?: FrictionCurve.DEFAULT_HORIZON_MS
         }
     }
 
@@ -268,7 +286,41 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
-            items(shownApps, key = { it.pkg }) { app ->
+            items(
+                groupedTargets,
+                key = { row ->
+                    when (row) {
+                        is TargetGrouping.Row.App -> row.entry.pkg
+                        // Headers need keys too, and a header's identity is
+                        // its kind plus its horizon. Without one, a
+                        // recomposition that changes the grouping can reuse a
+                        // header slot for a different header.
+                        TargetGrouping.Row.TrackedHeader -> "<tracked>"
+                        TargetGrouping.Row.UntrackedHeader -> "<untracked>"
+                        is TargetGrouping.Row.HorizonHeader -> "<h${row.horizonMs}>"
+                    }
+                },
+            ) { row ->
+                val app = when (row) {
+                    is TargetGrouping.Row.App -> row.entry
+                    TargetGrouping.Row.TrackedHeader -> {
+                        GroupHeader(stringResource(R.string.settings_group_tracked))
+                        return@items
+                    }
+                    TargetGrouping.Row.UntrackedHeader -> {
+                        GroupHeader(stringResource(R.string.settings_group_untracked))
+                        return@items
+                    }
+                    is TargetGrouping.Row.HorizonHeader -> {
+                        GroupHeader(
+                            stringResource(
+                                R.string.settings_group_horizon_fmt,
+                                CommandRender.duration(row.horizonMs),
+                            ),
+                        )
+                        return@items
+                    }
+                }
                 val remainingMs = vm.lockRemainingMs(app.pkg)
                 val locked = remainingMs > 0L
                 TargetRow(
@@ -572,6 +624,24 @@ private fun LazyListScope.section(
     val open = CfgAccordion.isOpen(state, section)
     item { SectionHeader(title, open, onToggle) }
     if (open) body()
+}
+
+/**
+ * A group break inside the target list. Dimmer and quieter than a section
+ * header, because it divides rows rather than topics, and it carries no
+ * chevron because there is nothing to collapse.
+ *
+ * It appears only when it separates something. See `TargetGrouping`: on a
+ * fresh install, with nothing tracked, there are no group headers at all.
+ */
+@Composable
+private fun GroupHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.outline,
+        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+    )
 }
 
 /**
