@@ -52,6 +52,30 @@ safe.
 Fixed-width alignment belongs in Kotlin, not in the resource. aapt collapses
 runs of whitespace inside a string value unless the whole value is quoted.
 
+### Stubs are where the longest lines collect
+
+A refusal is shown on a motionless face for three seconds, so it has to be
+readable in three seconds. An audit for lines over twelve words found the worst
+offenders were all the same kind of string: the reason a stub gives for not
+working.
+
+That is not a coincidence, it is the shape of the problem. A command that
+cannot run has to explain an absent subsystem, and an absent subsystem takes a
+paragraph. "Allowances are not built yet. A lease has to park the penalty
+ratchet, not just hide the gate" is eighteen words and every one of them is
+load bearing, because the reader has no other source for any of it. A command
+that *can* run only has to say what went wrong with this attempt, which is a
+clause.
+
+So purge a stub promptly rather than letting it sit behind a dimmed manual row.
+Deleting `log`, `rem` and `allow` removed the three longest refusals in the app
+without a single word being rewritten, and what was left needed one edit. The
+copy problem and the stub problem were the same problem.
+
+If a stub genuinely has to stay for a while, its reason is the one string worth
+holding to twelve words even at the cost of precision, because it is the one
+that will be read most and acted on least.
+
 Check before committing:
 
 ```
@@ -117,6 +141,50 @@ two of them were silently reverted once inside a commit about something else.
 Neither revert broke a visible feature, which is why neither was noticed:
 dropping `dev.molasses` from `packageNames` stops the session ever closing, and
 the ladder just goes quietly wrong.
+
+## A guard with no caller is worse than no guard
+
+This has now come up four times, in four unrelated parts of the app, so it is
+written down once rather than re-argued.
+
+1. The window-id collision guard could never match a real window once
+   `flagRetrieveInteractiveWindows` was dropped, because every event arrived
+   with an id of `-1`. **Deleted, not narrowed.**
+2. `IgnoreReason.OWN_WINDOW` outlived its producer and was kept for exactly one
+   release, because a running build could still emit it and an in-memory tally
+   would have been unreadable without it. **Kept with a stated expiry.**
+3. The telephony secondary could not register on any shipped build, because
+   `READ_PHONE_STATE` is held out of the manifest by test. **Deleted, not
+   guarded**, after one commit that guarded it and was the wrong answer.
+4. `CommandSpec.isRelief` lost its only user when `$ allow` was deleted.
+   **Kept, and its test rewritten to drive it with a synthetic spec** rather
+   than through a verb.
+
+The rule the four cases share:
+
+**A guard nothing can reach is not neutral. The next reader takes its presence
+as cover for a case that is actually being carried by something else, or by
+nothing at all.** That is what made the window-id guard expensive: it looked
+like the collision check, so nobody went looking for the package-name check
+that was doing the whole job alone.
+
+So when a caller disappears, decide which of three things the guard is:
+
+- **Dead.** Nothing can reach it under any configuration this app ships.
+  Delete it. Git has it. A narrower version of a guard that cannot fire is
+  still a guard that cannot fire.
+- **Waiting.** The mechanism is general and the next user is a named, intended
+  feature rather than a hope. Keep it, and **keep it tested against the
+  mechanism rather than against the departed caller** (case 4). A test that
+  went away with its verb leaves a live branch uncovered, which is the same
+  invisibility one layer down.
+- **Expiring.** Something already in the field can still reach it. Keep it,
+  say in the doc when it goes, and go then (case 2).
+
+The distinction between dead and waiting is about the device, not about the
+notes. Relief is designed in this file, at length, with its own clamp
+direction, and that did not make `$ allow` anything other than a verb that
+always refused. Design on paper is not a caller.
 
 ## Colours live in one file
 
