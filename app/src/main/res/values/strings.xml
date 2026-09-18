@@ -344,8 +344,6 @@
     <string name="ledger_cycle_penalty_fmt" translatable="false">CYCLE %1$s +%2$s  TIER %3$s  RESETS %4$s</string>
     <string name="ledger_distribution">DISTRIBUTION METRICS</string>
     <string name="ledger_app_minutes_fmt">%1$s min</string>
-    <string name="filter_allowlist_body">Apps marked [ALLOWED] bypass the filter and deliver heads-up banners immediately. All other apps stay silently in this inbox.</string>
-    <string name="filter_allowlist_empty">No allowlist yet. The notification filter service is not built, so nothing is being filtered and nothing is being held back.</string>
     <string name="filter_allowed_badge">[ALLOWED]</string>
     <string name="action_back">Back</string>
     <!-- Extended Terminal & Telemetry Page -->
@@ -361,7 +359,6 @@
     <string name="ledger_view_details">[OPEN SYSTEM WELLBEING]</string>
     <string name="filter_title">NOTIFICATION FILTER</string>
     <string name="filter_status_active">FILTER ACTIVE: %1$s CLEARED</string>
-    <string name="filter_allowlist_header">ALLOWED APPS (BYPASS FILTER)</string>
     <!-- Service and engine diagnostics. Field labels are shown on screen but
          must not be reworded: they are read alongside adb output. -->
     <string name="debug_field_penalty" translatable="false">penalty</string>
@@ -524,9 +521,4 @@
     <string name="settings_font_large">Large</string>
     <string name="settings_font_very_large">Very large</string>
     <!-- Notification Shade & Inbox -->
-    <string name="notif_shade_title">Notifications</string>
-    <string name="notif_tab_filtered">FILTERED NOTIFICATIONS</string>
-    <string name="notif_tab_settings">SETTINGS</string>
-    <string name="notif_clear_all">Clear all</string>
-    <string name="notif_empty_box">No filtered notifications</string>
 </resources>

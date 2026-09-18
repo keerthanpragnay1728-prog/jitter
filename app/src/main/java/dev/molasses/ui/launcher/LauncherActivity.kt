@@ -59,11 +59,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -78,7 +74,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -167,14 +162,6 @@ data class LaunchableApp(
     val isTarget: Boolean,
 )
 
-data class FilteredNotification(
-    val id: String,
-    val sourceApp: String,
-    val title: String,
-    val message: String,
-    val time: String,
-)
-
 data class AppUsageRecord(
     val label: String,
     val minutes: Long,
@@ -225,22 +212,6 @@ class LauncherActivity : ComponentActivity() {
                 .collectAsState(initial = ConsoleState())
 
             MolassesTheme(fontScale = fontScale.multiplier) {
-                // Nothing sets this true any more.
-                //
-                // The console widget that opened the inbox is gone: it said
-                // FILTER DORMANT, and it was telling the truth.
-                // NotificationFilterService does not exist, so nothing is
-                // being filtered, nothing is being held back, and the inbox
-                // it opened renders an empty list behind a TODO. A row
-                // advertising a feature that is not built is worse than no
-                // row, because a tester reads it as broken rather than as
-                // absent.
-                //
-                // The inbox and its back-handler branch are left intact and
-                // untriggered rather than deleted, because deleting them is a
-                // decision about the unbuilt service rather than a cleanup of
-                // this change. See the report accompanying this commit.
-                var showNotifInbox by remember { mutableStateOf(false) }
                 var showDrawer by remember { mutableStateOf(false) }
                 val pagerState = rememberPagerState(pageCount = { 2 })
                 val scope = rememberCoroutineScope()
@@ -248,13 +219,12 @@ class LauncherActivity : ComponentActivity() {
                 // Per destination, and a no-op only on the console.
                 //
                 // A launcher that swallows back everywhere is a launcher you
-                // cannot get out of. Back has to pop the drawer, the inbox and
-                // the ledger; it is inert only on the console, which is home
-                // and has nowhere above it to go.
+                // cannot get out of. Back has to pop the drawer and the
+                // ledger; it is inert only on the console, which is home and
+                // has nowhere above it to go.
                 BackHandler(enabled = true) {
                     when {
                         showDrawer -> showDrawer = false
-                        showNotifInbox -> showNotifInbox = false
                         pagerState.currentPage != PAGE_CONSOLE ->
                             scope.launch { pagerState.animateScrollToPage(PAGE_CONSOLE) }
                         else -> Unit
@@ -348,17 +318,6 @@ class LauncherActivity : ComponentActivity() {
                             onLaunchLadder = ::launchLadder,
                             onOpenWellbeingSettings = ::openWellbeing,
                         )
-
-                        // Slide-Over Notification Inbox (Minimalist Phone style)
-                        AnimatedVisibility(
-                            visible = showNotifInbox,
-                            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-                            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-                        ) {
-                            NotificationInboxOverlay(
-                                onClose = { showNotifInbox = false }
-                            )
-                        }
 
                         AnimatedVisibility(
                             visible = showDrawer,
@@ -1656,212 +1615,6 @@ private fun ManualRow(row: Manual.Row, onPick: (String) -> Unit) {
                 fontSize = 10.sp,
                 color = PhosphorDivider,
             )
-        }
-    }
-}
-
-@Composable
-fun NotificationInboxOverlay(onClose: () -> Unit) {
-    var selectedTab by remember { mutableIntStateOf(0) }
-    // Empty, and empty on purpose. NotificationFilterService does not exist
-    // yet, so nothing is being filtered and there is nothing to show. Six
-    // plausible promo notifications were here; they made a screen that does
-    // nothing look like a screen that works.
-    // TODO: back this with the FilteredNotificationEntity Room table once the
-    // listener service lands.
-    val notifications = remember { mutableStateListOf<FilteredNotification>() }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            // The one surviving fill. This is a full-screen overlay drawn over
-            // the console, so it has to be opaque. Everything else floats on
-            // the window background.
-            .background(JitterBackground)
-            .padding(horizontal = 16.dp, vertical = 40.dp),
-    ) {
-        // Top App Bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onClose) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = stringResource(R.string.action_back),
-                    tint = PhosphorGreen,
-                )
-            }
-            Text(
-                text = stringResource(R.string.notif_shade_title),
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = PhosphorGreen,
-                modifier = Modifier.padding(start = 8.dp),
-                fontFamily = FontFamily.Monospace,
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Tabs: FILTERED NOTIFICATIONS vs SETTINGS
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = JitterBackground,
-            contentColor = PhosphorGreen,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                    color = PhosphorGreen,
-                )
-            },
-        ) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = {
-                    Text(
-                        text = stringResource(R.string.notif_tab_filtered),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (selectedTab == 0) PhosphorGreen else PhosphorDim,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                },
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = {
-                    Text(
-                        text = stringResource(R.string.notif_tab_settings),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (selectedTab == 1) PhosphorGreen else PhosphorDim,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                },
-            )
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        if (selectedTab == 0) {
-            if (notifications.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.notif_empty_box),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    color = PhosphorDim,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-            }
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                items(notifications, key = { it.id }) { notif ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                text = notif.sourceApp,
-                                fontSize = 12.sp,
-                                color = PhosphorDim,
-                                fontFamily = FontFamily.Monospace,
-                            )
-                            Text(
-                                text = notif.time,
-                                fontSize = 11.sp,
-                                color = PhosphorDim,
-                                fontFamily = FontFamily.Monospace,
-                            )
-                        }
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = notif.title,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PhosphorGreen,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = notif.message,
-                            fontSize = 12.sp,
-                            color = PhosphorDim,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        androidx.compose.material3.HorizontalDivider(color = PhosphorDivider, thickness = 1.dp)
-                    }
-                }
-            }
-
-            // Bottom Clear All Bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { notifications.clear() }
-                    .padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.notif_clear_all),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = PhosphorGreen,
-                    fontFamily = FontFamily.Monospace,
-                )
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = stringResource(R.string.notif_clear_all),
-                    tint = PhosphorGreen,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-            ) {
-                Text(
-                    text = stringResource(R.string.filter_allowlist_header),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = PhosphorGreen,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.filter_allowlist_body),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                    color = PhosphorDim,
-                )
-                Spacer(Modifier.height(16.dp))
-
-                // No rows. The four app names here were literals, not an
-                // allowlist: nothing read them and nothing acted on them.
-                // TODO: populate from the filter service's allowlist once it
-                // exists, and make the rows togglable then.
-                Text(
-                    text = stringResource(R.string.filter_allowlist_empty),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    color = PhosphorDim,
-                )
-            }
         }
     }
 }
