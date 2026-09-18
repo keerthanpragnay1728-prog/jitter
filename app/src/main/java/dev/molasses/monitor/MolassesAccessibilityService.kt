@@ -371,7 +371,22 @@ class MolassesAccessibilityService : AccessibilityService() {
             // live in the store, so they have to be told: a lease outliving
             // the cycle it was escalating against would hold the first gate
             // of the new cycle off until it expired.
-            onCycleRolled = { scope.launch { cycleStore.clearLeases() } },
+            //
+            // In memory first, disk behind it, for the same reason [leases]
+            // gives. The engine clears `leasesTaken` in this call stack, so
+            // between here and the store's emission the registry would hold a
+            // lease the new cycle never issued, and `LaunchGate.decide` would
+            // read it as "lease active" and pass. That is the mirror of the
+            // double gate and the worse half of it: that one charged a rung
+            // too many, this one skips the first gate of a cycle.
+            //
+            // Reached from the accessibility callback thread, through
+            // `onScroll` and `onForegroundEnter`, so the assignment is
+            // ordinary in-memory work on the thread that reads it.
+            onCycleRolled = {
+                leases = LeaseManager()
+                scope.launch { cycleStore.clearLeases() }
+            },
         )
     }
 
