@@ -23,7 +23,7 @@ object CommandParser {
 
     /** Every verb, including aliases. For autocomplete and for the help line. */
     val VERBS: List<String> = listOf(
-        "block", "focus", "bedtime", "sleep", "status",
+        "block", "focus", "allow", "bedtime", "sleep", "status",
         "alarm", "timer", "reboot", "poweroff", "wifi", "dnd",
         "help", "?",
     )
@@ -35,6 +35,7 @@ object CommandParser {
     val USAGE: Map<String, String> = mapOf(
         "block" to "block <app> <duration>",
         "focus" to "focus <duration>",
+        "allow" to "allow <app> <duration>",
         "bedtime" to "bedtime",
         "sleep" to "sleep",
         "status" to "status",
@@ -60,6 +61,7 @@ object CommandParser {
 
         return when (verb) {
             "block" -> appAndDuration(verb, args) { app, ms -> Command.Block(app, ms) }
+            "allow" -> appAndDuration(verb, args) { app, ms -> Command.Allow(app, ms) }
 
             "focus" -> durationOnly(verb, args) { Command.Focus(it) }
             "timer" -> durationOnly(verb, args) { Command.Timer(it) }
