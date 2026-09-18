@@ -107,19 +107,22 @@ class LeaseGrantVisibilityTest {
     }
 
     @Test
-    fun `applying the same grant twice is a no-op, so the observer cannot disagree`() {
-        // What makes writing in both places safe. The service grants in
-        // memory and the store grants again from its own copy; the observer
-        // then assigns the store's answer over the top. All three have to
-        // land on the same lease or the fix trades one divergence for
-        // another.
+    fun `applying the same grant twice lands on the same lease`() {
+        // The service grants in memory and the store grants again from its
+        // own copy, so one decision is applied twice in two places. They have
+        // to produce the same lease or the durable copy and the live one
+        // describe different permission, and the next process death silently
+        // swaps one for the other.
+        //
+        // This used to be justified by the observer assigning the store's
+        // answer over the top. That reader is gone, and the property it was
+        // asserted for is not: the two writes are still two writes.
         val now = at(1_000)
         val once = LeaseManager().grant(pkg, now, 15 * 60_000L, accumulatedMs = 0L)
         val twice = once.grant(pkg, now, 15 * 60_000L, accumulatedMs = 0L)
         assertEquals(once.snapshot(), twice.snapshot())
 
-        // And a moment later, which is when the observer's assignment
-        // actually arrives.
+        // And a moment later, which is when the store's own grant runs.
         val later = at(1_400)
         assertEquals(
             once.snapshot(),
@@ -154,6 +157,103 @@ class LeaseGrantVisibilityTest {
                 "outside the coroutine that performs it",
             assignment < launch,
         )
+    }
+
+    // ------------------------------------------------------------ ownership
+
+    @Test
+    fun `a grant survives an unrelated snapshot landing between it and its own write`() {
+        // The bug b7d899b did not fix, as a sequence.
+        //
+        // The service grants in memory. Before its own store write lands, an
+        // unrelated write (FrictionEngine.publish, called by the same grant)
+        // emits a snapshot of the store as it stood before the grant. The old
+        // code assigned the registry wholesale from that snapshot, which threw
+        // the grant away about sixty milliseconds before the gate read it.
+        val now = at(1_000)
+        val onDisk = LeaseManager()
+
+        val owned = onDisk.grant(pkg, now, 15 * 60_000L, accumulatedMs = 0L)
+        assertTrue(
+            "the grant is live the instant it is made",
+            decide(owned, now, leasesTaken = 1) is LaunchGate.Decision.Pass,
+        )
+
+        // What the observer used to do with an emission from the other write.
+        val clobbered = LeaseManager.of(onDisk.snapshot())
+        assertTrue(
+            "a wholesale assignment from a stale snapshot loses the grant, " +
+                "which is why the store is no longer read back",
+            decide(clobbered, at(1_060), leasesTaken = 1) is LaunchGate.Decision.Intercept,
+        )
+
+        // And the owned copy, untouched by any snapshot, still holds.
+        assertTrue(
+            decide(owned, at(1_060), leasesTaken = 1) is LaunchGate.Decision.Pass,
+        )
+    }
+
+    @Test
+    fun `the service seeds leases from the store between reconciliation and ready`() {
+        // Placement is part of the fix rather than a detail of it. Reseeding
+        // on every emission was also what healed anything that went wrong, so
+        // this is now the only chance to load a lease that survived a process
+        // death, and LeaseManager's doc promises one does.
+        val body = connectBody()
+        val reconcile = body.indexOf("ForegroundReconciler(")
+        val seed = body.indexOf("leases = LeaseManager.of(")
+        val ready = body.indexOf("ready = true")
+        assertTrue("reconciliation not found on the connect path", reconcile >= 0)
+        assertTrue("no connect-time lease seed; a lease cannot survive a restart", seed >= 0)
+        assertTrue("ready = true not found on the connect path", ready >= 0)
+        assertTrue("the seed must come after reconciliation, which may write", reconcile < seed)
+        assertTrue("the seed must come before the first event is accepted", seed < ready)
+    }
+
+    @Test
+    fun `the settings observer does not assign leases`() {
+        // The reader that has to stay gone. Putting one back would look like
+        // restoring a safety net and would reintroduce the bug above, because
+        // a wholesale assignment loses whatever is newer than its snapshot.
+        val body = observerBody()
+        assertTrue(
+            "the settings observer must not assign `leases`; the service owns " +
+                "them and the store only persists them",
+            !Regex("""\bleases\s*=\s*LeaseManager\.of\(""").containsMatchIn(body),
+        )
+    }
+
+    @Test
+    fun `nothing reads leases back off the store`() {
+        // CycleStateStore.leases was a Flow<LeaseManager> with no consumer. It
+        // is the API that invites the next person to read leases off the store
+        // again, so it went with the fix rather than after it.
+        val store = repoFile(
+            "app/src/main/java/dev/molasses/data/datastore/CycleStateStore.kt",
+        ).readText()
+        assertTrue(
+            "CycleStateStore must not expose leases as a Flow",
+            !Regex("""val\s+leases\s*:\s*Flow<""").containsMatchIn(store),
+        )
+    }
+
+    /** The connect path, from onServiceConnected to the end of its coroutine. */
+    private fun connectBody(): String {
+        val text = serviceSource()
+        val start = text.indexOf("ForegroundReconciler(")
+        assertTrue("the connect path has been restructured", start >= 0)
+        val end = text.indexOf("ServiceDiagnostics.onReady()", start)
+        assertTrue("could not find the end of the connect path", end > start)
+        return text.substring(start - 400, end)
+    }
+
+    /** The settings observer's collector body. */
+    private fun observerBody(): String {
+        val text = serviceSource()
+        val start = text.indexOf("private fun observeSettings()")
+        assertTrue("observeSettings has been renamed or removed", start >= 0)
+        val end = text.indexOf("\n    /**", start)
+        return text.substring(start, if (end > start) end else text.length)
     }
 
     // ------------------------------------------------------------- rollover

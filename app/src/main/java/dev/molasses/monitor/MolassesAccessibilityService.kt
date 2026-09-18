@@ -107,33 +107,50 @@ class MolassesAccessibilityService : AccessibilityService() {
     private var locks: LockRegistry = LockRegistry()
 
     /**
-     * The granted leases. Written by [grantLease] the moment one is taken,
-     * and rebuilt from the store by the settings observer.
+     * The granted leases. **Owned here, persisted to the store, never read
+     * back from it after connect.**
      *
-     * Volatile for the same reason as [locks], and rebuilt wholesale on every
-     * emission rather than diffed.
+     * Volatile because it is written on the accessibility callback thread and
+     * read there too, with the connect-time seed arriving from a coroutine.
      *
-     * ## Why the grant is applied here and not only persisted
-     * This used to be assigned by the observer alone, and carried a note
-     * saying a stale read cost at most one extra gate, which was the
-     * direction that failed safely. That was the bug asserted as a
-     * reassurance.
+     * ## Why the observer no longer assigns this
+     * It used to, on every store emission, and that was wrong twice over.
      *
-     * An extra gate is not free. It ends in an extra lease taken, and
-     * `GateCountdown` counts leases taken, so every stale read bought a
-     * permanent rung of escalation for the rest of the cycle. It was not
-     * occasional either: the gate window is focusable, so removing it hands
-     * focus back to the target app, which emits `WINDOW_STATE_CHANGED`, which
-     * routes to `enterTarget`, which asks for a gate again. That fires a frame
-     * or two after the dismiss and a DataStore write cannot land in the
-     * meantime, so the second gate was reliable rather than racy, and the
-     * countdown reached its 30 s cap in half the leases it should have.
+     * The first version was wrong because a grant reached the store through a
+     * DataStore write, so for the length of that write `maybeLaunchGate` saw a
+     * package with no lease and one more lease taken than before, and gated
+     * again one escalation step higher. The field carried a note saying a
+     * stale read cost at most one extra gate, which was the direction that
+     * failed safely. An extra gate is not free: it ends in an extra lease
+     * taken, and `GateCountdown` counts leases taken.
      *
-     * So the grant lands here first and is persisted behind it, which is the
-     * same shape the engine already uses. The two copies cannot disagree:
-     * [LeaseManager] is immutable and its `grant` refuses to lengthen a live
-     * lease, so applying the same grant twice is idempotent and the observer's
-     * later assignment is a no-op.
+     * The fix for that applied the grant in memory and persisted behind it,
+     * and it did not work, because the note on it was wrong in the same shape
+     * as the note it replaced. It said the observer's later assignment was a
+     * no-op, since applying the same grant twice is idempotent. That holds
+     * only for the emission carrying that write. `FrictionEngine.publish()`
+     * writes a snapshot too, `onLeaseGranted` calls it, and its write is
+     * issued from a parked channel receiver while the lease write still has a
+     * coroutine to schedule. So the engine's write lands first, its emission
+     * carries the lease list as it stands on disk, and the observer replaced
+     * the whole registry with a copy that predates the grant. The grant erased
+     * itself, through the engine, on its own call stack.
+     *
+     * Idempotency cannot save that, because the observer does not apply a
+     * grant. It assigns a registry wholesale, and a wholesale assignment from
+     * any snapshot loses whatever is newer than that snapshot.
+     *
+     * ## So ownership rather than ordering
+     * This service is the only writer of stored leases: [grantLease] and the
+     * rollover clear, both below. Nothing outside it grants, clears or prunes.
+     * So the store is durability and this field is the truth, seeded once at
+     * connect and mutated only here. There is then no snapshot that can be
+     * stale with respect to it, because nothing reads a snapshot.
+     *
+     * The cost is real and is the reason the seed's placement is load bearing:
+     * a reseed on every emission also healed anything that went wrong, and
+     * that safety net is gone. If the connect-time seed does not run, leases
+     * do not survive a process death at all.
      */
     @Volatile
     private var leases: LeaseManager = LeaseManager()
@@ -324,6 +341,16 @@ class MolassesAccessibilityService : AccessibilityService() {
                 debugOverrideNonce = it.debugOverrideNonce
                 previewStallNonce = it.previewStallNonce
                 disableRequestNonce = it.disableRequestNonce
+                // The only time leases are read off the store. See [leases].
+                //
+                // Here and not earlier because reconciliation may write, and
+                // here and not later because the next line builds the engine
+                // and the one after that opens the event gate. A lease that
+                // survived a process death has to be in hand before the first
+                // event is accepted, or the first launch after a restart gates
+                // an app the user already paid for, which is the promise
+                // LeaseManager's doc makes about surviving process death.
+                leases = LeaseManager.of(it.leasesList.map { entry -> entry.toLease() })
             }
             buildEngine(outcome.snapshot, outcome.bootId)
             observeSettings()
@@ -439,7 +466,9 @@ class MolassesAccessibilityService : AccessibilityService() {
                         engine.setHorizon(pkg, horizonMs)
                     }
                 }
-                leases = LeaseManager.of(state.leasesList.map { it.toLease() })
+                // Leases are deliberately absent here. The service owns them
+                // and the store only persists them; see [leases] for what
+                // assigning them from a snapshot cost.
                 gateMode = gateModeFromOrdinal(state.gateModeOrdinal)
                 // Off the same emission as everything else here. The overlays
                 // are the surface where this matters most: a user cannot

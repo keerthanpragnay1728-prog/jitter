@@ -208,8 +208,10 @@ down rather than re-derived.
    cycle rollover, where the engine clears `leasesTaken` in its own call stack
    and the registry was cleared through the store: there the gap skips the
    first gate of the new cycle, which is the relief direction and the worse
-   one. Both fixed by assigning in memory first and launching the store write
-   behind it. `LeaseGrantVisibilityTest` covers both directions.
+   one. Assigning in memory and persisting behind it fixed neither on the
+   device, for the reason below, and the registry is now owned by the service
+   and seeded from the store once at connect. `LeaseGrantVisibilityTest`
+   covers all three.
 
 Both compiled. Both ran. Both had a comment next to them asserting they were
 fine: "read at the moment this window is shown" on a parameter that was not
@@ -219,22 +221,60 @@ which the countdown counts. **A comment claiming a hazard is handled is not
 evidence that it is.** That is the same failure as a guard with no caller, one
 section up: the next reader takes the note as cover.
 
-### What makes it safe to write in both places
+### The half that was missing, and cost a second wrong fix
 
-The in-memory copy and the stored copy have to be unable to disagree, or this
-trades a stale read for a split brain. Two properties do it, and both are
-already load bearing elsewhere:
+The first version of this section said the two copies could not disagree,
+because `LeaseManager` is immutable and its `grant` refuses to lengthen a live
+lease, so the observer's later assignment was a no-op. Both halves of that are
+true and the conclusion was still wrong, because it only holds for the emission
+carrying that write.
 
-- The type is **immutable**, so applying a change returns a new value and there
-  is no shared mutable state across the two threads.
-- The operation is **idempotent**, so applying it twice is applying it once.
-  `LeaseManager.grant` refuses to lengthen a live lease, which it does for its
-  own reasons, and that is exactly what makes the observer's later assignment a
-  no-op rather than a second grant.
+`FrictionEngine.publish()` writes a snapshot of its own, `onLeaseGranted` calls
+it, and its write is issued from a channel receiver that is already parked while
+the lease write still has a coroutine to schedule. So the engine's write landed
+first, its emission carried the lease list as it stood on disk, and the observer
+replaced the whole registry with a copy that predated the grant. **The grant
+erased itself, through the engine, on its own call stack**, about sixty
+milliseconds before the gate that read it.
 
-Hand the store the same reading the in-memory call used, rather than taking a
-fresh one. `grantLease` passes one `StampedInstant` to both, so what the
-observer assigns back is identical rather than merely equivalent.
+Idempotency could not save it, because the observer was not applying a grant. It
+was assigning a registry wholesale.
+
+So the rule needs its second half:
+
+**Persisting behind an in-memory write is only safe when the persisted copy is
+not also read back as the source of truth. A store with more than one writer
+emits snapshots that are stale with respect to each other, and a wholesale
+assignment from any of them loses the newest write at random.**
+
+The fix is ownership, not ordering. Whoever writes the value in memory owns it;
+the store persists it and is read exactly once, at startup, to seed it. Any
+ordering trick is a bet on which of two writes reaches the disk first, and that
+bet is being placed inside a coroutine dispatcher.
+
+Ordering is worth checking for a different reason, though: it tells you the
+value has a second writer at all. The tell here was that `publish()` is called
+by the very function whose effect was disappearing.
+
+### Where the startup seed has to go, and why it is load bearing
+
+Reseeding on every emission is also what healed anything that went wrong, and
+that safety net goes with it. The seed becomes the only chance to load the
+persisted value, so its position is part of the fix rather than a detail of it.
+
+In the service that means after reconciliation, which may write, and before
+`ready` is set, which opens the event gate. A lease that survived a process
+death has to be in hand before the first event is accepted, or the first launch
+after a restart gates an app the user already paid for, which is exactly what
+`LeaseManager`'s doc promises cannot happen.
+
+### Delete the read path once it is not the truth
+
+`CycleStateStore.leases`, a `Flow<LeaseManager>` off the store, had no consumer
+and was deleted with this change. Leaving it would have been the sixth
+guard with no caller in this file, and the worst placed of them: it is the exact
+API that invites the next person to read leases off the store again, which is
+the thing this whole section exists to stop.
 
 ### Not a timer, and not a grace window
 
@@ -254,6 +294,12 @@ assignment exists **and that it is before the `scope.launch`**. The second
 half is the one that matters. An assignment moved inside the coroutine would
 compile, would read like the same fix, and would restore the bug with a shorter
 window, and no pure test can see it.
+
+The same applies to the two halves of ownership. `LeaseGrantVisibilityTest`
+asserts that the service seeds the registry between reconciliation and `ready`,
+and that the settings observer does not assign it at all. A reader put back
+into the observer would look like a harmless restoration of a safety net and
+would reintroduce this exact bug.
 
 ## Colours live in one file
 
