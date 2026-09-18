@@ -1,6 +1,6 @@
 package dev.molasses.core.ui
 
-import java.io.File
+import dev.molasses.core.repoFile
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -57,13 +57,4 @@ class PowerBarResourcesTest {
             ?.groupValues
             ?.get(1)
 
-    private fun repoFile(relative: String): File {
-        var dir: File? = File(System.getProperty("user.dir")!!).absoluteFile
-        while (dir != null) {
-            val candidate = File(dir, relative)
-            if (candidate.isFile) return candidate
-            dir = dir.parentFile
-        }
-        error("could not find $relative above ${System.getProperty("user.dir")}")
-    }
 }

@@ -1,6 +1,7 @@
 package dev.molasses.core.friction
 
 import dev.molasses.core.friction.HorizonPolicy.State
+import dev.molasses.core.repoFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -193,16 +194,6 @@ class HorizonPolicyTest {
         val start = proto.indexOf("$header {")
         check(start >= 0) { "no '$header' in cycle_state.proto" }
         return proto.substring(start, proto.indexOf("\n}", start))
-    }
-
-    private fun repoFile(relative: String): java.io.File {
-        var dir: java.io.File? = java.io.File(System.getProperty("user.dir")!!).absoluteFile
-        while (dir != null) {
-            val candidate = java.io.File(dir, relative)
-            if (candidate.isFile) return candidate
-            dir = dir.parentFile
-        }
-        error("could not find $relative above ${System.getProperty("user.dir")}")
     }
 
     @Test

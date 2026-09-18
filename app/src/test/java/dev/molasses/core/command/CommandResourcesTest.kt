@@ -1,6 +1,6 @@
 package dev.molasses.core.command
 
-import java.io.File
+import dev.molasses.core.repoFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -207,13 +207,4 @@ class CommandResourcesTest {
             ?.replace("&gt;", ">")
             ?.replace("&amp;", "&")
 
-    private fun repoFile(relative: String): File {
-        var dir: File? = File(System.getProperty("user.dir")!!).absoluteFile
-        while (dir != null) {
-            val candidate = File(dir, relative)
-            if (candidate.isFile) return candidate
-            dir = dir.parentFile
-        }
-        error("could not find $relative above ${System.getProperty("user.dir")}")
-    }
 }
