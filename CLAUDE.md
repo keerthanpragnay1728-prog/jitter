@@ -59,8 +59,13 @@ tools/check-all.sh
 ```
 
 That runs the dash check, the encoding check, the format-string check, the
-colour check and the pure suite. The individual scripts still work on their
-own.
+colour check, the structure check and the pure suite. The individual scripts
+still work on their own.
+
+It ends by printing `check-all: PASS` or `check-all: FAIL`. Read that line
+rather than the exit code, because the exit code is the first thing a pipe
+takes away: `tools/check-all.sh | tail -4` reports whether `tail` succeeded.
+A failing suite has already been committed and pushed for exactly that reason.
 
 The script runs `grep -rn` for the two characters literally, with no `-P`, no
 code points and no `(*UTF)`, so it works on GNU and BSD grep. It covers `*.md`,
@@ -338,3 +343,37 @@ module. `./gradlew :tools:pure-verify` from the repo root will not resolve.
 
 Never report the Android layer as building or passing tests unless a real
 compile has actually run. Say plainly what was verified and what was not.
+
+### What "green" covers, and for which files it does not
+
+`pure-verify` compiles `core`, `engine`, part of `sensing`, `legacy` and
+`debug`. Everything else under `app/src/main/java` is compiled by **no tool
+available in that environment**: at the last count, 38 files, including every
+Compose screen, every overlay manager, the accessibility service, the DataStore
+and Room layers and the DI module.
+
+For those 38 files, a green `check-all.sh` means:
+
+- no em or en dashes
+- valid UTF-8, no BOM, no mojibake
+- no colour literals outside `Color.kt`
+- no brace that closes a function early
+
+and nothing else. **It does not mean the file parses.** It cannot mean the
+file type-checks, resolves its imports, or agrees with any signature it calls.
+
+That distinction is not pedantic, it cost seven commits. `LauncherActivity.kt`
+carried one misplaced brace that closed a composable three hundred lines early,
+and everything after it became top level declarations. The file could not
+compile. `check-all.sh` passed on every commit, and "check-all green" was
+reported each time as though it meant the code was sound.
+
+The structure check exists because of that, and it is a tripwire rather than a
+compiler. It catches one class of fault. The honest phrasing for the rest is
+that the Android layer is unverified until a real build runs, which is what the
+paragraph above already says and what the reports should say too.
+
+Kotlin files added under `app/src/main/java` outside the pure set inherit this
+silence automatically. Moving a file into `pureMain` is the only thing that
+buys it a compiler, and `check-structure.py` derives its own scope from that
+list so the two cannot drift.
