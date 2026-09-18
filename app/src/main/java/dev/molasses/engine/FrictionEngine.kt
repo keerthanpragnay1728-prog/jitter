@@ -260,7 +260,7 @@ class FrictionEngine(
         val index = TierPolicy.indexFor(live)
         app.tier.raiseTo(index)
 
-        val effective = live + app.penaltyMs
+        val effective = FrictionCurve.effectiveMs(live, app.penaltyMs)
         val friction = FrictionCurve.frictionAt(effective, app.horizonMs, floorMs)
 
         if (!friction.stalls) return FrictionDecision.NONE

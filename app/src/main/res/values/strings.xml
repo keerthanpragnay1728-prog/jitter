@@ -40,6 +40,10 @@
     <string name="lease_gate_out" translatable="false">[ TAKE ME OUT ]</string>
     <string name="lease_gate_button_fmt" translatable="false">[ %1$s ]</string>
     <!-- %1$s is the app label, already uppercased by the caller. -->
+    <!-- What the next scroll costs. Three bands, one question; see NextScroll. -->
+    <string name="lease_gate_next_none" translatable="false">NEXT SCROLL // NO STALL YET</string>
+    <string name="lease_gate_next_fmt" translatable="false">NEXT SCROLL // %1$s%% CHANCE OF %2$sms</string>
+    <string name="lease_gate_next_pinned" translatable="false">NEXT SCROLL // AT THE CEILING</string>
     <string name="lease_gate_header_fmt" translatable="false">%1$s</string>
     <string name="lease_gate_header_expired_fmt" translatable="false">%1$s // LEASE EXPIRED</string>
 

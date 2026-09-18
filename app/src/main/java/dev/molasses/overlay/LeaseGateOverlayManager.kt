@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateReadout
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.model.EventType
@@ -128,6 +129,16 @@ class LeaseGateOverlayManager(
         countdownMs: Long,
         expired: Boolean,
         stats: GateStats,
+        /**
+         * What the next scroll costs, read once when the window goes up.
+         *
+         * Not a [GateStats] field and not refreshed by [updateStats], because
+         * it is not one of the numbers the system owns and answers late. It is
+         * in hand immediately, and it barely moves across thirty seconds of a
+         * curve measured in minutes. The countdown stays the only thing on
+         * this screen that changes.
+         */
+        nextScroll: NextScroll.Reading,
     ): Boolean {
         if (isShowing && currentPkg == pkg) return true
         if (isShowing) dismissInternal()
@@ -156,6 +167,7 @@ class LeaseGateOverlayManager(
                         opensToday = this@LeaseGateOverlayManager.stats.opensToday,
                         remainingMs = remaining,
                     ),
+                    nextScroll = nextScroll,
                     panelUp = GateReadout.panelUp(remaining),
                     onTakeLease = { ms -> takeLease(ms) },
                     onTakeMeOut = { decline("take me out") },
