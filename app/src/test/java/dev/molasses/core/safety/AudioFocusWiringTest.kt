@@ -1,6 +1,6 @@
 package dev.molasses.core.safety
 
-import java.io.File
+import dev.molasses.core.repoFile
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -134,13 +134,4 @@ class AudioFocusWiringTest {
         return text.substring(start, if (end > start) end else text.length)
     }
 
-    private fun repoFile(relative: String): File {
-        var dir: File? = File(System.getProperty("user.dir")!!).absoluteFile
-        while (dir != null) {
-            val candidate = File(dir, relative)
-            if (candidate.isFile) return candidate
-            dir = dir.parentFile
-        }
-        throw AssertionError("could not find $relative from ${System.getProperty("user.dir")}")
-    }
 }

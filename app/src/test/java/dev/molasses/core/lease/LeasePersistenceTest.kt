@@ -1,7 +1,7 @@
 package dev.molasses.core.lease
 
 import dev.molasses.core.time.StampedInstant
-import java.io.File
+import dev.molasses.core.repoFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -181,13 +181,4 @@ class LeasePersistenceTest {
     private fun String.snake(): String =
         replace(Regex("([a-z0-9])([A-Z])"), "$1_$2").lowercase()
 
-    private fun repoFile(relative: String): File {
-        var dir: File? = File(System.getProperty("user.dir")!!).absoluteFile
-        while (dir != null) {
-            val candidate = File(dir, relative)
-            if (candidate.isFile) return candidate
-            dir = dir.parentFile
-        }
-        error("could not find $relative above ${System.getProperty("user.dir")}")
-    }
 }

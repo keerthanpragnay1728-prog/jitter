@@ -1,7 +1,7 @@
 package dev.molasses.core.lease
 
 import dev.molasses.core.time.StampedInstant
-import java.io.File
+import dev.molasses.core.repoFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -349,13 +349,4 @@ class LeaseGrantVisibilityTest {
         "app/src/main/java/dev/molasses/monitor/MolassesAccessibilityService.kt",
     ).readText()
 
-    private fun repoFile(relative: String): File {
-        var dir: File? = File(System.getProperty("user.dir")!!).absoluteFile
-        while (dir != null) {
-            val candidate = File(dir, relative)
-            if (candidate.isFile) return candidate
-            dir = dir.parentFile
-        }
-        throw AssertionError("could not find $relative from ${System.getProperty("user.dir")}")
-    }
 }
