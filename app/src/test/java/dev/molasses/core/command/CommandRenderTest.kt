@@ -35,7 +35,6 @@ class CommandRenderTest {
         val cases = listOf(
             Command.Block("instagram", 30 * m),
             Command.Block("com.instagram.android", 30 * d),
-            Command.Allow("youtube", 10 * m),
             Command.Focus(2 * h),
             Command.Focus(1 * h + 30 * m),
             Command.Timer(90 * s),
@@ -66,7 +65,6 @@ class CommandRenderTest {
             "block instagram 30m",
             "block instagram 1h30m",
             "block instagram 30d",
-            "allow youtube 10m",
             "focus 2h",
             "timer 30s",
             "bedtime",

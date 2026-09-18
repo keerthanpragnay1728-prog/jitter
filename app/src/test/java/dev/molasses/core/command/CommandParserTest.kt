@@ -35,11 +35,6 @@ class CommandParserTest {
     }
 
     @Test
-    fun `allow takes an app and a duration`() {
-        assertEquals(Command.Allow("youtube", 10 * m), ok("allow youtube 10m"))
-    }
-
-    @Test
     fun `focus and timer take a duration`() {
         assertEquals(Command.Focus(2 * h), ok("focus 2h"))
         assertEquals(Command.Timer(90 * 1000L), ok("timer 90s"))
@@ -55,12 +50,12 @@ class CommandParserTest {
     }
 
     @Test
-    fun `log and rem are not verbs any more`() {
+    fun `log, rem and allow are not verbs any more`() {
         // Both parsed and then reported "not wired yet" from the subsystem
         // surface, permanently. A terminal that accepts a command it can
         // never run teaches the user to distrust the ones it can. They now
         // fail at the parser like any other word, which is what they are.
-        for (word in listOf("log", "rem", "log instagram", "rem 10m call mum")) {
+        for (word in listOf("log", "rem", "allow", "log instagram", "allow yt 10m")) {
             val parsed = CommandParser.parse(word)
             assertTrue(
                 "'$word' still parses: $parsed",
@@ -68,10 +63,10 @@ class CommandParserTest {
                     parsed.error is ParseError.UnknownCommand,
             )
         }
-        assertTrue("log" !in CommandParser.VERBS)
-        assertTrue("rem" !in CommandParser.VERBS)
-        assertTrue("log" !in CommandParser.USAGE)
-        assertTrue("rem" !in CommandParser.USAGE)
+        for (verb in listOf("log", "rem", "allow")) {
+            assertTrue(verb, verb !in CommandParser.VERBS)
+            assertTrue(verb, verb !in CommandParser.USAGE)
+        }
     }
 
     @Test
@@ -111,8 +106,6 @@ class CommandParserTest {
         // default duration, or a half-typed line arms a real lock.
         assertEquals(ParseError.MissingArgument("block", "app"), err("block"))
         assertEquals(ParseError.MissingArgument("block", "duration"), err("block instagram"))
-        assertEquals(ParseError.MissingArgument("allow", "app"), err("allow"))
-        assertEquals(ParseError.MissingArgument("allow", "duration"), err("allow youtube"))
         assertEquals(ParseError.MissingArgument("focus", "duration"), err("focus"))
         assertEquals(ParseError.MissingArgument("timer", "duration"), err("timer"))
         assertEquals(ParseError.MissingArgument("alarm", "time"), err("alarm"))
@@ -126,7 +119,7 @@ class CommandParserTest {
         assertEquals(ParseError.TooManyArguments("status"), err("status all"))
         assertEquals(ParseError.TooManyArguments("reboot"), err("reboot now"))
         assertEquals(ParseError.TooManyArguments("poweroff"), err("poweroff now"))
-        assertEquals(ParseError.TooManyArguments("allow"), err("allow ig 10m 20m"))
+        assertEquals(ParseError.TooManyArguments("block"), err("block ig 10m 20m"))
         assertEquals(ParseError.TooManyArguments("alarm"), err("alarm 6am 7am"))
         assertEquals(ParseError.TooManyArguments("wifi"), err("wifi on off"))
         assertEquals(ParseError.TooManyArguments("dnd"), err("dnd on off"))
@@ -344,7 +337,7 @@ class CommandParserTest {
         // but append would render as garbage.
         val lines = listOf(
             "block", "block ", "block i", "block insta", "block insta ",
-            "focus", "focus ", "allow", "allow ig", "allow ig ",
+            "focus", "focus ", "block", "block ig", "block ig ",
             "wifi", "wifi o", "alarm", "alarm ",
         )
         for (line in lines) {

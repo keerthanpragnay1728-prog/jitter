@@ -43,8 +43,8 @@ class CommandResourcesTest {
     private val verbs: List<String> =
         CommandRegistry(
             CommandRegistry.Keys(
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-                13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
             ),
         ).specs.map { it.verb }
 
@@ -101,9 +101,17 @@ class CommandResourcesTest {
      * are gone because the refusals are gone: both modifiers now open the
      * panel and say what could not be done, so the copy moved to
      * cmd_ack_wifi_panel_no_toggle and cmd_ack_dnd_panel_no_toggle.
+     *
+     * cmd_na_no_log, cmd_na_no_scheduling and cmd_na_no_allowance are gone
+     * for a different reason: the commands that produced them are deleted.
+     * A reason for a verb that no longer parses is copy with nothing to say
+     * it.
+     *
+     * The two cmd_na_relief_ strings stay. MonitorReliefPolicy is kept and
+     * tested, and it is what will produce them when a relief command exists
+     * again.
      */
     private val unavailableReasons = listOf(
-        "cmd_na_no_allowance",
         "cmd_na_relief_while_locked",
         "cmd_na_privileged",
         "cmd_na_no_panel",

@@ -23,7 +23,6 @@ object CommandRender {
 
     fun render(command: Command): String = when (command) {
         is Command.Block -> "block ${command.appToken} ${duration(command.durationMs)}"
-        is Command.Allow -> "allow ${command.appToken} ${duration(command.durationMs)}"
         is Command.Focus -> "focus ${duration(command.durationMs)}"
         is Command.Timer -> "timer ${duration(command.durationMs)}"
         Command.Bedtime -> "bedtime"
