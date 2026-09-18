@@ -100,6 +100,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -187,6 +189,7 @@ class LauncherActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        hideStatusBar()
 
         setContent {
             val fontScale by settingsRepository.fontScale
@@ -528,6 +531,55 @@ class LauncherActivity : ComponentActivity() {
     private fun canResolve(intent: Intent): Boolean {
         val flags = if (intent.component != null) 0 else PackageManager.MATCH_DEFAULT_ONLY
         return packageManager.resolveActivity(intent, flags) != null
+    }
+
+    /**
+     * Hide the status bar on the console, and only on the console.
+     *
+     * ## What it is for
+     * The clock, the battery and a row of notification icons are the things
+     * this screen exists to not be. A launcher that reports four unread
+     * messages along the top is a launcher that gives you somewhere to go,
+     * and the whole console is arranged around not doing that.
+     *
+     * The navigation bar stays. It is not carrying anyone's notifications and
+     * hiding it would take the back gesture's affordance with it on a
+     * three-button device.
+     *
+     * ## Transient rather than sticky, and what that costs
+     * `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE` brings the bar back for a swipe
+     * from the top edge and lets it go again. The shade is still reachable
+     * and it is now **two gestures rather than one**: the first swipe spends
+     * itself revealing the bar, the second pulls the shade down.
+     *
+     * That is a cost and it is the intended one. The shade is the single
+     * largest source of "I only came here to check the time", and making it
+     * two deliberate gestures rather than one reflex is friction of exactly
+     * the kind this app is. It is not a block: nothing is unreachable and no
+     * notification is hidden from the system.
+     *
+     * Worth confirming on hardware rather than trusting: some OEM shells
+     * treat the first swipe differently, and a shell that swallowed both
+     * gestures would make the shade feel broken rather than deliberate.
+     *
+     * ## This conceals the inset fault, it does not fix it
+     * Every screen in this app clears the system bars with a hardcoded
+     * `padding(vertical = 44.dp)` that is not derived from any measurement.
+     * With the status bar hidden there is no status bar for that constant to
+     * be wrong about, so the fault becomes invisible here and stays exactly
+     * as wrong everywhere else: the settings activity, the gate, the lock
+     * overlay, and this screen again the moment a transient bar is showing.
+     *
+     * See CLAUDE.md, "Window insets are a constant, and that is a known
+     * fault". That section stands, and landing this does not close it. It is
+     * the reason the section says to land immersive if it is wanted for its
+     * own sake and leave the note standing.
+     */
+    private fun hideStatusBar() {
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.statusBars())
     }
 
     private fun queryLaunchableApps(): List<LaunchableApp> {
