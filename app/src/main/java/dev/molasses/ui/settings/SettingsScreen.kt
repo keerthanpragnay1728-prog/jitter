@@ -86,6 +86,7 @@ fun SettingsScreen(
     val permissions by vm.permissions.collectAsStateWithLifecycle()
     val installed by vm.installed.collectAsStateWithLifecycle()
     val targets by vm.targets.collectAsStateWithLifecycle()
+    val trackingNothing by vm.trackingNothing.collectAsStateWithLifecycle()
     val policy by vm.resetPolicy.collectAsStateWithLifecycle()
     val gateMode by vm.gateMode.collectAsStateWithLifecycle()
     val sensitivePrefixes by vm.sensitivePrefixes.collectAsStateWithLifecycle()
@@ -158,6 +159,19 @@ fun SettingsScreen(
         ) { pkg ->
             horizons[pkg]?.horizonMs ?: FrictionCurve.DEFAULT_HORIZON_MS
         }
+    }
+
+    // What TARGETS says about itself on its own header.
+    //
+    // NONE rather than a zero, and a count rather than nothing, because the
+    // two states this has to tell apart are "five tracked because nobody has
+    // said otherwise" and "none tracked because I said so", and a collapsed
+    // section that says neither makes the second one invisible. Resolved here
+    // because the row builder below runs outside composition.
+    val targetsSuffix = if (trackingNothing) {
+        stringResource(R.string.settings_targets_none)
+    } else {
+        targets.size.toString()
     }
 
     // The running order: every row in CFG, whichever section it belongs to,
@@ -278,6 +292,7 @@ fun SettingsScreen(
             section = Section.TARGETS,
             title = R.string.settings_section_targets,
             onToggle = { accordion = CfgAccordion.toggle(accordion, Section.TARGETS) },
+            suffix = targetsSuffix,
         ) {
             item(CfgRowKey.body(Section.TARGETS, "hint")) {
                 Text(
@@ -836,10 +851,16 @@ private fun CfgRows.section(
     section: Section,
     @StringRes title: Int,
     onToggle: () -> Unit,
+    /**
+     * A short count or state, shown after the label and visible while the
+     * section is closed. Resolved by the caller, because this builder runs
+     * outside composition and `stringResource` cannot be called here.
+     */
+    suffix: String? = null,
     body: CfgRows.() -> Unit,
 ) {
     val open = CfgAccordion.isOpen(state, section)
-    item(CfgRowKey.section(section)) { SectionHeader(title, open, onToggle) }
+    item(CfgRowKey.section(section)) { SectionHeader(title, suffix, open, onToggle) }
     if (open) body()
 }
 
@@ -887,7 +908,12 @@ private fun GroupHeader(text: String) {
  * and the label is what the user is looking at when they decide to open it.
  */
 @Composable
-private fun SectionHeader(@StringRes text: Int, open: Boolean, onToggle: () -> Unit) {
+private fun SectionHeader(
+    @StringRes text: Int,
+    suffix: String?,
+    open: Boolean,
+    onToggle: () -> Unit,
+) {
     Spacer(Modifier.height(20.dp))
     Row(
         modifier = Modifier
@@ -899,8 +925,20 @@ private fun SectionHeader(@StringRes text: Int, open: Boolean, onToggle: () -> U
             stringResource(text).uppercase(),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f),
         )
+        // The section saying what is in it, in the one place that is legible
+        // while the section is shut. A user who turned every target off will
+        // leave TARGETS collapsed, and anything written inside it would be
+        // invisible in exactly that state.
+        if (suffix != null) {
+            Text(
+                stringResource(R.string.settings_section_suffix_fmt, suffix.uppercase()),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(start = 6.dp),
+            )
+        }
+        Spacer(Modifier.weight(1f))
         Text(
             CfgAccordion.chevron(open),
             style = MaterialTheme.typography.labelMedium,

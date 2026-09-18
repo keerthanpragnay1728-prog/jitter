@@ -83,6 +83,8 @@
     <string name="settings_tagline">Your chosen apps are never blocked. The longer you use them in a six-hour cycle, the more the phone feels like it is failing.</string>
     <string name="settings_section_setup">Setup</string>
     <string name="settings_section_ladder">The ladder</string>
+    <string name="settings_section_suffix_fmt" translatable="false">// %1$s</string>
+    <string name="settings_targets_none">None</string>
     <string name="settings_section_targets">Target apps</string>
     <string name="settings_section_policy">Cycle reset policy</string>
     <!--

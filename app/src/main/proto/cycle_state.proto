@@ -160,6 +160,26 @@ message CycleState {
   // needs to be: it is read on every settings emission and re-applied, and
   // re-applying it changes nothing once it is in force.
   map<string, int64> app_horizon_ms = 35;
+
+  // Whether target_packages is the user's answer or an untouched default.
+  //
+  // Without this, an empty list means two different things and the app
+  // resolves both the same way: a fresh install that has never been
+  // configured, and a user who deliberately turned every target off. The
+  // second was not expressible at all, so unticking the last app wrote empty
+  // and the defaults came straight back.
+  //
+  // False plus an empty list is a fresh install, and the defaults apply.
+  // True plus an empty list is "track nothing", and it is honoured.
+  // A non-empty list is the list, whichever this says, because a list with
+  // packages in it is data and this flag is only ever a tiebreak for empty.
+  //
+  // Proto3 defaults this to false, so every install that already exists reads
+  // as untouched. That is the right answer for all of them: the ones with a
+  // list keep it through the clause above, and the ones with an empty list
+  // were fresh installs anyway. The migration is a no-op by construction
+  // rather than by a step that could be skipped.
+  bool targets_chosen = 36;
 }
 
 // One line of Bit's speech, in the form that survives a process death.

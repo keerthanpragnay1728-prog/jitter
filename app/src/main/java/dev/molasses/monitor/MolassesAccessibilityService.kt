@@ -421,8 +421,11 @@ class MolassesAccessibilityService : AccessibilityService() {
     private fun observeSettings() {
         scope.launch {
             cycleStore.data.collect { state ->
-                val stored = state.targetPackagesList.toList()
-                if (TargetScope.usedFallback(stored)) {
+                val selection = TargetScope.Selection(
+                    stored = state.targetPackagesList.toList(),
+                    chosen = state.targetsChosen,
+                )
+                if (TargetScope.usedFallback(selection)) {
                     ServiceDiagnostics.usedTargetFallback = true
                     Log.w(
                         TAG,
@@ -433,7 +436,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                 } else {
                     ServiceDiagnostics.usedTargetFallback = false
                 }
-                val next = TargetScope.resolve(stored, DEFAULT_TARGETS)
+                val next = TargetScope.resolve(selection, DEFAULT_TARGETS)
                 if (next != targets) {
                     targets = next
                     applyTargets(next)
@@ -541,7 +544,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         // with an empty `targets` set gives the worst possible combination:
         // the platform delivers everything and the router ignores all of it.
         // Maximum battery cost, zero behaviour, nothing in the log.
-        val names = TargetScope.packageNames(packages, packageName, DEFAULT_TARGETS)
+        val names = TargetScope.packageNames(packages, packageName)
         info.packageNames = names
         ServiceDiagnostics.appliedPackageNames = names.toList()
         info.eventTypes = AccessibilityEvent.TYPE_VIEW_SCROLLED or

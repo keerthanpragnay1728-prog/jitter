@@ -16,6 +16,7 @@ import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.lock.LockReason
+import dev.molasses.core.session.TargetScope
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.lease.GatePolicy
@@ -113,7 +114,21 @@ class SettingsRepository(
 ) {
     private val appContext = context.applicationContext
 
-    val targets: Flow<List<String>> = store.data.map { it.targetPackagesList.toList() }
+    /**
+     * The stored target list together with whether it is an answer.
+     *
+     * One flow rather than a list and a flag, because every bug this app has
+     * had in this area came from reading one without the other. A pair that
+     * cannot be taken apart cannot be half read, and the raw list is
+     * deliberately not exposed beside it. See CLAUDE.md, "The stored target
+     * list is not the tracked set".
+     */
+    val targetSelection: Flow<TargetScope.Selection> = store.data.map {
+        TargetScope.Selection(
+            stored = it.targetPackagesList.toList(),
+            chosen = it.targetsChosen,
+        )
+    }
     val resetPolicy: Flow<CycleResetPolicy> = store.data.map { it.resetPolicy.toModel() }
     /**
      * What the gate asks for at the terminal tier. Below it, always the

@@ -202,8 +202,8 @@ class LauncherActivity : ComponentActivity() {
             val locks by settingsRepository.locks
                 .collectAsState(initial = LockRegistry())
 
-            val targets by settingsRepository.targets
-                .collectAsState(initial = emptyList())
+            val selection by settingsRepository.targetSelection
+                .collectAsState(initial = TargetScope.Selection(emptyList(), chosen = false))
 
             // [TRACKED] is derived here, and not baked in by the query.
             //
@@ -224,7 +224,7 @@ class LauncherActivity : ComponentActivity() {
             // So: the expensive PackageManager query stays lazy and stops
             // deciding this, and the one volatile field is recomputed from
             // the same resolve the service uses.
-            val tracked = remember(targets) { TargetScope.resolve(targets, DEFAULT_TARGETS) }
+            val tracked = remember(selection) { TargetScope.resolve(selection, DEFAULT_TARGETS) }
             val badgedApps = remember(tracked) {
                 installedApps.map { it.copy(isTarget = it.packageName in tracked) }
             }
