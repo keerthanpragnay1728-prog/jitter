@@ -2,10 +2,13 @@ package dev.molasses.ui.lock
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +50,7 @@ fun LockScreen(
     label: String,
     reason: LockReason,
     remainingText: String,
+    onExit: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -88,6 +92,30 @@ fun LockScreen(
                 fontSize = 11.sp,
                 color = PhosphorDivider,
                 textAlign = TextAlign.Center,
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            // The way out, and now the only one.
+            //
+            // This screen used to bounce on a timer: hold about 1.4 s, fire
+            // home, hold another 0.4 s to cover the transition. On a device
+            // that reads as the screen changing underneath you while you are
+            // still reading why. The message is worth reading and the reader
+            // should decide when they have finished.
+            //
+            // Bracketed, like every other pressable thing here, because in a
+            // zero-border layout the brackets are the affordance.
+            Text(
+                text = stringResource(R.string.lock_exit),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = PhosphorGreen,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .clickable(onClick = onExit)
+                    .padding(vertical = 10.dp, horizontal = 16.dp),
             )
         }
     }

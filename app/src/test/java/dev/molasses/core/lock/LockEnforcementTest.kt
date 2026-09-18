@@ -57,7 +57,15 @@ class LockEnforcementTest {
         // The bug this pins: sending HOME in the frame the window was added
         // means the flash never reaches the display and the bounce reads as a
         // crash.
-        assertTrue(LockEnforcement.FLASH_HOLD_MS >= 1_000L)
+        // FLASH_HOLD_MS is gone. The lock screen is no longer a flash: it
+        // stays until the user presses the way out, because on a device the
+        // automatic bounce read as the screen changing underneath you while
+        // you were still reading why.
+        //
+        // HOME_SETTLE_MS survives and does a different job. It is the hold
+        // after home fires, keeping the window up across the transition so
+        // the locked app is not revealed for a frame, and that is true
+        // however home was triggered.
         assertTrue(LockEnforcement.HOME_SETTLE_MS > 0L)
     }
 }
