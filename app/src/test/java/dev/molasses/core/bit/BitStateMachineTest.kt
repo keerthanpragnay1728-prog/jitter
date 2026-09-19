@@ -207,6 +207,18 @@ class BitStateMachineTest {
     }
 
     @Test
+    fun `an answer line sits in the band the device asked for`() {
+        // Chosen, not measured, and bounded at both ends so the next edit has
+        // to argue. Eight is the floor two lines needed on hardware; ten is
+        // where a line that has not expired starts reading as something the
+        // launcher is holding rather than something Bit just said, and an
+        // indefinite hold is a different mechanism rather than a larger
+        // number. See ANSWER_TOTAL_MS.
+        assertTrue(BitStateMachine.ANSWER_TOTAL_MS >= 8_000L)
+        assertTrue(BitStateMachine.ANSWER_TOTAL_MS <= 10_000L)
+    }
+
+    @Test
     fun `an answer expires exactly at its total and drops its line`() {
         val r = Reaction.Answer("98 days")
         assertFalse(BitStateMachine.isExpired(r, BitStateMachine.ANSWER_TOTAL_MS - 1))
