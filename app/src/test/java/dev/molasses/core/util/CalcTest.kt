@@ -179,4 +179,52 @@ class CalcTest {
         Calc.evaluateToString("99 * 99")
         assertEquals(first, Calc.evaluateToString("2 + 2"))
     }
+    // ------------------------------------------------- the percent note
+
+    @Test
+    fun `a percent literal reports what it became`() {
+        val notes = Calc.percentNotes("200 + 10%")
+        assertEquals(1, notes.size)
+        assertEquals("10%", notes[0].literal)
+        assertEquals("0.1", notes[0].value)
+    }
+
+    @Test
+    fun `an input with no percent has nothing to explain`() {
+        assertTrue(Calc.percentNotes("200 + 10").isEmpty())
+        assertTrue(Calc.percentNotes("(2 + 3) * 4").isEmpty())
+        assertTrue(Calc.percentNotes("").isEmpty())
+    }
+
+    @Test
+    fun `every distinct literal is listed, in the order typed`() {
+        val notes = Calc.percentNotes("200 + 10% - 5%")
+        assertEquals(listOf("10%", "5%"), notes.map { it.literal })
+        assertEquals(listOf("0.1", "0.05"), notes.map { it.value })
+    }
+
+    @Test
+    fun `a literal repeated in one expression is explained once`() {
+        assertEquals(listOf("5%"), Calc.percentNotes("5% + 5%").map { it.literal })
+    }
+
+    @Test
+    fun `stacked percent signs are one literal and divide twice`() {
+        val notes = Calc.percentNotes("10%%")
+        assertEquals(listOf("10%%"), notes.map { it.literal })
+        assertEquals(listOf("0.001"), notes.map { it.value })
+    }
+
+    @Test
+    fun `the literal is quoted back as it was typed`() {
+        // Not normalised. The note exists to point at something on screen,
+        // and 10.50% renormalised to 10.5% is no longer what the eye finds.
+        assertEquals("10.50%", Calc.percentNotes("10.50%")[0].literal)
+    }
+
+    @Test
+    fun `an input the tokenizer rejects has no notes rather than a crash`() {
+        assertTrue(Calc.percentNotes("10% + sqrt(2)").isEmpty())
+    }
+
 }

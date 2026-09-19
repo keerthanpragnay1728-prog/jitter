@@ -6,11 +6,17 @@ import dev.molasses.core.time.TimeParser
 /**
  * The REPL grammar, as a pure function from a line to a [ParseResult].
  *
- * ## Arity is checked, always
- * Every verb rejects surplus arguments rather than ignoring them. A line like
- * `block instagram 30m 2h` is a user who is unsure what the syntax is, and
- * silently arming a 30 minute lock teaches them the wrong thing at the cost of
- * a lock they cannot undo. Failing is cheap; a wrong lock is not.
+ * ## Arity is checked wherever there is an arity to check
+ * Every verb with an argument list rejects surplus arguments rather than
+ * ignoring them. A line like `block instagram 30m 2h` is a user who is unsure
+ * what the syntax is, and silently arming a 30 minute lock teaches them the
+ * wrong thing at the cost of a lock they cannot undo. Failing is cheap; a
+ * wrong lock is not.
+ *
+ * `calc`, `conv` and `days` take a remainder rather than a list, because
+ * their argument is itself a language with its own parser. See [rest], which
+ * is the one shape that counts no tokens and says why that is safe here and
+ * nowhere else.
  *
  * ## No argument is ever guessed
  * A missing duration is [ParseError.MissingArgument], never a default. The
@@ -25,6 +31,7 @@ object CommandParser {
     val VERBS: List<String> = listOf(
         "block", "focus", "bedtime", "sleep", "status",
         "alarm", "timer", "reboot", "poweroff", "wifi", "dnd",
+        "calc", "conv", "days",
         "help", "?",
     )
 
@@ -44,6 +51,9 @@ object CommandParser {
         "poweroff" to "poweroff",
         "wifi" to "wifi [on|off]",
         "dnd" to "dnd [on|off]",
+        "calc" to "calc <expression>",
+        "conv" to "conv <amount> <from> <to>",
+        "days" to "days until|since|between <date>",
         "help" to "help",
         "?" to "?",
     )
@@ -82,6 +92,10 @@ object CommandParser {
             "wifi" -> toggle(verb, args) { Command.Wifi(it) }
             "dnd" -> toggle(verb, args) { Command.Dnd(it) }
 
+            "calc" -> rest(verb, args, "expression") { Command.Calc(it) }
+            "conv" -> rest(verb, args, "amount") { Command.Conv(it) }
+            "days" -> rest(verb, args, "date") { Command.Days(it) }
+
             else -> err(ParseError.UnknownCommand(verb))
         }
     }
@@ -114,6 +128,32 @@ object CommandParser {
             is DurationParser.Result.Err -> err(ParseError.BadDuration(args[0], d.kind))
         }
     }
+
+    /**
+     * The whole remainder of the line, as one string.
+     *
+     * ## The one shape that does not check arity
+     * Every other shape rejects a surplus argument, because a surplus
+     * argument means the user is unsure of the syntax and the cost of
+     * guessing is a lock they cannot undo. Here there is no surplus to
+     * detect: the argument is an expression, a conversion or a date phrase,
+     * all of which are several tokens by design, and all of which have their
+     * own parser with its own named refusals. Counting tokens here would be a
+     * second grammar that drifts from the first, and none of these three can
+     * arm anything, so the reason arity is strict elsewhere does not apply.
+     *
+     * An empty remainder is still [ParseError.MissingArgument]. That is the
+     * one thing this level can see and the utility's parser cannot tell apart
+     * from a blank line.
+     */
+    private inline fun rest(
+        verb: String,
+        args: List<String>,
+        expected: String,
+        build: (String) -> Command,
+    ): ParseResult =
+        if (args.isEmpty()) err(ParseError.MissingArgument(verb, expected))
+        else ok(build(args.joinToString(" ")))
 
     private fun noArgs(verb: String, args: List<String>, command: Command): ParseResult =
         if (args.isEmpty()) ok(command) else err(ParseError.TooManyArguments(verb))

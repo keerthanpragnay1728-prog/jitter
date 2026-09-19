@@ -24,7 +24,12 @@ import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.BedtimeWindow
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRequest
+import dev.molasses.core.util.Calc
+import dev.molasses.core.util.Convert
+import dev.molasses.core.util.DateMath
+import dev.molasses.core.util.Decimal
 import dev.molasses.monitor.ServiceDiagnostics
+import java.time.LocalDate
 
 /*
  * The Android half of command dispatch.
@@ -194,6 +199,15 @@ private class MonitorReliefPolicy(private val actions: LauncherActions) : Relief
  * layers to reach the place that already owns it.
  */
 fun launcherDispatch(
+    /**
+     * Resolves the one piece of copy a handler assembles rather than names.
+     *
+     * The percent note is several `literal = value` pairs on one line, so its
+     * template is applied more than once and cannot be a single key handed
+     * to the prompt. Everything else on this path stays a resource id that
+     * the prompt resolves at the call site.
+     */
+    context: Context,
     actions: LauncherActions,
     showManual: () -> Unit,
 ): CommandDispatch = CommandDispatch(
@@ -206,7 +220,7 @@ fun launcherDispatch(
     ),
     reliefPolicy = MonitorReliefPolicy(actions),
     missingSurfaceKey = R.string.cmd_na_wiring,
-    execute = { execute(it, actions, showManual) },
+    execute = { execute(it, context, actions, showManual) },
 )
 
 /** Resource ids for the registry, which is Android-free and cannot see `R`. */
@@ -223,6 +237,9 @@ fun launcherRegistry(): CommandRegistry = CommandRegistry(
         poweroffUsage = R.string.cmd_usage_poweroff, poweroffDesc = R.string.cmd_desc_poweroff,
         wifiUsage = R.string.cmd_usage_wifi, wifiDesc = R.string.cmd_desc_wifi,
         dndUsage = R.string.cmd_usage_dnd, dndDesc = R.string.cmd_desc_dnd,
+        calcUsage = R.string.cmd_usage_calc, calcDesc = R.string.cmd_desc_calc,
+        convUsage = R.string.cmd_usage_conv, convDesc = R.string.cmd_desc_conv,
+        daysUsage = R.string.cmd_usage_days, daysDesc = R.string.cmd_desc_days,
     ),
 )
 
@@ -237,6 +254,7 @@ fun launcherRegistry(): CommandRegistry = CommandRegistry(
  */
 private fun execute(
     command: Command,
+    context: Context,
     actions: LauncherActions,
     showManual: () -> Unit,
 ): DispatchResult = when (command) {
@@ -367,7 +385,112 @@ private fun execute(
 
     Command.Reboot, Command.PowerOff ->
         DispatchResult.Unavailable(R.string.cmd_na_wiring)
+
+    // The three utilities. STATE: each is a pure function of the text typed,
+    // so nothing here can be unavailable and the only failure is the user's
+    // input, which each utility's own parser names.
+    is Command.Calc -> when (val result = Calc.evaluate(command.expression)) {
+        is Calc.Result.Value -> {
+            // The note is present exactly when the expression contained a
+            // percent, because that is the only place this grammar turns
+            // what was typed into something else. See Calc's class doc.
+            val notes = Calc.percentNotes(command.expression)
+            DispatchResult.Answered(
+                ackKey = R.string.cmd_ans_calc,
+                args = listOf(Decimal.format(result.value)),
+                noteKey = if (notes.isEmpty()) null else R.string.cmd_ans_percent,
+                noteArgs = if (notes.isEmpty()) emptyList()
+                else listOf(percentNoteText(context, notes)),
+            )
+        }
+        is Calc.Result.Failed -> DispatchResult.Failed(result.error.messageRes())
+    }
+
+    is Command.Conv -> when (val result = Convert.parse(command.query)) {
+        // No note. Nothing in a conversion is ambiguous or substituted: the
+        // user named both units and the answer names the one it is in. A
+        // second line echoing "5 km" back would be the default echo this
+        // deliberately does not do.
+        is Convert.Result.Value -> DispatchResult.Answered(
+            ackKey = R.string.cmd_ans_conv,
+            args = listOf(Decimal.format(result.value), result.unit.token),
+        )
+        is Convert.Result.Failed -> DispatchResult.Failed(result.error.messageRes())
+    }
+
+    is Command.Days -> when (val result = DateMath.parse(command.query, LocalDate.now())) {
+        is DateMath.Result.Span -> DispatchResult.Answered(
+            ackKey = daysAnswerRes(result.days),
+            args = listOf(result.days.toString()),
+            // Only when a date had to be resolved. An ISO date is already
+            // what it says; a bare "25 dec" had a year chosen for it, and a
+            // span that reaches forward had two.
+            noteKey = if (result.resolved) R.string.cmd_ans_span else null,
+            noteArgs = if (result.resolved) listOf(result.from.toString(), result.to.toString())
+            else emptyList(),
+        )
+        is DateMath.Result.Failed -> DispatchResult.Failed(result.error.messageRes())
+    }
 }
+
+/**
+ * The percent notes as one line.
+ *
+ * Joined here rather than in `core`, because the separator between two of
+ * them and the equals sign inside one are both things on screen, and things
+ * on screen come out of resources.
+ */
+private fun percentNoteText(context: Context, notes: List<Calc.PercentNote>): String =
+    notes.joinToString(NOTE_SEPARATOR) {
+        context.getString(R.string.cmd_ans_pair, it.literal, it.value)
+    }
+
+/** Two spaces. Wide enough to read as a break, narrow enough to stay one line. */
+private const val NOTE_SEPARATOR = "  "
+
+/**
+ * Singular or plural, picked by a plain function and resolved at the call
+ * site, which is how this app maps state to copy.
+ *
+ * Negative counts take the plural, because `days until` on a date already
+ * past answers a negative number and "-1 day" reads worse than "-1 days"
+ * does badly.
+ */
+@StringRes
+private fun daysAnswerRes(days: Long): Int =
+    if (days == 1L) R.string.cmd_ans_days_one else R.string.cmd_ans_days
+
+@StringRes
+private fun Calc.Error.messageRes(): Int = when (this) {
+    // Not reachable from the prompt: CommandParser refuses an empty
+    // remainder before this is called. Present because the enum is public and
+    // this map is total, not because a path leads here.
+    Calc.Error.EMPTY -> R.string.cmd_err_calc_empty
+    Calc.Error.UNKNOWN_CHARACTER -> R.string.cmd_err_calc_chars
+    Calc.Error.UNBALANCED -> R.string.cmd_err_calc_brackets
+    Calc.Error.MISSING_OPERAND -> R.string.cmd_err_calc_operand
+    Calc.Error.DIVIDE_BY_ZERO -> R.string.cmd_err_calc_zero
+}
+
+@StringRes
+private fun Convert.Error.messageRes(): Int = when (this) {
+    Convert.Error.UNKNOWN_UNIT -> R.string.cmd_err_conv_unit
+    Convert.Error.DIMENSION_MISMATCH -> R.string.cmd_err_conv_dimension
+    Convert.Error.NOT_A_NUMBER -> R.string.cmd_err_conv_amount
+}
+
+@StringRes
+private fun DateMath.Error.messageRes(): Int = when (this) {
+    // Same as Calc.Error.EMPTY above: the parser gets there first.
+    DateMath.Error.EMPTY -> R.string.cmd_err_days_empty
+    DateMath.Error.UNKNOWN_VERB -> R.string.cmd_err_days_verb
+    DateMath.Error.MISSING_DATE -> R.string.cmd_err_days_date
+    DateMath.Error.MISSING_RANGE -> R.string.cmd_err_days_range
+    DateMath.Error.NUMERIC_DATE -> R.string.cmd_err_days_numeric
+    DateMath.Error.YEAR_NEEDS_ISO -> R.string.cmd_err_days_year
+    DateMath.Error.UNREADABLE_DATE -> R.string.cmd_err_days_unreadable
+}
+
 
 /**
  * Arm one lock, reporting what the registry will do rather than what was
@@ -487,6 +610,15 @@ fun ParseError.asFailure(): DispatchResult =
  */
 fun DispatchResult.message(context: Context): String = when (this) {
     is DispatchResult.Confirmed -> context.getString(ackKey, *formatArgs(args))
+    // Two lines when there is a note, one when there is not. The speech row
+    // draws whatever it is handed and has no fixed height, so a second line
+    // grows upward inside Bit's own box rather than moving the app list.
+    is DispatchResult.Answered -> {
+        val answer = context.getString(ackKey, *formatArgs(args))
+        val key = noteKey
+        if (key == null) answer
+        else answer + "\n" + context.getString(key, *formatArgs(noteArgs))
+    }
     is DispatchResult.Failed -> context.getString(reasonKey, *formatArgs(args))
     is DispatchResult.Unavailable -> context.getString(reasonKey, *formatArgs(args))
     is DispatchResult.NeedsConfirmation -> context.getString(R.string.cmd_confirm_line, echo)

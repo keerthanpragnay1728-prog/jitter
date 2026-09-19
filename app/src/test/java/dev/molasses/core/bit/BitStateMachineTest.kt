@@ -162,6 +162,69 @@ class BitStateMachineTest {
         assertTrue(BitStateMachine.isExpired(r, BitStateMachine.CONFIRM_TOTAL_MS))
     }
 
+    // ----------------------------------------------------------- the answer
+
+    @Test
+    fun `an answer wears the confirmation expression, unchanged`() {
+        // One success sequence, defined once. A utility answering is still a
+        // command succeeding, and giving it a face of its own would be the
+        // fourteen bespoke animations this design exists to avoid.
+        val answer = Reaction.Answer("= 200.1")
+        val confirm = Reaction.Confirm("ACK: WIFI PANEL")
+        for (age in listOf(0L, 149L, 150L, 749L, 750L, 899L, 1_000L)) {
+            assertEquals(
+                "age=$age",
+                frame(reaction = confirm, ageMs = age).face,
+                frame(reaction = answer, ageMs = age).face,
+            )
+        }
+    }
+
+    @Test
+    fun `an answer line outlives a confirmation line`() {
+        // The whole of the difference. An acknowledgement is checked against
+        // what the user already expected; an answer is read, and a number
+        // about to be used somewhere else is read twice.
+        assertTrue(BitStateMachine.ANSWER_TOTAL_MS > BitStateMachine.CONFIRM_TOTAL_MS)
+        val r = Reaction.Answer("= 200.1")
+        assertEquals("= 200.1", frame(reaction = r, ageMs = BitStateMachine.CONFIRM_TOTAL_MS).line)
+        assertNull(frame(reaction = Reaction.Confirm("x"), ageMs = BitStateMachine.CONFIRM_TOTAL_MS).line)
+    }
+
+    @Test
+    fun `the face is neutral for the whole of the extra time`() {
+        // Why the longer hold does not trip the ceiling that caps a failure
+        // at three seconds. That ceiling is about a held expression starting
+        // to read as a state; this face is back to rest 900 ms in, exactly as
+        // a confirmation is, and only the text remains.
+        for (age in listOf(900L, 2_000L, BitStateMachine.ANSWER_TOTAL_MS - 1)) {
+            assertEquals(
+                "age=$age",
+                BitStateMachine.NEUTRAL,
+                frame(reaction = Reaction.Answer("= 200.1"), ageMs = age).face,
+            )
+        }
+    }
+
+    @Test
+    fun `an answer expires exactly at its total and drops its line`() {
+        val r = Reaction.Answer("98 days")
+        assertFalse(BitStateMachine.isExpired(r, BitStateMachine.ANSWER_TOTAL_MS - 1))
+        assertTrue(BitStateMachine.isExpired(r, BitStateMachine.ANSWER_TOTAL_MS))
+        val after = frame(reaction = r, ageMs = BitStateMachine.ANSWER_TOTAL_MS)
+        assertNull(after.line)
+        assertFalse(after.reactionActive)
+    }
+
+    @Test
+    fun `a second line is carried through untouched`() {
+        // The note. The state machine does not know what a line means and
+        // must not start reformatting one: two lines arrive as one string
+        // and leave as one string.
+        val text = "= 200.1\nwhere 10% = 0.1"
+        assertEquals(text, frame(reaction = Reaction.Answer(text), ageMs = 500).line)
+    }
+
     @Test
     fun `every command shares one confirm sequence`() {
         // The whole point: the faces do not depend on which command ran, only

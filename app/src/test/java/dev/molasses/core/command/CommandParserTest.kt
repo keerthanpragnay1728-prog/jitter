@@ -463,4 +463,47 @@ class CommandParserTest {
             assertTrue(completed, CommandParser.VERBS.contains(completed.trim()))
         }
     }
+    // ------------------------------------------------- the three utilities
+
+    @Test
+    fun `a utility takes the whole remainder of the line`() {
+        assertEquals(Command.Calc("2 + 3 * 4"), ok("calc 2 + 3 * 4"))
+        assertEquals(Command.Conv("5 km mi"), ok("conv 5 km mi"))
+        assertEquals(Command.Days("between 25 dec and 1 jan"), ok("days between 25 dec and 1 jan"))
+    }
+
+    @Test
+    fun `a utility does not count its arguments`() {
+        // The one shape that does not check arity, because the argument is a
+        // language rather than a list. Four tokens after "conv" is a mistake
+        // the converter names precisely; refusing it here would name it
+        // vaguely and first.
+        assertEquals(Command.Conv("5 km mi please"), ok("conv 5 km mi please"))
+    }
+
+    @Test
+    fun `a utility still refuses an empty remainder`() {
+        assertEquals(ParseError.MissingArgument("calc", "expression"), err("calc"))
+        assertEquals(ParseError.MissingArgument("conv", "amount"), err("conv"))
+        assertEquals(ParseError.MissingArgument("days", "date"), err("days"))
+    }
+
+    @Test
+    fun `the remainder keeps its case and loses its extra spaces`() {
+        // The verb is lowercased because it is the grammar; the argument is
+        // not, because DEC is a month and an expression could one day carry
+        // something case bearing.
+        assertEquals(Command.Days("until 25 DEC"), ok("DAYS until 25   DEC"))
+    }
+
+    @Test
+    fun `bare arithmetic is not a command`() {
+        // The whole of the disambiguation. Typing 2+3 filters apps, exactly
+        // as it did before the calculator existed, and a utility runs only
+        // when its verb is typed.
+        assertEquals(ParseError.UnknownCommand("2+3"), err("2+3"))
+        assertEquals(ParseError.UnknownCommand("5"), err("5"))
+        assertEquals(ParseError.UnknownCommand("25/12/2026"), err("25/12/2026"))
+    }
+
 }

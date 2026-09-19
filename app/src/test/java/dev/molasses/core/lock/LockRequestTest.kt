@@ -1,6 +1,7 @@
 package dev.molasses.core.lock
 
 import dev.molasses.core.command.CommandRegistry
+import dev.molasses.core.command.dummyCommandKeys
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -75,10 +76,7 @@ class LockRequestTest {
         // The guard this whole file exists for. If a second way to arm a lock
         // reads a different number, the confirmation step is decorative.
         val registry = CommandRegistry(
-            CommandRegistry.Keys(
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-                11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-            ),
+            dummyCommandKeys(),
         )
         assertEquals(
             "the block row is the one source of the threshold",

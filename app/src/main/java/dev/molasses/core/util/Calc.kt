@@ -98,10 +98,61 @@ object Calc {
     fun evaluateToString(input: String): String? =
         (evaluate(input) as? Result.Value)?.let { Decimal.format(it.value) }
 
+    /**
+     * One percent literal and what it became.
+     *
+     * Data, not copy: the caller frames it, because an equals sign between
+     * two values is a format template and those live in resources like
+     * everything else on screen.
+     */
+    data class PercentNote(val literal: String, val value: String)
+
+    /**
+     * Every distinct percent literal in [input], with its value.
+     *
+     * ## Why this exists and why it is only this
+     * Strict percent puts the whole surprise at one operator: `200 + 10%` is
+     * `200.1` because `10%` is `0.1`, and a reader who is told that stops
+     * being surprised. So the explanation is attached to that operator and to
+     * nothing else. An echo of the normalised expression on every input would
+     * be a line on screen that most inputs have not earned.
+     *
+     * Empty when there is no `%`, which is the common case, so the caller can
+     * use emptiness as the condition rather than scanning the text itself.
+     *
+     * Order is the order typed, and a literal repeated in one expression is
+     * listed once: `5% + 5%` has one thing to explain, not two.
+     */
+    fun percentNotes(input: String): List<PercentNote> {
+        val tokens = tokenize(input) ?: return emptyList()
+        val notes = LinkedHashMap<String, PercentNote>()
+        tokens.forEachIndexed { i, token ->
+            if (token !is Token.Num) return@forEachIndexed
+            var signs = 0
+            var j = i + 1
+            while (j < tokens.size && (tokens[j] as? Token.Sym)?.char == '%') {
+                signs++
+                j++
+            }
+            if (signs == 0) return@forEachIndexed
+            val literal = token.text + "%".repeat(signs)
+            var value = token.value
+            repeat(signs) { value /= 100.0 }
+            notes.getOrPut(literal) { PercentNote(literal, Decimal.format(value)) }
+        }
+        return notes.values.toList()
+    }
+
     // ------------------------------------------------------------- tokenizer
 
     private sealed interface Token {
-        data class Num(val value: Double) : Token
+        /**
+         * @param text the literal as typed, kept so [percentNotes] can quote
+         *   it back. The parser ignores it. One number syntax, one scanner:
+         *   a second scanner for the note would be a second thing to keep in
+         *   step with the grammar.
+         */
+        data class Num(val value: Double, val text: String) : Token
         data class Sym(val char: Char) : Token
     }
 
@@ -124,7 +175,7 @@ object Calc {
                     // A bare "." is not a number. toDoubleOrNull catches it
                     // along with anything else the scan let through.
                     val value = text.toDoubleOrNull() ?: return null
-                    tokens += Token.Num(value)
+                    tokens += Token.Num(value, text)
                 }
                 c in OPERATORS -> {
                     tokens += Token.Sym(c)

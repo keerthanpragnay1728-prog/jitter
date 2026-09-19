@@ -113,6 +113,9 @@ class CommandRegistry(keys: Keys) {
         val poweroffUsage: Int, val poweroffDesc: Int,
         val wifiUsage: Int, val wifiDesc: Int,
         val dndUsage: Int, val dndDesc: Int,
+        val calcUsage: Int, val calcDesc: Int,
+        val convUsage: Int, val convDesc: Int,
+        val daysUsage: Int, val daysDesc: Int,
     )
 
     val specs: List<CommandSpec> = listOf(
@@ -143,9 +146,21 @@ class CommandRegistry(keys: Keys) {
             requiresConfirmAboveMs = CONFIRM_ABOVE_MS),
         CommandSpec("bedtime", keys.bedtimeUsage, keys.bedtimeDesc, Surface.SUBSYSTEM),
 
-        // STATE. Scroll the pager, open the manual. Nothing can stop either.
+        // STATE. Scroll the pager, open the manual, answer a question.
+        // Nothing external can stop any of them.
         CommandSpec("status", keys.statusUsage, keys.statusDesc, Surface.STATE),
         CommandSpec("help", keys.helpUsage, keys.helpDesc, Surface.STATE),
+
+        // The three utilities. STATE because each is a pure function of the
+        // text typed: no Intent to resolve, no permission, no subsystem, and
+        // nothing left behind afterwards. That last part is the rule they
+        // were admitted under, and it is why they can sit on the surface that
+        // never refuses: a command that cannot fail for an external reason is
+        // a command whose only failure is the user's input, which its own
+        // parser names.
+        CommandSpec("calc", keys.calcUsage, keys.calcDesc, Surface.STATE),
+        CommandSpec("conv", keys.convUsage, keys.convDesc, Surface.STATE),
+        CommandSpec("days", keys.daysUsage, keys.daysDesc, Surface.STATE),
 
         // INTENT. Each needs a different Intent to resolve.
         CommandSpec("alarm", keys.alarmUsage, keys.alarmDesc, Surface.INTENT),
@@ -192,6 +207,9 @@ class CommandRegistry(keys: Keys) {
             Command.PowerOff -> "poweroff"
             is Command.Wifi -> "wifi"
             is Command.Dnd -> "dnd"
+            is Command.Calc -> "calc"
+            is Command.Conv -> "conv"
+            is Command.Days -> "days"
         }
 
         /** The duration a command would arm, or null when it arms nothing. */

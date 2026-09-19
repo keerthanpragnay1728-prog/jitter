@@ -53,6 +53,12 @@ class CommandRenderTest {
             Command.Dnd(null),
             Command.Dnd(true),
             Command.Dnd(false),
+            Command.Calc("2+2"),
+            Command.Calc("200 + 10%"),
+            Command.Calc("(1 + 2) * 3 / 4"),
+            Command.Conv("5 km mi"),
+            Command.Days("until 25 dec"),
+            Command.Days("between 25 dec and 1 jan"),
         )
         for (c in cases) roundTrips(c)
     }
@@ -79,11 +85,28 @@ class CommandRenderTest {
             "dnd off",
             "reboot",
             "poweroff",
+            "calc 2+2",
+            "calc 200 + 10%",
+            "conv 5 km mi",
+            "days until 2026-12-25",
+            "days between 25 dec and 1 jan",
         )
         for (line in lines) {
             val first = (CommandParser.parse(line) as ParseResult.Ok).command
             assertEquals("line '$line'", first, reparse(first))
         }
+    }
+
+    @Test
+    fun `a utility argument is normalised once and then stable`() {
+        // The remainder is stored as its tokens rejoined with single spaces,
+        // so the first parse is the only one that can change the text. That
+        // is what makes the round trip exact rather than approximate, and it
+        // is why the history list holds one spelling per command here too.
+        val loose = (CommandParser.parse("calc   200   +   10%") as ParseResult.Ok).command
+        assertEquals(Command.Calc("200 + 10%"), loose)
+        assertEquals("calc 200 + 10%", CommandRender.render(loose))
+        roundTrips(loose)
     }
 
     @Test

@@ -42,10 +42,7 @@ class CommandResourcesTest {
     /** The verbs the registry knows, read off a registry built with dummy ids. */
     private val verbs: List<String> =
         CommandRegistry(
-            CommandRegistry.Keys(
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-                11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-            ),
+            dummyCommandKeys(),
         ).specs.map { it.verb }
 
     // ------------------------------------------------------------- strings
@@ -198,6 +195,27 @@ class CommandResourcesTest {
     // -------------------------------------------------------------- helpers
 
     /** The text of one string resource, XML entities resolved, or null. */
+    @Test
+    fun `a manual description carries no percent sign`() {
+        // The one string in the command set that is read without format
+        // arguments. ManualRow calls stringResource(id) with none, so nothing
+        // ever runs String.format over a description, so the %% that the
+        // format check requires everywhere else would reach the screen as two
+        // characters. Writing a bare % instead fails that check.
+        //
+        // Both spellings are wrong and there is no third, so a description
+        // that wants to talk about percent has to say the word. cmd_desc_calc
+        // was written with %% first and this is the test that found it.
+        for (verb in verbs) {
+            val desc = stringValue("cmd_desc_$verb") ?: continue
+            assertTrue(
+                "cmd_desc_$verb contains a percent sign, which has no correct " +
+                    "spelling in a string nothing formats",
+                !desc.contains("%"),
+            )
+        }
+    }
+
     private fun stringValue(name: String): String? =
         Regex("""<string name="$name"[^>]*>(.*?)</string>""", RegexOption.DOT_MATCHES_ALL)
             .find(strings)

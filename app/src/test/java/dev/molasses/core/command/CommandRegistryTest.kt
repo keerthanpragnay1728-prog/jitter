@@ -5,24 +5,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Fake resource ids. The registry never dereferences them. */
-private fun keys() = CommandRegistry.Keys(
-    blockUsage = 1, blockDesc = 2,
-    focusUsage = 3, focusDesc = 4,
-    bedtimeUsage = 7, bedtimeDesc = 8,
-    statusUsage = 9, statusDesc = 10,
-    helpUsage = 27, helpDesc = 28,
-    alarmUsage = 13, alarmDesc = 14,
-    timerUsage = 15, timerDesc = 16,
-    rebootUsage = 19, rebootDesc = 20,
-    poweroffUsage = 21, poweroffDesc = 22,
-    wifiUsage = 23, wifiDesc = 24,
-    dndUsage = 25, dndDesc = 26,
-)
-
 class CommandRegistryTest {
 
-    private val registry = CommandRegistry(keys())
+    private val registry = CommandRegistry(dummyCommandKeys())
 
     /** One instance of every Command variant. */
     private val allCommands: List<Command> = listOf(
@@ -37,6 +22,9 @@ class CommandRegistryTest {
         Command.PowerOff,
         Command.Wifi(null),
         Command.Dnd(null),
+        Command.Calc("2+2"),
+        Command.Conv("5 km mi"),
+        Command.Days("until 25 dec"),
     )
 
     @Test
@@ -164,6 +152,9 @@ class CommandRegistryTest {
         "block", "allow" -> "$verb app 30m"
         "focus", "timer" -> "$verb 30m"
         "alarm" -> "alarm 6am"
+        "calc" -> "calc 2+2"
+        "conv" -> "conv 5 km mi"
+        "days" -> "days until 25 dec"
         "rem" -> "rem 10m text"
         "log" -> "log"
         else -> verb
