@@ -1031,6 +1031,44 @@ produced it, which is the behaviour the shield was asked for anyway.
   `regularityWindowMs` / `minCvIntervals`. Both close defects found by the
   sweep; neither can be removed without reopening one.
 
+**Live gaps**
+
+These are neither platform ceilings nor decisions. Something in the app works
+and nothing on screen reaches it, or a number is a guess nobody has checked
+against hardware. They are listed apart from "design choices that could go
+either way" because that heading is where a reader stops looking for a fix,
+and neither of these is settled.
+
+- **Command history is recorded and has no way to reach it.**
+  `CommandHistory` deduplicates and caps at twenty, `CycleStateStore` records
+  every dispatch, and nothing renders any of it. The recents view on an empty
+  prompt was removed deliberately: a blank prompt is a blank prompt, and a
+  list that appears when you have typed nothing is a list you did not ask
+  for. What was not intended is the leftover, which is that a command is
+  reachable only by retyping it in full.
+
+  It is deliberately not fixed yet, because the shape of the fix is the open
+  question and not whether one is wanted. A list on an empty prompt is one
+  answer and a single recall gesture is another, and picking without evidence
+  is how the first one got built. **The report that settles it: a tester
+  saying they retyped the same conversion three times.** That says both that
+  the gap is real and roughly what the recall wants to be.
+
+  This surfaced from the other end. Clearing a utility's answer when the
+  launcher is left was argued for on the grounds that re-running it costs two
+  keystrokes, which is not true on any build that has shipped. The decision
+  stands on its own reasoning; the supporting claim did not, and this entry
+  exists so it is not repeated.
+
+- **Window insets are a hardcoded 44dp and nothing reads a real inset.**
+  It works on the hardware this was built on and the number is not related to
+  any measurement. It is a few dp short of a 48dp three button bar, short on
+  a device whose status bar covers a tall cutout, and 18dp clears nothing in
+  landscape. Held for field reports rather than guessed at a second time, and
+  immersive mode on the console hides the symptom on the one screen anyone
+  looks at rather than fixing it anywhere. Full reasoning in CLAUDE.md,
+  "Window insets are a constant, and that is a known fault".
+
 **Design choices that could go either way**
 - The fused pipeline's thresholds are **unmeasured**. They are seeded from the
   IIR set and flagged `UNCALIBRATED` in the debug screen. Re-run
