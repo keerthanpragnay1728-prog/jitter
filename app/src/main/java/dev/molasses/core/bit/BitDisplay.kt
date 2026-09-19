@@ -48,7 +48,7 @@ package dev.molasses.core.bit
  * Below the armed tell, above the resting face:
  *
  * ```
- * glitch > PROMPT > HUD > reaction > NOTICE > armed > battery > slit > mood
+ * glitch > PROMPT > HUD > reaction > ANSWER > NOTICE > armed > battery > slit > mood
  * ```
  *
  * Above the mood because a retreated Bit is meant to be a glyph rather than a
@@ -80,6 +80,12 @@ package dev.molasses.core.bit
  * safe because the glitch is a burst now. While it was a permanent mood a
  * prompt at the terminal tier could never have been seen at all.
  *
+ * An ANSWER is between them. Below `reaction` so a poke still interrupts it,
+ * because a poke is the user acting on Bit and an answer already on screen
+ * must not swallow that. Above `NOTICE` because the user asked for the answer
+ * and Bit volunteered the notice, which is the same principle holding up two
+ * other rows of this table.
+ *
  * A NOTICE is below `reaction`, which is a change from the brief. A reaction
  * is the answer to something the user just did; a notice is something Bit
  * volunteered, and when the two collide the user's own action wins. That is
@@ -109,16 +115,57 @@ sealed interface BitDisplay {
     data class Hud(val step: HudStep, val text: String) : BitDisplay
 
     /**
-     * Bit is saying something, on the row above the prompt.
+     * Anything drawn on the row above the prompt.
      *
-     * [mood] is the resting state the face should show while it speaks, so
+     * [mood] is the resting state the face should show while it is up, so
      * the host renders one Bit rather than a face in its usual row and a
-     * second one in the speech row.
+     * second one in the speech row. Two variants because the text comes from
+     * two different places, one lookup and one already rendered, and the row
+     * that draws them is the same row.
      */
+    sealed interface Spoken : BitDisplay {
+        val mood: BitStateMachine.Mood
+    }
+
+    /** Bit is saying something it queued. The copy is looked up from [line]. */
     data class Speech(
         val line: dev.molasses.core.console.ConsoleLine,
-        val mood: BitStateMachine.Mood,
-    ) : BitDisplay
+        override val mood: BitStateMachine.Mood,
+    ) : Spoken
+
+    /**
+     * The answer to something the user typed.
+     *
+     * ## Why this is not a reaction
+     * It was one, for two commits, and the wrong thing about it was not the
+     * number. A reaction expires on a clock because it is a response to a
+     * gesture: a poke, a stall, a face changing and changing back. An answer
+     * is content the user asked for and may be copying somewhere, and the
+     * honest lifetime for that is "until you do something else", which is not
+     * a duration. Five seconds was short on the device and nine was a guess
+     * at a number that should not exist.
+     *
+     * So it expires on events rather than on a clock: the next keystroke, the
+     * next command, or leaving the launcher. Every one of those is the user
+     * moving on, and none of them is a timer.
+     *
+     * ## Why it does not carry a ConsoleLine
+     * `ConsoleLine` is persisted and charged to a budget, and its `id`,
+     * `category` and `args` all exist for those two jobs. An answer is
+     * neither persisted nor budgeted: it is already rendered, it is gone when
+     * you leave, and it is prompted rather than volunteered, so the cap on
+     * unprompted lines has nothing to say about it. Making it one would have
+     * meant three members that lie, or splitting `ConsoleLine` and threading
+     * the split through the proto mapping, the repository and four host
+     * signatures, none of which anything here compiles.
+     *
+     * The thing that actually mattered is that it ranks in this table rather
+     * than in the reaction ladder, and that is what [Spoken] buys.
+     */
+    data class Answer(
+        val text: String,
+        override val mood: BitStateMachine.Mood,
+    ) : Spoken
 
     /**
      * The retreated glyph, carrying one character of status.
@@ -159,6 +206,7 @@ sealed interface BitDisplay {
             batteryCritical: Boolean = false,
             prompt: dev.molasses.core.console.ConsoleLine.Prompt? = null,
             notice: dev.molasses.core.console.ConsoleLine.Notice? = null,
+            answer: String? = null,
         ): BitDisplay {
             val resting = when {
                 shutterArmed -> BitStateMachine.Mood.ARMED
@@ -184,20 +232,26 @@ sealed interface BitDisplay {
             //    outranks anything Bit volunteered.
             if (reaction != BitStateMachine.Reaction.None) return Face(resting, reaction)
 
-            // 5. An observation. Below the reaction deliberately; see the
+            // 5. An answer. Below the reaction because a poke is the user
+            //    acting on Bit and must not be swallowed by a line already
+            //    on screen, and above a notice because the user asked for
+            //    this one and Bit volunteered that one.
+            if (answer != null) return Answer(answer, resting)
+
+            // 6. An observation. Below the reaction deliberately; see the
             //    class doc and ConsoleSpeech for why that is safe.
             if (notice != null) return Speech(notice, resting)
 
-            // 6. The armed tell outranks the retreat: it is the one thing in
+            // 7. The armed tell outranks the retreat: it is the one thing in
             //    this app that is otherwise completely invisible.
             if (shutterArmed) return Face(resting, reaction)
 
-            // 7. A dying battery comes out of the bezel, because no slit
+            // 8. A dying battery comes out of the bezel, because no slit
             //    glyph carries it. A curfew stays behind it, because `[z]`
             //    does.
             if (batteryCritical) return Face(resting, reaction)
 
-            // 8. Retreated. One glyph, no text, nothing to tap.
+            // 9. Retreated. One glyph, no text, nothing to tap.
             if (docked) return Slit(BitGlyph.slitFor(curfew, penaltyAccruing))
 
             return Face(resting, reaction)

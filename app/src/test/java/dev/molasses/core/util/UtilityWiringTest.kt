@@ -22,10 +22,10 @@ import org.junit.Test
  * 2. **An unconditional note.** Dropping the `if (notes.isEmpty())` compiles
  *    and turns the second line into an echo on every answer, which is the
  *    one thing this feature was explicitly not to do.
- * 3. **A confirmation instead of an answer.** `Reaction.Confirm` and
- *    `Reaction.Answer` both take a `String`, so swapping them compiles and
- *    silently cuts the time an answer is readable from five seconds to one
- *    and a half. Nothing on screen would look broken.
+ * 3. **An answer routed through the reaction ladder.** `react(...)` takes a
+ *    `String` and so does the answer, so sending it to `Reaction.Confirm`
+ *    compiles and silently puts the answer back on a 1.6 second clock.
+ *    Nothing on screen would look broken, it would just be unreadable.
  */
 class UtilityWiringTest {
 
@@ -103,17 +103,17 @@ class UtilityWiringTest {
     }
 
     @Test
-    fun `an answer is reacted to as an answer`() {
+    fun `an answer is held, not reacted to`() {
         val start = activity.indexOf("is DispatchResult.Answered ->")
         assertTrue("the prompt must handle Answered", start >= 0)
         val body = activity.substring(start, start + 400)
         assertTrue(
-            "an answer must use Reaction.Answer, which is the longer line",
-            body.contains("BitStateMachine.Reaction.Answer("),
+            "an answer must be held as console state, already rendered",
+            body.contains("answer = outcome.message(context)"),
         )
         assertTrue(
-            "an answer must not fall back to the confirmation line",
-            !body.substringBefore("is DispatchResult.").contains("Reaction.Confirm("),
+            "an answer must not go through the reaction ladder, which expires on a clock",
+            !body.contains("react("),
         )
     }
 }

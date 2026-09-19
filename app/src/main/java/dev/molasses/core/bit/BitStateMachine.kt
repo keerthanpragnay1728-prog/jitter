@@ -68,20 +68,6 @@ object BitStateMachine {
         /** A command succeeded. Carries the ack line to render alongside. */
         data class Confirm(val ack: String) : Reaction
 
-        /**
-         * A command succeeded and produced an answer worth reading.
-         *
-         * The same face as [Confirm], deliberately: the confirmation
-         * expression is defined once and every success wears it. Only the
-         * line lives longer, because the two lines are different kinds of
-         * thing. An acknowledgement is checked, an answer is read, and a
-         * number the user is about to use is read twice.
-         *
-         * [text] may carry a newline. The second line explains a substitution
-         * the input went through and is absent whenever it went through none.
-         */
-        data class Answer(val text: String) : Reaction
-
         /** Bad input. The user can fix this by typing something else. */
         data class Failed(val message: String) : Reaction
 
@@ -263,34 +249,6 @@ object BitStateMachine {
     const val CONFIRM_TOTAL_MS =
         CONFIRM_RISE_MS + CONFIRM_HOLD_MS + CONFIRM_FALL_MS + CONFIRM_LINGER_MS
 
-    /**
-     * Nine seconds, for a line that is an answer rather than an
-     * acknowledgement.
-     *
-     * 1.6 s was sized for text the user could predict before reading it, and
-     * none of `200.1`, `3.106856 mi` or `98 days` can be predicted: the eye
-     * has to arrive, read digits it has no expectation of, and often read
-     * them again because they are about to be used somewhere else.
-     *
-     * Five was the first guess and the device says it is short. Two lines is
-     * the case that settles it: an answer with a note under it is two reads
-     * and a glance between them, and five seconds covers about one and a
-     * half of that.
-     *
-     * Nine is still a clock and that is the point. A reaction with no expiry
-     * would sit above everything the precedence table puts below it for as
-     * long as the launcher is open, which is what makes an indefinite hold a
-     * different mechanism rather than a larger number. That mechanism is
-     * `ConsoleLine`, and moving there is a structural change rather than a
-     * constant.
-     *
-     * It does not trip the ceiling [FAILED_TOTAL_MS] documents. That ceiling
-     * is about a held expression starting to read as a state, and the face is
-     * back to `NEUTRAL` 900 ms in for the whole of this, exactly as it is for
-     * a confirmation. A neutral face with a line beside it is Bit with
-     * something to say, which is what this is.
-     */
-    const val ANSWER_TOTAL_MS = 9_000L
 
     /**
      * Failure holds longer than success, and longer than it used to.
@@ -436,9 +394,11 @@ object BitStateMachine {
             // HUD owns its own timeout.
             is BitDisplay.Hud -> BitFrame(face = display.text, reactionActive = false)
             is BitDisplay.Slit -> BitFrame(face = display.glyph, reactionActive = false)
-            // The speech row draws the line itself; this is the face beside
-            // it, so Bit is in one place rather than two.
-            is BitDisplay.Speech ->
+            // The speech row draws the text itself; this is the face beside
+            // it, so Bit is in one place rather than two. Both spoken
+            // variants take this branch, because the face is the same
+            // question either way.
+            is BitDisplay.Spoken ->
                 frame(BitDisplay.Face(display.mood, Reaction.None), 0L, tickMs, blinking)
             is BitDisplay.Face ->
                 frame(display.mood, display.reaction, reactionAgeMs, tickMs, blinking)
@@ -469,21 +429,6 @@ object BitStateMachine {
             ageMs = reactionAgeMs,
             total = CONFIRM_TOTAL_MS,
             line = reaction.ack,
-            expired = { idleFrame(mood, tickMs, blinking).copy(line = null, reactionActive = false) },
-        ) { age ->
-            when {
-                age < CONFIRM_RISE_MS -> NEUTRAL
-                age < CONFIRM_RISE_MS + CONFIRM_HOLD_MS -> HAPPY
-                else -> NEUTRAL
-            }
-        }
-
-        // The confirmation expression, unchanged. Only the total differs, so
-        // the line outlives the face by longer. See ANSWER_TOTAL_MS.
-        is Reaction.Answer -> phased(
-            ageMs = reactionAgeMs,
-            total = ANSWER_TOTAL_MS,
-            line = reaction.text,
             expired = { idleFrame(mood, tickMs, blinking).copy(line = null, reactionActive = false) },
         ) { age ->
             when {
@@ -553,7 +498,6 @@ object BitStateMachine {
     fun isExpired(reaction: Reaction, reactionAgeMs: Long): Boolean = when (reaction) {
         Reaction.None -> false
         is Reaction.Confirm -> reactionAgeMs >= CONFIRM_TOTAL_MS
-        is Reaction.Answer -> reactionAgeMs >= ANSWER_TOTAL_MS
         is Reaction.Failed -> reactionAgeMs >= FAILED_TOTAL_MS
         is Reaction.Unavailable -> reactionAgeMs >= UNAVAILABLE_TOTAL_MS
         Reaction.Glitching -> reactionAgeMs >= GLITCH_BURST_MS

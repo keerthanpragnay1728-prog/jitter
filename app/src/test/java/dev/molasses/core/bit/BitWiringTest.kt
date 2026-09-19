@@ -133,4 +133,56 @@ class BitWiringTest {
             host.contains("msSinceKeystroke = SystemClock.elapsedRealtime() - lastKeystrokeMs"),
         )
     }
+    // ------------------------------------------------ the answer's lifetime
+
+    @Test
+    fun `an answer is cleared by each of the three things that end it`() {
+        // The whole of its lifetime, and none of it is a clock. Each of these
+        // is the user moving on, and a missing one is an answer that outlives
+        // its moment on a surface whose argument is that nothing sits on it
+        // without earning the space.
+        assertTrue(
+            "the next keystroke clears it",
+            host.contains("answer = null\n                        lastKeystrokeMs ="),
+        )
+        assertTrue(
+            "a new dispatch clears it, before the branch that may set one",
+            host.contains("answer = null\n                            val outcome = submit()"),
+        )
+        assertTrue(
+            "leaving the launcher clears it",
+            host.substringAfter("fun clearPrompt() {").substringBefore("}").contains("answer = null"),
+        )
+    }
+
+    @Test
+    fun `nothing puts an answer on a timer`() {
+        // It used to be a reaction, which is the one thing here that expires
+        // on a clock. If a tick or a delay ever reaches this state again, the
+        // migration has been undone by an edit that looks like a tidy-up.
+        val declaration = host.indexOf("var answer by remember")
+        assertTrue("the host must hold the answer as state", declaration >= 0)
+        assertTrue(
+            "an answer must not be handed to the reaction ladder",
+            !host.contains("Reaction.Answer("),
+        )
+    }
+
+    @Test
+    fun `the answer reaches the one precedence table`() {
+        // Not rendered off to the side. It ranks with the prompt, the readout
+        // and the notice or it is a second display path.
+        assertTrue(host.contains("answer = answer,"))
+        assertEquals(1, Regex("BitDisplay\\.resolve\\(").findAll(host).count())
+    }
+
+    @Test
+    fun `both spoken variants blank Bit's usual slot`() {
+        // One Bit, in the speech row, rather than a face in its usual row and
+        // a second one below it. A check narrowed back to Speech would draw
+        // two Bits whenever an answer was up.
+        assertTrue(host.contains("if (display is BitDisplay.Spoken) {"))
+        assertTrue(host.contains("val spoken = display as? BitDisplay.Spoken"))
+    }
+
 }

@@ -31,13 +31,16 @@ class BitDisplayTest {
         batteryCritical: Boolean = false,
         prompt: ConsoleLine.Prompt? = null,
         notice: ConsoleLine.Notice? = null,
+        answer: String? = null,
     ) = BitDisplay.resolve(
         mood, reaction, hud, shutterArmed, curfew, docked, penaltyAccruing, batteryCritical,
-        prompt, notice,
+        prompt, notice, answer,
     )
 
     private val aPrompt = ConsoleLine.Prompt("scrolled", listOf("27m"), action = "focus")
     private val aNotice = ConsoleLine.Notice("scrolled", listOf("27m"))
+    private val anAnswer = "= 200.1"
+
 
     // ------------------------------------------------- glitch beats all
 
@@ -638,16 +641,20 @@ class BitDisplayTest {
                                     for (bat in listOf(false, true)) {
                                         for (p in listOf(null, aPrompt)) {
                                             for (n in listOf(null, aNotice)) {
-                                                val d = BitDisplay.resolve(
-                                                    m, r, h, armed, curfew, docked, pen, bat, p, n,
-                                                )
-                                                assertTrue(
-                                                    "$m $r $h $armed $curfew $docked $pen $bat $p $n",
-                                                    d is BitDisplay.Face ||
-                                                        d is BitDisplay.Hud ||
-                                                        d is BitDisplay.Slit ||
-                                                        d is BitDisplay.Speech,
-                                                )
+                                                for (a in listOf(null, anAnswer)) {
+                                                    val d = BitDisplay.resolve(
+                                                        m, r, h, armed, curfew, docked, pen, bat,
+                                                        p, n, a,
+                                                    )
+                                                    assertTrue(
+                                                        "$m $r $h $armed $curfew $docked " +
+                                                            "$pen $bat $p $n $a",
+                                                        d is BitDisplay.Face ||
+                                                            d is BitDisplay.Hud ||
+                                                            d is BitDisplay.Slit ||
+                                                            d is BitDisplay.Spoken,
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -707,4 +714,77 @@ class BitDisplayTest {
         val faces = (0L..20_000L step 37L).map { BitStateMachine.frame(dormant, 0, it).face }.toSet()
         assertEquals(setOf(BitStateMachine.DORMANT), faces)
     }
+    // ------------------------------------------------------- where an answer sits
+
+    @Test
+    fun `an answer is shown when nothing outranks it`() {
+        assertEquals(BitDisplay.Answer(anAnswer, Mood.IDLE), resolve(answer = anAnswer))
+    }
+
+    @Test
+    fun `a reaction beats an answer`() {
+        // A poke is the user acting on Bit. A line already on screen must not
+        // swallow that, however much the user wanted the line.
+        assertEquals(
+            BitDisplay.Face(Mood.IDLE, Reaction.Poked),
+            resolve(reaction = Reaction.Poked, answer = anAnswer),
+        )
+    }
+
+    @Test
+    fun `an answer beats a notice`() {
+        // The user asked for one and Bit volunteered the other, which is the
+        // principle already holding up two other rows of this table.
+        assertEquals(
+            BitDisplay.Answer(anAnswer, Mood.IDLE),
+            resolve(notice = aNotice, answer = anAnswer),
+        )
+    }
+
+    @Test
+    fun `a question beats an answer`() {
+        // Nothing informative may bury something waiting to be answered, and
+        // an answer to a different question is exactly that.
+        assertEquals(
+            BitDisplay.Speech(aPrompt, Mood.IDLE),
+            resolve(prompt = aPrompt, answer = anAnswer),
+        )
+    }
+
+    @Test
+    fun `the readout beats an answer`() {
+        // The tap was 40 ms ago and the answer was not.
+        assertEquals(hud, resolve(hud = hud, answer = anAnswer))
+    }
+
+    @Test
+    fun `an answer beats the retreat`() {
+        // It must, or an answer arriving while Bit is docked would be
+        // computed and never shown. A command is an interaction, so the host
+        // will normally have un-docked by now, but the table does not get to
+        // rely on that.
+        assertEquals(
+            BitDisplay.Answer(anAnswer, Mood.IDLE),
+            resolve(docked = true, answer = anAnswer),
+        )
+    }
+
+    @Test
+    fun `an answer carries the resting mood, not the raw one`() {
+        // The same substitution every other row makes: a curfew is DORMANT
+        // and an armed sink is ARMED, whatever the accumulated time says.
+        assertEquals(
+            BitDisplay.Answer(anAnswer, Mood.DORMANT),
+            resolve(mood = Mood.ANNOYED, curfew = true, answer = anAnswer),
+        )
+    }
+
+    @Test
+    fun `an answer and a speech share one row`() {
+        // Both are Spoken, which is what lets the host blank Bit's usual slot
+        // and draw one Bit in the speech row rather than two.
+        assertTrue(resolve(answer = anAnswer) is BitDisplay.Spoken)
+        assertTrue(resolve(notice = aNotice) is BitDisplay.Spoken)
+    }
+
 }
