@@ -1,5 +1,6 @@
 package dev.molasses.core.util
 
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -13,6 +14,9 @@ class ConvertTest {
 
     private fun error(amount: Double, from: String, to: String): Convert.Error =
         (Convert.convert(amount, from, to) as Convert.Result.Failed).error
+
+    private fun error(line: String): Convert.Error =
+        (Convert.parse(line) as Convert.Result.Failed).error
 
     // ----------------------------------------------------------- the numbers
 
@@ -179,4 +183,137 @@ class ConvertTest {
             0.0,
         )
     }
+    // ----------------------------------------------------------- the aliases
+
+    @Test
+    fun `a unit answers to its full name and its plural`() {
+        assertEquals(Convert.unitFor("km"), Convert.unitFor("kilometers"))
+        assertEquals(Convert.unitFor("km"), Convert.unitFor("kilometre"))
+        assertEquals(Convert.unitFor("mi"), Convert.unitFor("miles"))
+        assertEquals(Convert.unitFor("ft"), Convert.unitFor("feet"))
+        assertEquals(Convert.unitFor("in"), Convert.unitFor("inches"))
+        assertEquals(Convert.unitFor("lb"), Convert.unitFor("pounds"))
+        assertEquals(Convert.unitFor("st"), Convert.unitFor("stone"))
+        assertEquals(Convert.unitFor("c"), Convert.unitFor("celsius"))
+        assertEquals(Convert.unitFor("f"), Convert.unitFor("fahrenheit"))
+    }
+
+    @Test
+    fun `an alias is matched exactly and never fuzzily`() {
+        // The thing that must not happen in a converter whose claim is that
+        // it does not fabricate numbers. A prefix match would make "kilomet"
+        // and "m" into the same answer, and "mile" is one character from
+        // "mi" in a table that holds both as distinct rows.
+        assertNull(Convert.unitFor("kilomet"))
+        assertNull(Convert.unitFor("kilometerss"))
+        assertNull(Convert.unitFor("mils"))
+        assertNull(Convert.unitFor("kilo"))
+        assertNull(Convert.unitFor("kilos"))
+    }
+
+    @Test
+    fun `no spelling is claimed by two units`() {
+        // A duplicate would resolve to whichever row came last and nothing
+        // would say so. The table is the only place a spelling exists, so
+        // this is the only place a collision can be caught.
+        val all = Convert.UNITS.flatMap { Convert.spellingsOf(it) }
+        assertEquals(all.size, all.distinct().size)
+    }
+
+    @Test
+    fun `an alias converts exactly as its canonical token does`() {
+        assertEquals(
+            value(5.0, "km", "mi"),
+            (Convert.parse("5 kilometers miles") as Convert.Result.Value).value,
+            0.0,
+        )
+    }
+
+    // ------------------------------------------------------------ the joiner
+
+    @Test
+    fun `a joiner between the units is consumed`() {
+        val plain = (Convert.parse("5 km mi") as Convert.Result.Value).value
+        for (line in listOf("5 km to mi", "5 km in mi", "5 km into mi")) {
+            assertEquals(line, plain, (Convert.parse(line) as Convert.Result.Value).value, 0.0)
+        }
+    }
+
+    @Test
+    fun `the phrasing the aliases are for`() {
+        assertEquals(
+            value(5.0, "km", "mi"),
+            (Convert.parse("5 kilometers to miles") as Convert.Result.Value).value,
+            0.0,
+        )
+    }
+
+    @Test
+    fun `in is a unit in a three token line`() {
+        // The collision, resolved by position. Stripping "in" wherever it
+        // appeared would turn this into a two token line and a refusal.
+        assertEquals(30.48, (Convert.parse("12 in cm") as Convert.Result.Value).value, 1e-9)
+        assertEquals(Convert.unitFor("in"), (Convert.parse("5 cm in") as Convert.Result.Value).unit)
+    }
+
+    @Test
+    fun `in is a joiner in a four token line, even before itself`() {
+        // The case any lookup-based rule would have needed an exception for.
+        val direct = (Convert.parse("5 cm in") as Convert.Result.Value).value
+        assertEquals(direct, (Convert.parse("5 cm in in") as Convert.Result.Value).value, 0.0)
+        assertEquals(direct, (Convert.parse("5 cm to inches") as Convert.Result.Value).value, 0.0)
+    }
+
+    @Test
+    fun `a fourth token that is not a joiner is refused`() {
+        assertEquals(Convert.Error.NOT_A_NUMBER, error("5 km plus mi"))
+        assertEquals(Convert.Error.NOT_A_NUMBER, error("5 km mi mi"))
+        assertEquals(Convert.Error.NOT_A_NUMBER, error("5 km to mi to mi"))
+    }
+
+    @Test
+    fun `no unit spelling is also a joiner`() {
+        // Except "in", which is the documented collision and is settled by
+        // position. Any second one would need its own argument, so this
+        // fails rather than letting one arrive quietly.
+        val spellings = Convert.UNITS.flatMap { Convert.spellingsOf(it) }.toSet()
+        assertEquals(setOf("in"), spellings.intersect(Convert.NOISE))
+    }
+
+    // ------------------------------------------------- a slash is not a date
+
+    @Test
+    fun `a slash in a unit token is a unit, not an ambiguous date`() {
+        // DateMath refuses any token with a slash, because 25/12 and 12/25
+        // are the same characters read two ways. That refusal lives in
+        // DateMath and is reached only by the date verb: this parser has no
+        // date logic, calls nothing that does, and reads a slash as part of
+        // a spelling like any other character.
+        assertEquals(Convert.unitFor("kph"), Convert.unitFor("km/h"))
+        assertEquals(Convert.unitFor("mph"), Convert.unitFor("mi/h"))
+        assertEquals(
+            value(100.0, "kph", "mph"),
+            (Convert.parse("100 km/h mph") as Convert.Result.Value).value,
+            0.0,
+        )
+        assertEquals(
+            value(60.0, "mph", "kph"),
+            (Convert.parse("60 mi/h to km/h") as Convert.Result.Value).value,
+            0.0,
+        )
+    }
+
+    @Test
+    fun `the two parsers share nothing that could leak a date refusal`() {
+        // Asserted as behaviour rather than as a call graph: a slash token
+        // that DateMath refuses outright is a working unit here, and a date
+        // that parses there is an unknown unit here rather than a date.
+        assertEquals(
+            DateMath.Error.NUMERIC_DATE,
+            (DateMath.parse("until 25/12/2026", LocalDate.of(2026, 9, 18))
+                as DateMath.Result.Failed).error,
+        )
+        assertEquals(Convert.Error.UNKNOWN_UNIT, error("5 25/12/2026 km"))
+    }
+
 }

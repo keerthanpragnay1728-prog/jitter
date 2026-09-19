@@ -553,7 +553,7 @@
       a converter nobody uses twice.
     -->
     <string name="cmd_desc_calc">Work out an expression. A percent sign always means a hundredth of what it follows.</string>
-    <string name="cmd_desc_conv">Convert between km mi, m ft, cm in, kg lb, g oz, kg st, c f, kph mph.</string>
+    <string name="cmd_desc_conv">Convert between km mi, m ft, cm in, kg lb, g oz, kg st, c f, kph mph. Full names, plurals and a joining word all work: 5 kilometers to miles.</string>
     <string name="cmd_desc_days">Count days until, since, or between two dates. Write a year as 2026-12-25.</string>
     <!--
       The manual carries the reason the ack no longer has room for, and the
