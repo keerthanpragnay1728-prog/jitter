@@ -996,6 +996,13 @@ fun TerminalHomeView(
 
     // A long lock held for a second Enter. Null except in that window.
     var pending by remember { mutableStateOf<ConfirmPrompt.Pending?>(null) }
+    // The answer to the last utility command, already rendered.
+    //
+    // Not a reaction and therefore not on a clock. It is cleared by the three
+    // things that mean the user has moved on: the next keystroke, the next
+    // command, and leaving the launcher. See BitDisplay.Answer for why a
+    // duration was the wrong shape rather than the wrong number.
+    var answer by remember { mutableStateOf<String?>(null) }
 
     // The dim remainder of a unique verb prefix, drawn under the caret.
     val ghost = remember(query) { CommandParser.ghostFor(query) }
@@ -1081,6 +1088,11 @@ fun TerminalHomeView(
         pending = null
         showManual = false
         messagingChoices = null
+        // Called on the way out and on the way back in, which is where an
+        // answer stops being one. A conversion still sitting there from
+        // before you left is stale content on a surface whose whole argument
+        // is that nothing sits on it without earning the space.
+        answer = null
     }
 
     /** Launch, and leave the prompt empty behind it. */
@@ -1286,6 +1298,7 @@ fun TerminalHomeView(
     // write lands cannot deliver it twice.
     var deliveringId by remember { mutableStateOf<String?>(null) }
 
+
     val visibleNotice = liveNotice?.takeIf {
         !ConsoleSpeech.noticeExpired(bitTickMs - noticeStartedTick)
     }
@@ -1353,6 +1366,7 @@ fun TerminalHomeView(
             curfew = curfewEndMinuteOfDay != null,
             docked = docked,
             penaltyAccruing = cycle.penaltyAccruing,
+            answer = answer,
             // The battery reading the power bar is already showing. Below
             // five percent Bit changes identity; at fifteen the bar has
             // already dimmed a step. An escalation, not the same signal
@@ -1367,7 +1381,7 @@ fun TerminalHomeView(
             // usual row holds the empty slot. The row keeps its height, so
             // nothing below it moves, and there is one Bit rather than a face
             // here and a second one down there.
-            frame = if (display is BitDisplay.Speech) {
+            frame = if (display is BitDisplay.Spoken) {
                 BitStateMachine.BitFrame(face = "")
             } else {
                 BitStateMachine.frame(display, reactionAgeMs, bitTickMs, blinking)
@@ -1464,34 +1478,46 @@ fun TerminalHomeView(
         // overlay: no new window, nothing in the collision guard, no exposure
         // to the financial suppression set. Bit speaks here or it does not
         // speak.
-        val speaking = display as? BitDisplay.Speech
-        if (speaking != null) {
+        val spoken = display as? BitDisplay.Spoken
+        if (spoken != null) {
+            val said = spoken as? BitDisplay.Speech
             ConsoleSpeechRow(
                 face = BitGlyph.pad(
-                    BitStateMachine.frame(speaking, reactionAgeMs, bitTickMs, blinking).face,
+                    BitStateMachine.frame(spoken, reactionAgeMs, bitTickMs, blinking).face,
                 ),
-                // Resolved through the context rather than stringResource so
-                // the format call can be guarded. A persisted line carries
-                // however many arguments it was queued with, and a file
-                // written by a different build could supply fewer than the
-                // copy takes, which is an IllegalFormatException on a row
-                // that is meant to be the gentlest thing in the app.
-                text = ConsoleCopy.textRes(speaking.line.id)?.let { res ->
-                    runCatching {
-                        context.getString(res, *speaking.line.args.toTypedArray())
-                    }.getOrDefault("")
-                } ?: "",
-                prompt = speaking.line as? ConsoleLine.Prompt,
+                text = when (spoken) {
+                    // Already rendered by the dispatcher, which resolved the
+                    // answer and its note through the context before the two
+                    // were joined. Nothing to look up and nothing to guard.
+                    is BitDisplay.Answer -> spoken.text
+                    // Resolved through the context rather than stringResource
+                    // so the format call can be guarded. A persisted line
+                    // carries however many arguments it was queued with, and
+                    // a file written by a different build could supply fewer
+                    // than the copy takes, which is an IllegalFormatException
+                    // on a row that is meant to be the gentlest thing in the
+                    // app.
+                    is BitDisplay.Speech -> ConsoleCopy.textRes(spoken.line.id)?.let { res ->
+                        runCatching {
+                            context.getString(res, *spoken.line.args.toTypedArray())
+                        }.getOrDefault("")
+                    } ?: ""
+                },
+                prompt = said?.line as? ConsoleLine.Prompt,
                 onAnswer = { confirmed ->
                     // Both answers clear it. What [DO IT] runs is the action
                     // the producer named, and no producer emits a prompt yet,
                     // so the effect table is empty rather than guessed at.
-                    if (confirmed) runConsoleAction(speaking.line)
+                    if (confirmed && said != null) runConsoleAction(said.line)
                     liveNotice = null
                     deliveringId = null
                     onAnswerConsolePrompt()
                 },
                 onDismissNotice = {
+                    // One dismissal for the one row. An answer is the only
+                    // thing here the user asked for, so it is also the only
+                    // thing they might dismiss on purpose.
+                    answer = null
                     liveNotice = null
                     deliveringId = null
                 },
@@ -1575,6 +1601,10 @@ fun TerminalHomeView(
                         // armed would mean an Enter on a half-typed line runs
                         // something that was confirmed in a different form.
                         pending = ConfirmPrompt.onTextChanged(pending, next)
+                        // And any edit clears the last answer. Starting to
+                        // type is the user moving on, which is the whole of
+                        // what an answer waits for.
+                        answer = null
                         lastKeystrokeMs = SystemClock.elapsedRealtime()
                     },
                     textStyle = TextStyle(
@@ -1594,6 +1624,11 @@ fun TerminalHomeView(
                             // into for no reason. A
                             // confirmation keeps it, because the user has to
                             // press Go again.
+                            // Cleared before the branch, so the Answered
+                            // branch below is the only thing that can put one
+                            // back. Clearing inside each other branch would
+                            // be seven places to remember instead of one.
+                            answer = null
                             val outcome = submit()
                             if (outcome !is DispatchResult.NeedsConfirmation) {
                                 keyboard?.hide()
@@ -1603,11 +1638,12 @@ fun TerminalHomeView(
                                     react(BitStateMachine.Reaction.Confirm(outcome.message(context)))
                                     query = ""
                                 }
-                                // The same face, a longer line. An answer is
-                                // read rather than glanced at, and a number
-                                // the user is about to use is read twice.
+                                // Not a reaction. It stays until the user
+                                // does something else, which is the honest
+                                // lifetime for content they asked for and may
+                                // be copying somewhere.
                                 is DispatchResult.Answered -> {
-                                    react(BitStateMachine.Reaction.Answer(outcome.message(context)))
+                                    answer = outcome.message(context)
                                     query = ""
                                 }
                                 // A third face, not the dry one. "Locks are
