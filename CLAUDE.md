@@ -398,6 +398,59 @@ System-bound services (`AccessibilityService`, `NotificationListenerService`)
 are permitted because the OS requires them to be discrete classes and controls
 their binding lifecycle.
 
+## What earns a place on the console
+
+**A command earns its place when it takes a bounded input, returns one
+answer, and leaves nothing behind. If it creates state the user will come
+back to read, it belongs in an app, however convenient it would be here.**
+
+Three utilities were admitted on it: `calc`, `conv` and `days`. Each takes a
+line, answers once, and keeps nothing between calls, which every one of their
+test files asserts directly rather than leaving as a claim.
+
+### The first clause is not decoration, and here is where it bit
+
+The second clause does most of the work and is easy to read as the whole
+rule. It is not. The first clause asks a separate question: **does opening
+the thing that already does this cost more attention than the task itself?**
+
+A dictionary is the case that separates them, and it is recorded here because
+it passes everything the second clause asks and still fails.
+
+It is bounded, stateless and offline. Payload is not the objection either: a
+stripped one-line lexicon is about fifty thousand headwords at roughly sixty
+bytes, so about 3 MB raw and about 1.2 MB with shared-prefix or trie
+encoding. That is meaningful against a sub-10 MB APK and not disqualifying.
+
+It fails because **nothing gets opened for a definition today.** Long-press a
+word and Android offers one inline, at the only place an unfamiliar word is
+ever met, which is inside something being read. The launcher version costs
+leaving the text, holding the word in your head, going home, typing `def` and
+typing the word. That is strictly more attention than what it would replace,
+in the case that happens almost every time. Same shape as a torch: the OS
+already does it closer to where it is needed.
+
+Second and independent: a lexicon invites browsing in a way a calculator does
+not, because one word suggests another. Fifty thousand things on a launcher
+surface passes the letter of the second clause and fails its spirit.
+
+### The honest limit on that argument, and what would change it
+
+The long-press route is not universal. It needs selectable text, so it fails
+on a word inside an image or a video frame, and some apps replace the
+selection menu with their own. In exactly those cases the launcher version
+would work where the platform does not.
+
+That is a real gap and it is not what the feature would be for. A feature
+justified only by its fallback case is a feature whose common case is a
+regression, and the browsing objection stands on its own regardless.
+
+So it is a no, and the evidence that would reopen it is named rather than
+left implicit: **a field tester reporting that they actually hit the
+unselectable-text case often enough to go looking for a way to look a word
+up.** Not a guess about how often it happens. The inset constants are held
+the same way, for the same reason.
+
 ## The accessibility profile is user-visible
 
 Banking and UPI apps read the declared `AccessibilityServiceInfo` of every

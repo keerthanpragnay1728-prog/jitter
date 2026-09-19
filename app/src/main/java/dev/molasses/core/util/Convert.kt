@@ -27,6 +27,12 @@ package dev.molasses.core.util
  * `st` is admitted on the rule as written rather than as an exception to it.
  * It is regional, and it is exactly fourteen pounds everywhere it is used.
  *
+ * ## The rule binds a spelling too
+ * A unit carries its other spellings, so `kilometers` and `km/h` reach the
+ * same row, matched exactly and never fuzzily. The admission rule applies to
+ * each of them: `kilo` is absent because a runner and a cook mean different
+ * things by it, which is the same test `st` passed and volume failed.
+ *
  * ## Why the table is affine and not a multiplier
  * Celsius to Fahrenheit is `c * 9/5 + 32`, which is not a ratio, so a table
  * of scale factors would need temperature to take its own path around it. An
@@ -59,6 +65,18 @@ object Convert {
         val dimension: Dimension,
         val factor: Double,
         val offset: Double = 0.0,
+        /**
+         * Other spellings of the same unit, matched exactly.
+         *
+         * Exact and never fuzzy. A prefix or edit-distance match would turn
+         * a typo into a silent wrong answer in a converter whose whole claim
+         * is that it does not fabricate numbers, and `m` is one character
+         * from `mi` in a table that holds both.
+         *
+         * They live on the unit rather than in a map beside it, so a
+         * spelling cannot exist without a unit to belong to.
+         */
+        val aliases: List<String> = emptyList(),
     )
 
     /**
@@ -69,27 +87,51 @@ object Convert {
      */
     val UNITS: List<Unit> = listOf(
         // Length, base metres.
-        Unit("m", Dimension.LENGTH, 1.0),
-        Unit("km", Dimension.LENGTH, 1000.0),
-        Unit("cm", Dimension.LENGTH, 0.01),
-        Unit("mi", Dimension.LENGTH, 1609.344),
-        Unit("ft", Dimension.LENGTH, 0.3048),
-        Unit("in", Dimension.LENGTH, 0.0254),
+        Unit("m", Dimension.LENGTH, 1.0, aliases = listOf("meter", "meters", "metre", "metres")),
+        Unit(
+            "km", Dimension.LENGTH, 1000.0,
+            aliases = listOf("kilometer", "kilometers", "kilometre", "kilometres"),
+        ),
+        Unit(
+            "cm", Dimension.LENGTH, 0.01,
+            aliases = listOf("centimeter", "centimeters", "centimetre", "centimetres"),
+        ),
+        Unit("mi", Dimension.LENGTH, 1609.344, aliases = listOf("mile", "miles")),
+        Unit("ft", Dimension.LENGTH, 0.3048, aliases = listOf("foot", "feet")),
+        Unit("in", Dimension.LENGTH, 0.0254, aliases = listOf("inch", "inches")),
         // Mass, base kilograms.
-        Unit("kg", Dimension.MASS, 1.0),
-        Unit("g", Dimension.MASS, 0.001),
-        Unit("lb", Dimension.MASS, 0.45359237),
-        Unit("oz", Dimension.MASS, 0.028349523125),
-        Unit("st", Dimension.MASS, 6.35029318),
+        //
+        // "kilo" and "kilos" are deliberately absent. The admission rule
+        // above applies to a spelling as much as to a unit, and a runner
+        // saying "five kilos" means kilometres about as often as a cook
+        // means kilograms. Every other alias here has one reading.
+        Unit(
+            "kg", Dimension.MASS, 1.0,
+            aliases = listOf("kilogram", "kilograms", "kilogramme", "kilogrammes"),
+        ),
+        Unit("g", Dimension.MASS, 0.001, aliases = listOf("gram", "grams", "gramme", "grammes")),
+        Unit("lb", Dimension.MASS, 0.45359237, aliases = listOf("lbs", "pound", "pounds")),
+        Unit("oz", Dimension.MASS, 0.028349523125, aliases = listOf("ounce", "ounces")),
+        Unit("st", Dimension.MASS, 6.35029318, aliases = listOf("stone", "stones")),
         // Temperature, base Celsius. The reason the table is affine.
-        Unit("c", Dimension.TEMPERATURE, 1.0),
-        Unit("f", Dimension.TEMPERATURE, 5.0 / 9.0, -160.0 / 9.0),
+        Unit("c", Dimension.TEMPERATURE, 1.0, aliases = listOf("celsius", "centigrade")),
+        Unit("f", Dimension.TEMPERATURE, 5.0 / 9.0, -160.0 / 9.0, aliases = listOf("fahrenheit")),
         // Speed, base kilometres per hour.
-        Unit("kph", Dimension.SPEED, 1.0),
-        Unit("mph", Dimension.SPEED, 1.609344),
+        //
+        // The slash spellings are the reason this table is consulted before
+        // anything else looks at the token. A slash means an ambiguous date
+        // in `$ days` and means nothing at all here, which is safe because
+        // the two parsers share no code and neither calls the other.
+        Unit("kph", Dimension.SPEED, 1.0, aliases = listOf("km/h", "kmh", "kmph")),
+        Unit("mph", Dimension.SPEED, 1.609344, aliases = listOf("mi/h")),
     )
 
-    private val BY_TOKEN: Map<String, Unit> = UNITS.associateBy { it.token }
+    /** Every spelling of every unit. `ConvertTest` asserts none is claimed twice. */
+    private val BY_TOKEN: Map<String, Unit> =
+        UNITS.flatMap { u -> spellingsOf(u).map { it to u } }.toMap()
+
+    /** A unit's canonical token and its aliases, which is what a reader may type. */
+    fun spellingsOf(unit: Unit): List<String> = listOf(unit.token) + unit.aliases
 
     enum class Error {
         /** A token that is not an admitted unit. */
@@ -131,16 +173,48 @@ object Convert {
     }
 
     /**
-     * Parse and convert `5 km mi`.
+     * Words that join two units and mean nothing.
      *
-     * Three tokens, in that order. The amount is not an expression: a
-     * converter that evaluated `2+3 km mi` would be a calculator wearing a
-     * second verb, and the two are separate commands on purpose.
+     * Closed and short on purpose. Every word here is one the alias table can
+     * never use, and a longer list is a longer list of spellings a unit is
+     * forbidden from having.
+     *
+     * `in` is on it and is also the token for inches, which is the one real
+     * collision in this grammar and is settled by [parse] positionally rather
+     * than by preferring one reading. See there.
+     */
+    val NOISE: Set<String> = setOf("to", "in", "into")
+
+    /**
+     * Parse and convert `5 km mi`, or `5 kilometers to miles`.
+     *
+     * ## Three tokens, or four with a joiner in the middle
+     * The amount is not an expression: a converter that evaluated
+     * `2+3 km mi` would be a calculator wearing a second verb, and the two
+     * are separate commands on purpose.
+     *
+     * ## Why the joiner is found by position and not by lookup
+     * `in` means inches and also means "expressed in". Stripping it wherever
+     * it appears would break `12 in cm`, and preferring the unit would break
+     * `5 km in mi`, so neither reading can win globally.
+     *
+     * Position settles it without a preference. A three token line is an
+     * amount and two units, so `in` there is a unit. A four token line is an
+     * amount, a unit, a joiner and a unit, so the word at index two is a
+     * joiner. `5 cm in in` is four tokens and converts centimetres to inches,
+     * which is the case that would have needed a special rule under any
+     * lookup-based scheme and needs none here.
+     *
+     * Anything else is [Error.NOT_A_NUMBER], which is the shape refusal.
      */
     fun parse(input: String): Result {
-        val parts = input.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-        if (parts.size != 3) return Result.Failed(Error.NOT_A_NUMBER)
-        val amount = parts[0].toDoubleOrNull() ?: return Result.Failed(Error.NOT_A_NUMBER)
-        return convert(amount, parts[1], parts[2])
+        val parts = input.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val tokens = when {
+            parts.size == 3 -> parts
+            parts.size == 4 && parts[2] in NOISE -> listOf(parts[0], parts[1], parts[3])
+            else -> return Result.Failed(Error.NOT_A_NUMBER)
+        }
+        val amount = tokens[0].toDoubleOrNull() ?: return Result.Failed(Error.NOT_A_NUMBER)
+        return convert(amount, tokens[1], tokens[2])
     }
 }
