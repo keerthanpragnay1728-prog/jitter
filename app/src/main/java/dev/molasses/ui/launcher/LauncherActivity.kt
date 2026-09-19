@@ -1152,21 +1152,31 @@ fun TerminalHomeView(
     // Section 05: retreat while typing or idle. Docked Bit answers a question
     // on tap; undocked Bit keeps the startle reaction. One state, two
     // behaviours, and no new gesture to learn.
-    val docked = BitDock.isDocked(
-        typing = query.isNotEmpty(),
+    // Derived here for rendering and re-derived at the tap, both through
+    // dockedNow(), so the two can never be computed from different values.
+    // A Boolean captured in the tap lambda would be whatever the composition
+    // that built that lambda saw, and the tap decision is the one place a
+    // stale answer costs the whole gesture.
+    fun dockedNow(): Boolean = BitDock.isDocked(
+        hasText = query.isNotEmpty(),
         msSinceInteraction = SystemClock.elapsedRealtime() - lastBitTouchMs,
+        msSinceKeystroke = SystemClock.elapsedRealtime() - lastKeystrokeMs,
     )
+
+    val docked = dockedNow()
 
     // Derived, not written. This used to be a state assignment in the middle
     // of composition, which Compose treats as a backwards write: it happened
     // to converge because the condition is false afterwards, but it is
     // unsupported and it had never been run. Deriving costs nothing and needs
     // no timer either, because bitTickMs is already ticking for the blink.
-    val hudVisibleStep = if (BitHud.isExpired(bitTickMs - hudStartedTick)) {
+    fun hudStepNow(): HudStep = if (BitHud.isExpired(bitTickMs - hudStartedTick)) {
         HudStep.NONE
     } else {
         hudStep
     }
+
+    val hudVisibleStep = hudStepNow()
 
     // Drives the reaction clock, and only while a reaction is running. An
     // always-on ticker would recompose the console forever for nothing.
@@ -1369,7 +1379,7 @@ fun TerminalHomeView(
                 // idle clock before the branch un-docked Bit on the tap that
                 // opened the readout, so the second tap took the other branch
                 // and two thirds of the readout was unreachable.
-                val action = BitTap.onTap(docked, hudVisibleStep, taps)
+                val action = BitTap.onTap(dockedNow(), hudStepNow(), taps)
                 when (action) {
                     is BitTap.Action.StepHud -> {
                         hudStep = action.step

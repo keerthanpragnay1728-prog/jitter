@@ -264,15 +264,25 @@ object BitStateMachine {
         CONFIRM_RISE_MS + CONFIRM_HOLD_MS + CONFIRM_FALL_MS + CONFIRM_LINGER_MS
 
     /**
-     * Five seconds, for a line that is an answer rather than an
+     * Nine seconds, for a line that is an answer rather than an
      * acknowledgement.
      *
-     * The number is chosen and not measured, like [CONFIRM_TOTAL_MS] above
-     * it. The reasoning is that 1.6 s was sized for text the user could
-     * predict before reading it, and none of `200.1`, `3.106856 mi` or
-     * `98 days` can be predicted: the eye has to arrive, read digits it has
-     * no expectation of, and often read them again because they are about to
-     * be used somewhere else.
+     * 1.6 s was sized for text the user could predict before reading it, and
+     * none of `200.1`, `3.106856 mi` or `98 days` can be predicted: the eye
+     * has to arrive, read digits it has no expectation of, and often read
+     * them again because they are about to be used somewhere else.
+     *
+     * Five was the first guess and the device says it is short. Two lines is
+     * the case that settles it: an answer with a note under it is two reads
+     * and a glance between them, and five seconds covers about one and a
+     * half of that.
+     *
+     * Nine is still a clock and that is the point. A reaction with no expiry
+     * would sit above everything the precedence table puts below it for as
+     * long as the launcher is open, which is what makes an indefinite hold a
+     * different mechanism rather than a larger number. That mechanism is
+     * `ConsoleLine`, and moving there is a structural change rather than a
+     * constant.
      *
      * It does not trip the ceiling [FAILED_TOTAL_MS] documents. That ceiling
      * is about a held expression starting to read as a state, and the face is
@@ -280,7 +290,7 @@ object BitStateMachine {
      * a confirmation. A neutral face with a line beside it is Bit with
      * something to say, which is what this is.
      */
-    const val ANSWER_TOTAL_MS = 5_000L
+    const val ANSWER_TOTAL_MS = 9_000L
 
     /**
      * Failure holds longer than success, and longer than it used to.
