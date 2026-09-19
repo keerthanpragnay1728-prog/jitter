@@ -2,6 +2,8 @@ package dev.molasses.core.util
 
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DateMathTest {
@@ -189,11 +191,6 @@ class DateMathTest {
     }
 
     @Test
-    fun `a year alongside a month name is not one of the forms`() {
-        assertEquals(DateMath.Error.UNREADABLE_DATE, error("days until 25 dec 2026"))
-    }
-
-    @Test
     fun `each rejection says which thing was wrong`() {
         assertEquals(DateMath.Error.EMPTY, error("   "))
         assertEquals(DateMath.Error.UNKNOWN_VERB, error("days"))
@@ -209,4 +206,46 @@ class DateMathTest {
         DateMath.parse("days since 1 jan", LocalDate.of(2001, 5, 5))
         assertEquals(first, days("days until 25 dec"))
     }
+    // ------------------------------------------- what the caller may explain
+
+    @Test
+    fun `an iso date needs no explaining`() {
+        assertFalse(span("days until 2026-12-25").resolved)
+        assertFalse(span("days between 2026-01-01 and 2027-01-01").resolved)
+    }
+
+    @Test
+    fun `a bare day and month was resolved, and says so`() {
+        assertTrue(span("days until 25 dec").resolved)
+        assertTrue(span("days since 25 dec").resolved)
+        assertTrue(span("days between 25 dec and 1 jan").resolved)
+    }
+
+    @Test
+    fun `a relative word was resolved, and says so`() {
+        assertTrue(span("days until tomorrow").resolved)
+        assertTrue(span("days until today").resolved)
+    }
+
+    @Test
+    fun `one resolved date in a span is enough`() {
+        assertTrue(span("days between 2026-01-01 and 25 dec").resolved)
+        assertTrue(span("days between 25 dec and 2027-01-01").resolved)
+    }
+
+    @Test
+    fun `a year beside a month name names the form to use instead`() {
+        // Not UNREADABLE_DATE. Every part of this is a date the parser
+        // understands, and nobody guesses from a flat refusal that ISO is
+        // how a year goes in.
+        assertEquals(DateMath.Error.YEAR_NEEDS_ISO, error("days until 25 dec 2026"))
+        assertEquals(DateMath.Error.YEAR_NEEDS_ISO, error("days until december 25 2026"))
+        assertEquals(DateMath.Error.YEAR_NEEDS_ISO, error("days until dec 2026"))
+    }
+
+    @Test
+    fun `three tokens without a year are still just unreadable`() {
+        assertEquals(DateMath.Error.UNREADABLE_DATE, error("days until the last tuesday"))
+    }
+
 }

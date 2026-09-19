@@ -990,7 +990,9 @@ fun TerminalHomeView(
     // The dispatcher, rebuilt only when the action table changes. Surfaces
     // read live state when asked, so nothing here needs to recompose for the
     // service binding or an app being installed.
-    val dispatch = remember(actions) { launcherDispatch(actions) { showManual = true } }
+    val dispatch = remember(actions, context) {
+        launcherDispatch(context, actions) { showManual = true }
+    }
 
     // A long lock held for a second Enter. Null except in that window.
     var pending by remember { mutableStateOf<ConfirmPrompt.Pending?>(null) }
@@ -1589,6 +1591,13 @@ fun TerminalHomeView(
                             when (outcome) {
                                 is DispatchResult.Confirmed -> {
                                     react(BitStateMachine.Reaction.Confirm(outcome.message(context)))
+                                    query = ""
+                                }
+                                // The same face, a longer line. An answer is
+                                // read rather than glanced at, and a number
+                                // the user is about to use is read twice.
+                                is DispatchResult.Answered -> {
+                                    react(BitStateMachine.Reaction.Answer(outcome.message(context)))
                                     query = ""
                                 }
                                 // A third face, not the dry one. "Locks are

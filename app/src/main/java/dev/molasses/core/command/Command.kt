@@ -54,6 +54,36 @@ sealed interface Command {
     /** `$ wifi [on|off]`, `$ dnd [on|off]`. Null toggles. */
     data class Wifi(val enable: Boolean?) : Command
     data class Dnd(val enable: Boolean?) : Command
+
+    /**
+     * `$ calc <expression>`, `$ conv <amount> <from> <to>`,
+     * `$ days until|since|between <date>`.
+     *
+     * ## Why these three carry raw text
+     * Every other command has an argument list this grammar can check. These
+     * three have an argument that is itself a language, with its own parser
+     * and its own four or six named refusals, and re-checking the shape here
+     * would be a second grammar that drifts from the first. So the line is
+     * taken whole and handed on.
+     *
+     * The text is the tokens rejoined with single spaces, not the raw line,
+     * so `render(parse(x))` comes back byte for byte and the history list
+     * holds one spelling per command like everything else.
+     *
+     * ## They are reachable by verb only
+     * Bare arithmetic is never evaluated and app search is untouched: typing
+     * `2+3` filters apps, as it always did. A utility runs when its verb is
+     * typed or when a manual row puts that verb in the prompt. That is what
+     * settles the ambiguity between a calculation and an app called 25, and
+     * it is not negotiable.
+     */
+    data class Calc(val expression: String) : Command
+
+    /** `$ conv <amount> <from> <to>`. See [Calc] for why the text is raw. */
+    data class Conv(val query: String) : Command
+
+    /** `$ days until|since|between <date>`. See [Calc]. */
+    data class Days(val query: String) : Command
 }
 
 /** Why a line did not parse. Every one of these is shown to the user verbatim. */

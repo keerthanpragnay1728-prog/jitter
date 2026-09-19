@@ -33,6 +33,11 @@ object CommandRender {
         is Command.Alarm -> "alarm ${time(command.minuteOfDay)}"
         is Command.Wifi -> "wifi${toggle(command.enable)}"
         is Command.Dnd -> "dnd${toggle(command.enable)}"
+        // The argument is already normalised: the parser rejoins its tokens
+        // with single spaces, so this is the text it will reparse to.
+        is Command.Calc -> "calc ${command.expression}"
+        is Command.Conv -> "conv ${command.query}"
+        is Command.Days -> "days ${command.query}"
     }
 
     /**

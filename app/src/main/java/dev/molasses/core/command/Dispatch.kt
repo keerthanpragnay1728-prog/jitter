@@ -14,6 +14,30 @@ sealed interface DispatchResult {
     /** It ran. */
     data class Confirmed(val ackKey: Int, val args: List<String> = emptyList()) : DispatchResult
 
+    /**
+     * It ran and the answer is the point.
+     *
+     * ## Why this is not a Confirmed with a longer string
+     * `ACK: WIFI PANEL` is feedback about something the user did and already
+     * expects; they glance at it to check it happened. `200.1` is content
+     * they asked for and have not seen before, and they may be copying it
+     * somewhere. The two want different amounts of time on screen, and the
+     * host cannot tell them apart from a string.
+     *
+     * [noteKey] is the second line, and it is null on most answers. It
+     * carries an explanation of something the input was turned into, and it
+     * appears only where the input was turned into something: the percent
+     * substitution in an expression, the year a bare `25 dec` landed in. An
+     * echo on every answer would be a line on screen that most answers have
+     * not earned, which is the thing this app keeps deleting.
+     */
+    data class Answered(
+        val ackKey: Int,
+        val args: List<String> = emptyList(),
+        val noteKey: Int? = null,
+        val noteArgs: List<String> = emptyList(),
+    ) : DispatchResult
+
     /** Bad input. The user can fix this by typing something else. */
     data class Failed(val reasonKey: Int, val args: List<String> = emptyList()) : DispatchResult
 

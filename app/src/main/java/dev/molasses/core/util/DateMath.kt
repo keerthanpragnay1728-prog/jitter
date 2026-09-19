@@ -36,6 +36,17 @@ import java.time.LocalDate
  * seven rather than three hundred and fifty eight. A span has no direction,
  * so two explicit dates in the other order give the same count.
  *
+ * **Seven will be read as a bug, in the other direction from the percent
+ * one.** The reading it looks wrong against is both dates inside the year of
+ * `today`, which puts 25 December after 1 January and answers three hundred
+ * and fifty eight for a range a person wrote as a week. Nobody asks "how long
+ * between Christmas and New Year" meaning the wrong way round the calendar,
+ * and a span that can come out backwards has to be signed or absolute: signed
+ * makes `between` answer negative numbers, absolute makes it answer the long
+ * way round. Reaching forward is the only one of the three that answers the
+ * question asked. The resolved pair is shown beside the count whenever a date
+ * had to be resolved, so the years are on screen rather than inferred.
+ *
  * ## Numeric dates are refused
  * `25/12/2026` and `12/25/2026` are the same characters read two ways by
  * different users, with nothing on screen to say which. Refusing them is the
@@ -66,6 +77,17 @@ object DateMath {
         /** A slash, dash or dot numeric date, which is read two ways. */
         NUMERIC_DATE,
 
+        /**
+         * A month name with a year beside it, as in `25 dec 2026`.
+         *
+         * Its own refusal rather than [UNREADABLE_DATE] because the user
+         * wrote a date this understands in every part, and the only thing
+         * wrong is the spelling. Nobody guesses from "not a date I know"
+         * that ISO is how a year goes in, so the message names the form
+         * instead of just refusing.
+         */
+        YEAR_NEEDS_ISO,
+
         /** Not a date this understands. */
         UNREADABLE_DATE,
     }
@@ -78,7 +100,22 @@ object DateMath {
          * date on the wrong side of today has a true answer and a negative
          * number is it. It is never negative for `between`, which is a span.
          */
-        data class Span(val days: Long, val from: LocalDate, val to: LocalDate) : Result
+        data class Span(
+            val days: Long,
+            val from: LocalDate,
+            val to: LocalDate,
+            /**
+             * True when at least one date was written in a form that had to
+             * be resolved: a bare day and month, or a relative word.
+             *
+             * The caller shows the resolved pair only when this is set. An
+             * ISO date needs no explaining and an echo of it would be a line
+             * that input has not earned. A bare `25 dec` does: which year it
+             * landed in is a decision this made, and so is the forward reach
+             * that puts `between 25 dec and 1 jan` at seven days.
+             */
+            val resolved: Boolean,
+        ) : Result
 
         data class Failed(val error: Error) : Result
     }
@@ -132,17 +169,21 @@ object DateMath {
     }
 
     private fun single(tokens: List<String>, today: LocalDate, forward: Boolean): Result {
-        val date = when (val parsed = dateFrom(tokens, today)) {
-            is Parsed.Bad -> return Result.Failed(parsed.error)
+        val parsed = dateFrom(tokens, today)
+        if (parsed is Parsed.Bad) return Result.Failed(parsed.error)
+
+        val date = when (parsed) {
             is Parsed.Fixed -> parsed.date
             is Parsed.DayMonth ->
                 if (forward) onOrAfter(parsed, today) else onOrBefore(parsed, today)
+            is Parsed.Bad -> null
         } ?: return Result.Failed(Error.UNREADABLE_DATE)
 
+        val resolved = parsed !is Parsed.Fixed || parsed.resolved
         return if (forward) {
-            Result.Span(date.toEpochDay() - today.toEpochDay(), today, date)
+            Result.Span(date.toEpochDay() - today.toEpochDay(), today, date, resolved)
         } else {
-            Result.Span(today.toEpochDay() - date.toEpochDay(), date, today)
+            Result.Span(today.toEpochDay() - date.toEpochDay(), date, today, resolved)
         }
     }
 
@@ -169,14 +210,20 @@ object DateMath {
             is Parsed.Bad -> null
         } ?: return Result.Failed(Error.UNREADABLE_DATE)
 
+        val resolved = (firstParsed !is Parsed.Fixed || firstParsed.resolved) ||
+            (secondParsed !is Parsed.Fixed || secondParsed.resolved)
         val from = if (second < first) second else first
         val to = if (second < first) first else second
-        return Result.Span(to.toEpochDay() - from.toEpochDay(), from, to)
+        return Result.Span(to.toEpochDay() - from.toEpochDay(), from, to, resolved)
     }
 
     /** A date as written, before the verb decides which year it means. */
     private sealed interface Parsed {
-        data class Fixed(val date: LocalDate) : Parsed
+        /**
+         * @param resolved true for a relative word, which named a date
+         *   without writing one. False for ISO, which wrote it.
+         */
+        data class Fixed(val date: LocalDate, val resolved: Boolean) : Parsed
         data class DayMonth(val month: Int, val day: Int) : Parsed
         data class Bad(val error: Error) : Parsed
     }
@@ -188,9 +235,9 @@ object DateMath {
         if (tokens.size == 1) {
             val token = tokens[0]
             when (token) {
-                "today" -> return Parsed.Fixed(today)
-                "tomorrow" -> return Parsed.Fixed(today.plusDays(1))
-                "yesterday" -> return Parsed.Fixed(today.minusDays(1))
+                "today" -> return Parsed.Fixed(today, resolved = true)
+                "tomorrow" -> return Parsed.Fixed(today.plusDays(1), resolved = true)
+                "yesterday" -> return Parsed.Fixed(today.minusDays(1), resolved = true)
             }
             val iso = ISO.matchEntire(token)
             if (iso != null) {
@@ -199,7 +246,8 @@ object DateMath {
                     iso.groupValues[2].toInt(),
                     iso.groupValues[3].toInt(),
                 )
-                return if (date != null) Parsed.Fixed(date) else Parsed.Bad(Error.UNREADABLE_DATE)
+                return if (date != null) Parsed.Fixed(date, resolved = false)
+                else Parsed.Bad(Error.UNREADABLE_DATE)
             }
             if (NUMERIC.matches(token)) return Parsed.Bad(Error.NUMERIC_DATE)
             return Parsed.Bad(Error.UNREADABLE_DATE)
@@ -207,16 +255,28 @@ object DateMath {
 
         // Two tokens, a day and a month in either order. A year alongside a
         // month name is not one of the accepted forms: ISO is how a year is
-        // written, and accepting a third token here would be a second way to
-        // say the same thing.
+        // written, and a second spelling of the same date is a second thing
+        // to keep correct. It gets its own refusal rather than the generic
+        // one, because the user wrote something this understands in every
+        // part and will not guess from "not a date" that the fix is ISO.
+        if (tokens.size == 3 && tokens.any { monthOf(it) != null } && tokens.any { isYear(it) }) {
+            return Parsed.Bad(Error.YEAR_NEEDS_ISO)
+        }
         if (tokens.size != 2) return Parsed.Bad(Error.UNREADABLE_DATE)
         val month = monthOf(tokens[0]) ?: monthOf(tokens[1]) ?: return Parsed.Bad(Error.UNREADABLE_DATE)
         val dayToken = if (monthOf(tokens[0]) != null) tokens[1] else tokens[0]
         if (NUMERIC.matches(dayToken)) return Parsed.Bad(Error.NUMERIC_DATE)
+        // `dec 2026` is the same mistake one token shorter: a month name and
+        // a year, with no day at all.
+        if (isYear(dayToken)) return Parsed.Bad(Error.YEAR_NEEDS_ISO)
         val day = dayToken.toIntOrNull() ?: return Parsed.Bad(Error.UNREADABLE_DATE)
         if (day < 1 || day > 31) return Parsed.Bad(Error.UNREADABLE_DATE)
         return Parsed.DayMonth(month, day)
     }
+
+    /** Four digits, which in a date this app accepts can only be a year. */
+    private fun isYear(token: String): Boolean =
+        token.length == 4 && token.all { it.isDigit() }
 
     /** The month [token] names, three letters or in full, or null. */
     private fun monthOf(token: String): Int? {
