@@ -62,26 +62,35 @@ object ReminderAlarms {
     /**
      * Re-arm every unfired reminder, and fire the ones already due, marked
      * late. Run on BOOT_COMPLETED and on every service connect: alarms do not
-     * survive a reboot, and a force-stop cancels them too.
+     * survive a reboot, and a force-stop cancels them too. The chime sounds
+     * once for the whole backlog, not once per reminder, so a boot with many
+     * missed reminders stays inside the receiver's window.
      */
     suspend fun rescheduleAll(context: Context, store: CycleStateStore, now: StampedInstant) {
+        var firedAny = false
         for (step in ReminderBook.reschedule(store.currentReminders(), now)) {
             when (step) {
                 is ReminderBook.Step.Schedule -> schedule(context, step.reminder.id, step.atWallMs)
-                is ReminderBook.Step.FireLate -> fire(context, store, step.reminder.id, late = true)
+                is ReminderBook.Step.FireLate -> if (markFired(store, step.reminder.id, late = true)) firedAny = true
             }
         }
+        if (firedAny) ReminderChime.play(context)
     }
 
     /**
-     * Mark [id] fired and sound the tone. Once only: an alarm delivered after
-     * a reschedule already fired it late finds it fired and does nothing.
+     * Mark [id] fired and sound the chime, returning after it has played.
+     * Once only: an alarm delivered after a reschedule already fired it late
+     * finds it fired and does nothing.
      */
-    suspend fun fire(context: Context, store: CycleStateStore, id: Long, late: Boolean) {
-        val pending = store.currentReminders().firstOrNull { it.id == id && !it.fired } ?: return
+    suspend fun fire(context: Context, store: CycleStateStore, id: Long) {
+        if (markFired(store, id, late = false)) ReminderChime.play(context)
+    }
+
+    private suspend fun markFired(store: CycleStateStore, id: Long, late: Boolean): Boolean {
+        val pending = store.currentReminders().firstOrNull { it.id == id && !it.fired } ?: return false
         store.markReminderFired(pending.id, late)
-        ReminderChime.play(context)
         Log.i(TAG, "reminder ${pending.id} fired${if (late) " late" else ""}")
+        return true
     }
 
     private fun pendingIntent(context: Context, id: Long): PendingIntent = PendingIntent.getBroadcast(

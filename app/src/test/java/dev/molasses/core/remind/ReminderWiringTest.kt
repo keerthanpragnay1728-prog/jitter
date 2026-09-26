@@ -63,6 +63,38 @@ class ReminderWiringTest {
     }
 
     @Test
+    fun `the chime plays twice, awaited, well inside the receiver window`() {
+        val src = repoFile("app/src/main/java/dev/molasses/monitor/ReminderChime.kt").readText()
+        assertTrue(src.contains("suspend fun play(context: Context)"))
+        val tone = functionBody(src, "private suspend fun tone(")
+        assertTrue(Regex("""generator\.startTone\(""").findAll(tone).count() == 2)
+        assertTrue(tone.indexOf("generator.release()") > tone.lastIndexOf("delay("))
+        val vibrate = functionBody(src, "private suspend fun vibrate(")
+        assertTrue(vibrate.contains("longArrayOf(0L, PULSE_MS, GAP_MS, PULSE_MS)"))
+        assertTrue(vibrate.contains("createWaveform(pattern, -1)"))
+        assertTrue(vibrate.contains("delay(TOTAL_MS)"))
+        // 300 + 200 + 300 + 100. The shortest goAsync window is 10 s.
+        assertTrue(src.contains("const val TOTAL_MS = PULSE_MS + GAP_MS + PULSE_MS + TAIL_MS"))
+        assertTrue(src.contains("const val PULSE_MS = 300L") && src.contains("const val GAP_MS = 200L") && src.contains("const val TAIL_MS = 100L"))
+    }
+
+    @Test
+    fun `the receiver finishes its PendingResult after playback and on every failure`() {
+        val body = functionBody(repoFile("app/src/main/java/dev/molasses/monitor/ReminderReceiver.kt").readText(), "override fun onReceive(")
+        val async = body.indexOf("val pending = goAsync()")
+        val work = body.indexOf("ReminderAlarms.fire(", async)
+        val catch = body.indexOf("catch (e: Exception)", work)
+        val finish = body.indexOf("pending.finish()", catch)
+        assertTrue(async >= 0 && work > async && catch > work && finish > catch)
+        assertTrue(body.substring(catch, finish).contains("} finally {"))
+        val alarms = repoFile("app/src/main/java/dev/molasses/monitor/ReminderAlarms.kt").readText()
+        assertTrue(functionBody(alarms, "suspend fun fire(").contains("ReminderChime.play(context)"))
+        val reschedule = functionBody(alarms, "suspend fun rescheduleAll(")
+        assertTrue("one chime for a backlog", Regex("""ReminderChime\.play\(""").findAll(reschedule).count() == 1)
+        assertTrue(reschedule.indexOf("if (firedAny) ReminderChime.play(context)") > reschedule.indexOf("for (step in"))
+    }
+
+    @Test
     fun `the console row is its own queue, outside the speech budget, until dismissed`() {
         val launcher = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
         val start = launcher.indexOf("ReminderBook.toShow(reminders).firstOrNull()")
