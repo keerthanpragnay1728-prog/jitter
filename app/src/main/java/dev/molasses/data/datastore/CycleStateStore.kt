@@ -569,24 +569,6 @@ class CycleStateStore(context: Context) {
         store.updateData { it.toBuilder().setPreviewStallNonce(it.previewStallNonce + 1).build() }
     }
 
-    /** Debug builds only. Zero restores the curve. */
-    suspend fun setPinnedStallMs(ms: Long) {
-        store.updateData { it.toBuilder().setDebugPinnedStallMs(ms.coerceAtLeast(0)).build() }
-    }
-
-    /**
-     * Debug builds only. Companion to [setPinnedStallMs]: that one pins the
-     * duration, this one pins the probability. Both are needed for a segment D
-     * capture, because at a 10% band the sample count is otherwise impractical.
-     *
-     * Zero restores the curve; 1 to 100 forces that percentage.
-     */
-    suspend fun setForcedProbabilityPct(pct: Int) {
-        store.updateData {
-            it.toBuilder().setDebugForcedProbabilityPct(pct.coerceIn(0, 100)).build()
-        }
-    }
-
     suspend fun clearAll() {
         store.updateData { CycleStateSerializer.defaultValue }
     }

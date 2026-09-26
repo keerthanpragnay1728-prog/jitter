@@ -219,17 +219,6 @@ class MolassesAccessibilityService : AccessibilityService() {
     /** The call precondition for attaching a gate. See `LaunchGate.decide`. */
     private val calls by lazy { CallDetector(this) }
 
-
-    /**
-     * Debug builds only. Overrides the commanded stall with a constant.
-     *
-     * Segment D is measured from a scroll to the first touch the sink eats. A
-     * varying stall duration changes how many scrolls extend an existing arm
-     * rather than starting a new one, which confounds the sample. Pinning the
-     * duration makes arm and disarm transitions countable.
-     */
-    private var pinnedStallMs: Long? = null
-
     /**
      * Packages Jitter must never draw over: the shipped financial set plus
      * whatever the user has added in settings.
@@ -480,14 +469,6 @@ class MolassesAccessibilityService : AccessibilityService() {
                     applyTargets(next)
                 }
 
-                // Debug state editor. The engine holds per-app state in memory
-                // and writes it back at each checkpoint, so an edit to the
-                // store alone would be overwritten within 15 s. Rebuilding the
-                // engine from the edited snapshot is what makes the edit stick.
-                // This drops any open session, which is acceptable for a debug
-                // path and would not be for anything else.
-                pinnedStallMs = state.debugPinnedStallMs.takeIf { it > 0 }
-
                 sensitivePrefixes =
                     SensitivePackages.resolve(state.sensitivePackagePrefixesList)
 
@@ -561,6 +542,12 @@ class MolassesAccessibilityService : AccessibilityService() {
                     }
                 }
 
+                // Debug state editor. The engine holds per-app state in memory
+                // and writes it back at each checkpoint, so an edit to the
+                // store alone would be overwritten within 15 s. Rebuilding the
+                // engine from the edited snapshot is what makes the edit stick.
+                // This drops any open session, which is acceptable for a debug
+                // path and would not be for anything else.
                 if (state.debugOverrideNonce != debugOverrideNonce) {
                     debugOverrideNonce = state.debugOverrideNonce
                     if (ready) {
@@ -708,7 +695,7 @@ class MolassesAccessibilityService : AccessibilityService() {
 
         if (decision.stalls) {
             shutter.arm(
-                ms = pinnedStallMs ?: decision.stallMs,
+                ms = decision.stallMs,
                 scrollEventTimeUptimeMs = eventTime,
                 callbackEntryUptimeMs = callbackEntryUptimeMs,
                 terminal = decision.terminal,
