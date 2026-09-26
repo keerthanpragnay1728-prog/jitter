@@ -40,6 +40,20 @@ class UntrackCoolingOffWiringTest {
     }
 
     @Test
+    fun `the last target gets one extra line, from the live tracked set`() {
+        assertTrue(screen.contains("lastTarget = UntrackCoolingOff.isLastTarget(state.pkg, targets),"))
+        val body = functionBody(panel, "fun UntrackCoolingOffPanel(")
+        val gate = body.indexOf("if (lastTarget) {")
+        val line = body.indexOf("R.string.untrack_last_target")
+        val target = body.indexOf("R.string.untrack_target_fmt")
+        assertTrue(target in 0 until gate && gate < line)
+        assertTrue(line < body.indexOf("when (val p = phase)"))
+        assertTrue(Regex("""R\.string\.untrack_last_target""").findAll(body).count() == 1)
+        val strings = repoFile("app/src/main/res/values/strings.xml").readText()
+        assertTrue(strings.contains("name=\"untrack_last_target\""))
+    }
+
+    @Test
     fun `pausing and back both abandon it`() {
         assertTrue(panel.contains("if (event == Lifecycle.Event.ON_PAUSE) leave(UntrackCoolingOff.Leave.PAUSED)"))
         assertTrue(panel.contains("BackHandler { leave(UntrackCoolingOff.Leave.BACK) }"))

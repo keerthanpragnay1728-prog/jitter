@@ -58,4 +58,12 @@ class UntrackCoolingOffTest {
             assertNull("$how", UntrackCoolingOff.onLeave(started(), how))
         }
     }
+
+    @Test
+    fun `last target only when it is the one tracked package`() {
+        assertTrue(UntrackCoolingOff.isLastTarget(pkg, listOf(pkg)))
+        assertFalse(UntrackCoolingOff.isLastTarget(pkg, listOf(pkg, "com.twitter.android")))
+        assertFalse("not tracked at all", UntrackCoolingOff.isLastTarget(pkg, emptyList()))
+        assertFalse("some other app is the last", UntrackCoolingOff.isLastTarget(pkg, listOf("com.twitter.android")))
+    }
 }

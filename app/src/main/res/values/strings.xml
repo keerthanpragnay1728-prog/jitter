@@ -93,6 +93,7 @@
          screen's, so not translatable. The two answers appear only at zero. -->
     <string name="untrack_title" translatable="false">UNTRACK COOLING-OFF</string>
     <string name="untrack_target_fmt" translatable="false">TARGET // %1$s</string>
+    <string name="untrack_last_target" translatable="false">LAST TARGET. UNTRACKING IT LEAVES NOTHING GATED.</string>
     <string name="untrack_confirm" translatable="false">[ CONFIRM REMOVE ]</string>
     <string name="untrack_keep" translatable="false">[ KEEP TRACKING ]</string>
     <string name="settings_section_quick">Quick launch</string>

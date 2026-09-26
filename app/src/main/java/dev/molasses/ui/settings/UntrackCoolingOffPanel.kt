@@ -47,8 +47,11 @@ import kotlinx.coroutines.delay
  *     ( -_- )
  *     UNTRACK COOLING-OFF
  *     TARGET // <app label>
+ *     LAST TARGET. UNTRACKING IT LEAVES NOTHING GATED.
  *     <seconds>
  * ```
+ *
+ * The fourth line only when [lastTarget]: see [UntrackCoolingOff.isLastTarget].
  *
  * and at zero, [ CONFIRM REMOVE ] and [ KEEP TRACKING ] in place of the
  * number. See [UntrackCoolingOff] for the rules; this only draws them.
@@ -61,6 +64,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun UntrackCoolingOffPanel(
     state: UntrackCoolingOff.State,
+    lastTarget: Boolean,
     onConfirmRemove: () -> Unit,
     onKeepTracking: () -> Unit,
     onLeave: (UntrackCoolingOff.Leave) -> Unit,
@@ -127,6 +131,15 @@ fun UntrackCoolingOffPanel(
                 color = PhosphorDim,
                 textAlign = TextAlign.Center,
             )
+            if (lastTarget) {
+                Text(
+                    text = stringResource(R.string.untrack_last_target),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 14.sp,
+                    color = PhosphorGreen,
+                    textAlign = TextAlign.Center,
+                )
+            }
             Spacer(Modifier.height(16.dp))
             when (val p = phase) {
                 is UntrackCoolingOff.Phase.Counting -> Text(
