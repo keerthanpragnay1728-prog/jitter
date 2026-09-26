@@ -89,6 +89,13 @@
     <string name="settings_section_suffix_fmt" translatable="false">// %1$s</string>
     <string name="settings_targets_none">None</string>
     <string name="settings_section_targets">Target apps</string>
+    <string name="settings_section_quick">Quick launch</string>
+    <string name="settings_quick_body">The rows on the console. Up to five, any app, in the order you add them.</string>
+    <string name="settings_quick_count_fmt">%1$s of %2$s</string>
+    <string name="settings_quick_empty">No rows. The console shows none until you add one.</string>
+    <string name="settings_quick_remove">Remove</string>
+    <string name="settings_quick_full">Five rows. Remove one to add another.</string>
+    <string name="settings_quick_search">Find an app</string>
     <!--
       The lock scrubber, in the target list. The same 1h to 30d ladder the
       grammar accepts, and the same confirmation step above a day, because a
@@ -322,6 +329,9 @@
     <string name="launcher_fav_calendar">[calendar]</string>
     <string name="launcher_fav_calculator">[calculator]</string>
     <string name="launcher_fav_clock">[clock]</string>
+    <!-- A quick-launch row for an app the user chose in CFG: its label,
+         lowercased at the call site. -->
+    <string name="launcher_fav_app_fmt" translatable="false">[%1$s]</string>
     <!--
       Said rather than swallowed. These rows used to wrap startActivity in a
       runCatching and discard the result, so a device with no handler got a

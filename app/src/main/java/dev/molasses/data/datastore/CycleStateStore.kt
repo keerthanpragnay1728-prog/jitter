@@ -16,6 +16,7 @@ import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.lease.LeaseLadder
 import dev.molasses.core.lease.LeaseManager
+import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.lock.PrefixLock
@@ -447,6 +448,39 @@ class CycleStateStore(context: Context) {
      * rollover that promotes it those differ, and the engine's per app state
      * is the one that decides friction.
      */
+    /** The quick-launch rows as stored. Resolve through [QuickLaunch]. */
+    val quickLaunch: Flow<QuickLaunch.Selection> = store.data.map {
+        QuickLaunch.Selection(stored = it.quickLaunchPackagesList.toList(), chosen = it.quickLaunchChosen)
+    }
+
+    /**
+     * Edit the quick-launch rows. The only writer of the list.
+     *
+     * Read-modify-write inside one transaction, resolved from the same state
+     * it writes, for the reason `toggleTarget` gives: resolving one end of a
+     * read-modify-write and not the other is how the target list inverted a
+     * control. [edit] returns null to refuse (full, or a duplicate), which
+     * leaves the state untouched. The write prunes apps [isLaunchable] says
+     * are gone, and sets the chosen flag every time, including on the write
+     * that empties the list.
+     */
+    suspend fun editQuickLaunch(
+        isLaunchable: (String) -> Boolean,
+        edit: (List<QuickLaunch.Entry>) -> List<QuickLaunch.Entry>?,
+    ) {
+        store.updateData { state ->
+            val current = QuickLaunch.resolve(
+                QuickLaunch.Selection(state.quickLaunchPackagesList.toList(), state.quickLaunchChosen),
+            )
+            val next = edit(current) ?: return@updateData state
+            state.toBuilder()
+                .clearQuickLaunchPackages()
+                .addAllQuickLaunchPackages(QuickLaunch.pruned(next, isLaunchable))
+                .setQuickLaunchChosen(true)
+                .build()
+        }
+    }
+
     val appHorizons: Flow<Map<String, Long>> = store.data.map { state ->
         state.appHorizonMsMap.mapValues { (_, ms) -> HorizonPolicy.snap(ms) }
     }

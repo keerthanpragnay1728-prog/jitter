@@ -53,6 +53,7 @@ import dev.molasses.core.settings.CfgAccordion.Section
 import dev.molasses.core.settings.CfgRowKey
 import dev.molasses.core.settings.TargetGrouping
 import dev.molasses.core.command.CommandRender
+import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.lock.LockLadder
 import dev.molasses.core.lock.PrefixLock
 import dev.molasses.core.lock.TargetLock
@@ -61,6 +62,7 @@ import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.ui.AlphaIndex
 import dev.molasses.core.ui.FontScale
+import dev.molasses.data.repo.InstalledApp
 import dev.molasses.engine.TierPolicy
 import kotlinx.coroutines.launch
 
@@ -86,6 +88,8 @@ fun SettingsScreen(
 
     val permissions by vm.permissions.collectAsStateWithLifecycle()
     val installed by vm.installed.collectAsStateWithLifecycle()
+    val launchable by vm.launchable.collectAsStateWithLifecycle()
+    val quickLaunch by vm.quickLaunch.collectAsStateWithLifecycle()
     val targets by vm.targets.collectAsStateWithLifecycle()
     val trackingNothing by vm.trackingNothing.collectAsStateWithLifecycle()
     val gateMode by vm.gateMode.collectAsStateWithLifecycle()
@@ -481,6 +485,22 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.secondary,
                     )
                 }
+            }
+        }
+
+        section(
+            state = accordion,
+            section = Section.QUICK,
+            title = R.string.settings_section_quick,
+            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.QUICK) },
+        ) {
+            item(CfgRowKey.body(Section.QUICK, "editor")) {
+                QuickLaunchEditor(
+                    selection = quickLaunch,
+                    apps = launchable,
+                    onAdd = vm::addQuickLaunch,
+                    onRemove = vm::removeQuickLaunch,
+                )
             }
         }
 
@@ -1126,6 +1146,152 @@ private fun DisableControl(onDisable: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * The console's quick-launch rows: up to [QuickLaunch.MAX_SLOTS], any
+ * launchable app or one of the built-in rows, in the order added.
+ *
+ * Search, not a list of every app. The candidates appear only for a typed
+ * query, a screen of matches at most, because a device has hundreds of
+ * launchable apps and a scroll through all of them to find one is the
+ * interface this app exists to replace. The built-ins that are not already
+ * rows are always offered, since there are only five.
+ *
+ * An app that has been uninstalled is not shown as a row here either. It is
+ * pruned from the stored list by the next edit. See [QuickLaunch].
+ */
+@Composable
+private fun QuickLaunchEditor(
+    selection: QuickLaunch.Selection,
+    apps: List<InstalledApp>,
+    onAdd: (QuickLaunch.Entry) -> Unit,
+    onRemove: (QuickLaunch.Entry) -> Unit,
+) {
+    val labels = remember(apps) { apps.associate { it.pkg to it.label } }
+    val rows = QuickLaunch.visible(selection) { it in labels }
+    val full = rows.size >= QuickLaunch.MAX_SLOTS
+    var query by rememberSaveable { mutableStateOf("") }
+
+    @Composable
+    fun labelFor(entry: QuickLaunch.Entry): String = when (entry) {
+        is QuickLaunch.Entry.App -> labels[entry.pkg] ?: entry.pkg
+        is QuickLaunch.Entry.Row -> stringResource(entry.builtIn.labelRes())
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            stringResource(R.string.settings_quick_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.settings_quick_count_fmt, rows.size.toString(), QuickLaunch.MAX_SLOTS.toString()),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        if (rows.isEmpty()) {
+            Text(
+                stringResource(R.string.settings_quick_empty),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+        }
+        rows.forEach { entry ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            ) {
+                Text(
+                    labelFor(entry),
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                )
+                Text(
+                    stringResource(R.string.settings_quick_remove),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.clickable { onRemove(entry) },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        if (full) {
+            Text(
+                stringResource(R.string.settings_quick_full),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        } else {
+            val builtIns = QuickLaunch.BuiltIn.entries.map { QuickLaunch.Entry.Row(it) }.filter { it !in rows }
+            builtIns.forEach { entry ->
+                Text(
+                    labelFor(entry),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxWidth().clickable { onAdd(entry) }.padding(vertical = 6.dp),
+                )
+            }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text(stringResource(R.string.settings_quick_search)) },
+            )
+            val q = query.trim()
+            if (q.isNotEmpty()) {
+                val matches = apps.asSequence()
+                    .filter { it.label.contains(q, ignoreCase = true) || it.pkg.contains(q, ignoreCase = true) }
+                    .map { QuickLaunch.Entry.App(it.pkg) }
+                    .filter { it !in rows }
+                    .take(QUICK_LAUNCH_MATCHES)
+                    .toList()
+                if (matches.isEmpty()) {
+                    Text(
+                        stringResource(R.string.settings_targets_no_match),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(vertical = 6.dp),
+                    )
+                }
+                matches.forEach { entry ->
+                    Text(
+                        labelFor(entry),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onAdd(entry)
+                                query = ""
+                            }
+                            .padding(vertical = 6.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** One screen of search matches. More than this is a list to scroll, not a search. */
+private const val QUICK_LAUNCH_MATCHES = 12
+
+/**
+ * The bracketed lowercase label a built-in row has on the console, reused
+ * here so the picker names each row the way the console shows it.
+ */
+@StringRes
+fun QuickLaunch.BuiltIn.labelRes(): Int = when (this) {
+    QuickLaunch.BuiltIn.PHONE -> R.string.launcher_fav_phone
+    QuickLaunch.BuiltIn.MESSAGES -> R.string.launcher_fav_messages
+    QuickLaunch.BuiltIn.CALENDAR -> R.string.launcher_fav_calendar
+    QuickLaunch.BuiltIn.CALCULATOR -> R.string.launcher_fav_calculator
+    QuickLaunch.BuiltIn.CLOCK -> R.string.launcher_fav_clock
 }
 
 /**

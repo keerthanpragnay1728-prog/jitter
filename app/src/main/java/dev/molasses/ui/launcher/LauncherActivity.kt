@@ -116,6 +116,7 @@ import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.BitTap
 import dev.molasses.core.console.ConsoleLine
+import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.launch.ShortcutLadder
 import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.console.Greeting
@@ -244,6 +245,12 @@ class LauncherActivity : ComponentActivity() {
             val console by settingsRepository.console
                 .collectAsState(initial = ConsoleState())
 
+            // The quick-launch rows. Untouched reads as the five defaults, so
+            // the initial value is the same answer the store gives a fresh
+            // install. See QuickLaunch.
+            val quickLaunch by settingsRepository.quickLaunch
+                .collectAsState(initial = QuickLaunch.Selection(emptyList(), chosen = false))
+
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showDrawer by remember { mutableStateOf(false) }
                 // A long console lock waiting on the full-screen panel. Held
@@ -316,6 +323,7 @@ class LauncherActivity : ComponentActivity() {
                                 }
                             },
                             onRequestLockConfirm = { lockConfirm = it },
+                            quickLaunch = quickLaunch,
                             // Remembered so the prompt can build its
                             // dispatcher once rather than on every keystroke.
                             actions = remember(pagerState) {
@@ -719,6 +727,7 @@ fun MainLauncherWorkspace(
     actions: LauncherActions,
     onRecordCommand: (String) -> Unit,
     onRequestLockConfirm: (LockConfirmRequest) -> Unit,
+    quickLaunch: QuickLaunch.Selection,
     cycle: CycleReadout,
     curfewEndMinuteOfDay: Int?,
     nowStamped: () -> StampedInstant,
@@ -802,6 +811,7 @@ fun MainLauncherWorkspace(
                     actions = actions,
                     onRecordCommand = onRecordCommand,
                     onRequestLockConfirm = onRequestLockConfirm,
+                    quickLaunch = quickLaunch,
                     cycle = cycle,
                     curfewEndMinuteOfDay = curfewEndMinuteOfDay,
                     nowStamped = nowStamped,
@@ -838,6 +848,8 @@ fun TerminalHomeView(
     onRecordCommand: (String) -> Unit,
     /** Hands a long lock to the full-screen panel at the activity root. */
     onRequestLockConfirm: (LockConfirmRequest) -> Unit,
+    /** The user's quick-launch rows, as stored. Resolved here against [apps]. */
+    quickLaunch: QuickLaunch.Selection,
     cycle: CycleReadout,
     /** Minute of day a bedtime lock lifts, or null when none stands. */
     curfewEndMinuteOfDay: Int?,
@@ -1481,34 +1493,52 @@ fun TerminalHomeView(
         // brackets are the affordance: in a zero-border layout they are the
         // only thing distinguishing something pressable from something
         // listed, and they match [CFG] and the gate's [DO IT].
+        //
+        // The rows are the user's, from CFG, and default to the five this
+        // screen always had. An app row is its label, bracketed and
+        // lowercase like the built-ins. An app that is no longer installed
+        // is not in [apps], so it is skipped here rather than drawn as a row
+        // that does nothing, and the next edit prunes it from the store.
+        val appLabels = remember(apps) { apps.associate { it.packageName to it.label } }
         Column(modifier = Modifier.fillMaxWidth()) {
-            Favourite(R.string.launcher_fav_phone, onDialer)
-            // [messages] is the one with a choice behind it, so it expands
-            // in place rather than launching. Everything else walks its
-            // ladder and says so when nothing on the device answers.
-            Favourite(R.string.launcher_fav_messages) {
-                val apps = messagingApps()
-                when (apps.size) {
-                    // Nothing to pick from, and nothing to say it with except
-                    // Bit. A list of none is not a selector.
-                    0 -> react(
-                        BitStateMachine.Reaction.Unavailable(
-                            context.getString(R.string.launcher_fav_none_messaging),
-                        ),
-                    )
-                    // A list of one is a tax, not a choice.
-                    1 -> launchAndClear(apps.first().packageName)
-                    else -> messagingChoices = apps
+            QuickLaunch.visible(quickLaunch) { it in appLabels }.forEach { entry ->
+                when (entry) {
+                    is QuickLaunch.Entry.App -> FavouriteText(
+                        stringResource(R.string.launcher_fav_app_fmt, appLabels.getValue(entry.pkg).lowercase()),
+                    ) { launchAndClear(entry.pkg) }
+                    is QuickLaunch.Entry.Row -> when (entry.builtIn) {
+                        QuickLaunch.BuiltIn.PHONE -> Favourite(R.string.launcher_fav_phone, onDialer)
+                        // [messages] is the one with a choice behind it, so it
+                        // expands in place rather than launching. Everything
+                        // else walks its ladder and says so when nothing on
+                        // the device answers.
+                        QuickLaunch.BuiltIn.MESSAGES -> Favourite(R.string.launcher_fav_messages) {
+                            val clients = messagingApps()
+                            when (clients.size) {
+                                // Nothing to pick from, and nothing to say it
+                                // with except Bit. A list of none is not a
+                                // selector.
+                                0 -> react(
+                                    BitStateMachine.Reaction.Unavailable(
+                                        context.getString(R.string.launcher_fav_none_messaging),
+                                    ),
+                                )
+                                // A list of one is a tax, not a choice.
+                                1 -> launchAndClear(clients.first().packageName)
+                                else -> messagingChoices = clients
+                            }
+                        }
+                        QuickLaunch.BuiltIn.CALENDAR -> Favourite(R.string.launcher_fav_calendar) {
+                            launchLadderOrSay(ShortcutLadder.CALENDAR)
+                        }
+                        QuickLaunch.BuiltIn.CALCULATOR -> Favourite(R.string.launcher_fav_calculator) {
+                            launchLadderOrSay(ShortcutLadder.CALCULATOR)
+                        }
+                        QuickLaunch.BuiltIn.CLOCK -> Favourite(R.string.launcher_fav_clock) {
+                            launchLadderOrSay(ShortcutLadder.CLOCK)
+                        }
+                    }
                 }
-            }
-            Favourite(R.string.launcher_fav_calendar) {
-                launchLadderOrSay(ShortcutLadder.CALENDAR)
-            }
-            Favourite(R.string.launcher_fav_calculator) {
-                launchLadderOrSay(ShortcutLadder.CALCULATOR)
-            }
-            Favourite(R.string.launcher_fav_clock) {
-                launchLadderOrSay(ShortcutLadder.CLOCK)
             }
 
             // The selector, inline under the row that opened it. Not a
@@ -2584,8 +2614,14 @@ private const val WELLBEING_SETTINGS_CLASS =
 /** One favourite row. The brackets come from the string, not from here. */
 @Composable
 private fun Favourite(@StringRes labelRes: Int, onClick: () -> Unit) {
+    FavouriteText(stringResource(labelRes), onClick)
+}
+
+/** A favourite row from text already resolved, for a user-chosen app. */
+@Composable
+private fun FavouriteText(text: String, onClick: () -> Unit) {
     Text(
-        text = stringResource(labelRes),
+        text = text,
         fontFamily = FontFamily.Monospace,
         fontSize = 15.sp,
         color = PhosphorGreen,
