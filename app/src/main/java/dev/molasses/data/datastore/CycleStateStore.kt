@@ -463,28 +463,31 @@ class CycleStateStore(context: Context) {
     suspend fun currentReminders(): List<Reminder> = current().remindersList.map { it.toReminder() }
 
     /**
-     * Add a reminder, or refuse it when twenty are pending. The cap is
-     * checked inside the transaction, so two adds racing cannot make
-     * twenty one. Returns the reminder added, or null when refused.
+     * Add a reminder, or refuse it when twenty are pending, and return the
+     * verdict the transaction reached. The cap is decided inside updateData
+     * on the state being written, not on a snapshot the caller read earlier,
+     * so two adds racing cannot make twenty one and the caller reports what
+     * the store actually did. The verdict is assigned on every run of the
+     * transform, so it is always the one from the run that was committed.
      */
-    suspend fun addReminder(text: String, due: StampedInstant): Reminder? {
-        var added: Reminder? = null
+    suspend fun addReminder(text: String, due: StampedInstant): ReminderBook.Added {
+        var verdict: ReminderBook.Added = ReminderBook.Added.Full
         store.updateData { state ->
             val list = state.remindersList.map { it.toReminder() }
             val id = ReminderBook.nextId(list, state.reminderLastId)
-            when (val result = ReminderBook.add(list, id, text, due)) {
+            val result = ReminderBook.add(list, id, text, due)
+            verdict = result
+            when (result) {
                 ReminderBook.Added.Full -> state
-                is ReminderBook.Added.Ok -> {
-                    added = result.reminder
+                is ReminderBook.Added.Ok ->
                     state.toBuilder()
                         .clearReminders()
                         .addAllReminders(result.list.map { it.toProto() })
                         .setReminderLastId(id)
                         .build()
-                }
             }
         }
-        return added
+        return verdict
     }
 
     /** Mark [id] fired. It stays in the list, and on the console, until dismissed. */
