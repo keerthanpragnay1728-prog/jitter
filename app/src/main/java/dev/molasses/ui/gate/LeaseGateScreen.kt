@@ -25,7 +25,9 @@ import androidx.compose.material3.Text
 import dev.molasses.R
 import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateReadout
+import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lease.LeaseLadder
+import dev.molasses.core.lock.GateBlock
 import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.PhosphorDim
 import dev.molasses.ui.theme.PhosphorGreen
@@ -72,6 +74,11 @@ fun LeaseGateScreen(
     panelUp: Boolean,
     onTakeLease: (durationMs: Long) -> Unit,
     onTakeMeOut: () -> Unit,
+    /** The LEASE EXPIRED gate only. See `GateBlock`. */
+    blockOffered: Boolean,
+    blockPickerOpen: Boolean,
+    onOpenBlock: () -> Unit,
+    onBlock: (durationMs: Long) -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -128,6 +135,65 @@ fun LeaseGateScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 44.sp,
                     color = PhosphorGreen,
+                )
+            }
+
+            // Outside the panelUp branch on purpose: it is there from the
+            // first frame. Choosing more friction never waits on the clock.
+            if (blockOffered) {
+                Spacer(Modifier.height(24.dp))
+                BlockControl(open = blockPickerOpen, onOpen = onOpenBlock, onBlock = onBlock)
+            }
+        }
+    }
+}
+
+/**
+ * [ BLOCK THIS APP ], and once pressed, the four rungs in its place.
+ *
+ * Dimmed rather than green while closed. It is an extra answer on a screen
+ * whose own answers are the leases and the way out, and it must not compete
+ * with them for the eye. The rungs come from `GateBlock`, which cuts the one
+ * lock ladder at a day, and none of them asks for confirmation.
+ */
+@Composable
+private fun BlockControl(
+    open: Boolean,
+    onOpen: () -> Unit,
+    onBlock: (durationMs: Long) -> Unit,
+) {
+    if (!open) {
+        Text(
+            text = stringResource(R.string.lease_gate_block),
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            color = PhosphorDim,
+            modifier = Modifier
+                .clickable { onOpen() }
+                .padding(vertical = 10.dp, horizontal = 6.dp),
+        )
+        return
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = stringResource(R.string.lease_gate_block_select),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            color = PhosphorDim,
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            GateBlock.RUNGS_MS.forEach { ms ->
+                Text(
+                    text = stringResource(R.string.lease_gate_button_fmt, CommandRender.duration(ms)),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = PhosphorGreen,
+                    modifier = Modifier
+                        .clickable { onBlock(ms) }
+                        .padding(vertical = 10.dp, horizontal = 6.dp),
                 )
             }
         }
