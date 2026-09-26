@@ -131,6 +131,11 @@
     <string name="settings_horizon_confirm_fmt">%1$s to %2$s? Press again to confirm.</string>
 
     <string name="settings_lock_remaining_fmt">LOCKED %1$s</string>
+    <!-- Under the SAFETY prefix field, after a save that dropped an entry.
+         See PrefixLock: a covered app is never drawn over, so its lock would
+         stop being enforced. -->
+    <string name="settings_safety_prefix_refused">Not added. It would switch off a standing lock.</string>
+    <string name="settings_safety_prefix_refused_row">%1$s covers %2$s</string>
     <string name="settings_lock_scrub_fmt">Lock for %1$s</string>
     <string name="settings_lock_arm">Lock</string>
     <string name="settings_lock_confirm_fmt">Confirm %1$s</string>

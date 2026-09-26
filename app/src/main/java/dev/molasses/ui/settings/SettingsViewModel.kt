@@ -9,6 +9,7 @@ import dev.molasses.core.diag.RouteTally
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
+import dev.molasses.core.lock.PrefixLock
 import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
@@ -420,7 +421,28 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repo.setFontScale(scale) }
     }
 
+    private val _prefixRefusals = MutableStateFlow<List<PrefixLock.Refusal>>(emptyList())
+
+    /**
+     * Prefixes the last save did not add, each with the locked package it
+     * would have covered. Shown under the field, because the store dropping
+     * an entry without a word reads as a control that does nothing.
+     */
+    val prefixRefusals: StateFlow<List<PrefixLock.Refusal>> = _prefixRefusals.asStateFlow()
+
+    /**
+     * Save the user's prefixes. The refusals are computed here with the same
+     * pure function the store's write runs, against the locks this screen
+     * already holds, so the screen can say what was dropped. The store still
+     * decides: it re-evaluates inside its own transaction, and this copy is
+     * only the explanation.
+     */
     fun setSensitivePrefixes(prefixes: List<String>) {
+        _prefixRefusals.value = PrefixLock.admitted(
+            stored = sensitivePrefixes.value,
+            requested = prefixes,
+            lockedPackages = locks.value.active(repo.nowStamped()).map { it.pkg },
+        ).refused
         viewModelScope.launch { repo.setSensitivePrefixes(prefixes) }
     }
 
