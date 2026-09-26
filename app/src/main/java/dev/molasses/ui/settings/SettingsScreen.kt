@@ -719,9 +719,12 @@ fun SettingsScreen(
         coolingOff?.let { state ->
             UntrackCoolingOffPanel(
                 state = state,
-                // From the live set, so it stays true to the store if the
-                // set changes while the countdown runs.
-                lastTarget = UntrackCoolingOff.isLastTarget(state.pkg, targets),
+                // From the live sets, so it stays true to the store if they
+                // change while the countdown runs. Installed only: the stored
+                // set keeps packages CFG draws no row for. See isLastTarget.
+                lastTarget = UntrackCoolingOff.isLastTarget(state.pkg, targets) { pkg ->
+                    installed.any { it.pkg == pkg }
+                },
                 onConfirmRemove = {
                     coolingOff = null
                     vm.untrackTarget(state.pkg)
