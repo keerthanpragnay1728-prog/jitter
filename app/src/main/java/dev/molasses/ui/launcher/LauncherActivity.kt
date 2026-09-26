@@ -121,9 +121,10 @@ import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.console.Greeting
 import dev.molasses.core.bit.HudStep
 import dev.molasses.core.command.AppTokenResolver
+import dev.molasses.core.command.Command
 import dev.molasses.core.command.CommandParser
 import dev.molasses.core.command.Manual
-import dev.molasses.core.command.ConfirmPrompt
+import dev.molasses.core.command.LockConfirmation
 import dev.molasses.core.command.DispatchResult
 import dev.molasses.core.command.ParseError
 import dev.molasses.core.command.ParseResult
@@ -245,6 +246,10 @@ class LauncherActivity : ComponentActivity() {
 
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showDrawer by remember { mutableStateOf(false) }
+                // A long console lock waiting on the full-screen panel. Held
+                // here, above the pager and the drawer, so the panel covers
+                // everything. See LockConfirmation.
+                var lockConfirm by remember { mutableStateOf<LockConfirmRequest?>(null) }
                 val pagerState = rememberPagerState(pageCount = { 2 })
                 val scope = rememberCoroutineScope()
 
@@ -256,6 +261,9 @@ class LauncherActivity : ComponentActivity() {
                 // has nowhere above it to go.
                 BackHandler(enabled = true) {
                     when {
+                        // Back aborts a lock confirmation and writes nothing.
+                        // It is the panel's only way out besides the commit.
+                        lockConfirm != null -> lockConfirm = null
                         showDrawer -> showDrawer = false
                         pagerState.currentPage != PAGE_CONSOLE ->
                             scope.launch { pagerState.animateScrollToPage(PAGE_CONSOLE) }
@@ -302,11 +310,12 @@ class LauncherActivity : ComponentActivity() {
                             onEnqueueConsoleLine = { line ->
                                 scope.launch { settingsRepository.enqueueConsoleLine(line) }
                             },
-                            onRecordCommand = { line, confirmation ->
+                            onRecordCommand = { line ->
                                 scope.launch {
-                                    settingsRepository.recordCommand(line, confirmation)
+                                    settingsRepository.recordCommand(line)
                                 }
                             },
+                            onRequestLockConfirm = { lockConfirm = it },
                             // Remembered so the prompt can build its
                             // dispatcher once rather than on every keystroke.
                             actions = remember(pagerState) {
@@ -363,6 +372,19 @@ class LauncherActivity : ComponentActivity() {
                                     launchPackage(pkg)
                                 },
                                 onClose = { showDrawer = false },
+                            )
+                        }
+
+                        // Last, so it draws over the pager and the drawer.
+                        // A composable in this activity, not a service
+                        // overlay: it asks about the user's own command.
+                        lockConfirm?.let { request ->
+                            LockConfirmPanel(
+                                panel = request.panel,
+                                onCommit = {
+                                    lockConfirm = null
+                                    request.commit()
+                                },
                             )
                         }
                     }
@@ -695,7 +717,8 @@ fun MainLauncherWorkspace(
     appList: List<LaunchableApp>,
     pagerState: androidx.compose.foundation.pager.PagerState,
     actions: LauncherActions,
-    onRecordCommand: (String, Boolean) -> Unit,
+    onRecordCommand: (String) -> Unit,
+    onRequestLockConfirm: (LockConfirmRequest) -> Unit,
     cycle: CycleReadout,
     curfewEndMinuteOfDay: Int?,
     nowStamped: () -> StampedInstant,
@@ -778,6 +801,7 @@ fun MainLauncherWorkspace(
                     apps = apps,
                     actions = actions,
                     onRecordCommand = onRecordCommand,
+                    onRequestLockConfirm = onRequestLockConfirm,
                     cycle = cycle,
                     curfewEndMinuteOfDay = curfewEndMinuteOfDay,
                     nowStamped = nowStamped,
@@ -810,8 +834,10 @@ fun TerminalHomeView(
     bitOrigin: Long,
     apps: List<LaunchableApp>,
     actions: LauncherActions,
-    /** @param confirmation true for the second Enter on a long lock. */
-    onRecordCommand: (String, Boolean) -> Unit,
+    /** Records the line the user typed. A lock confirmation is a button and never reaches here. */
+    onRecordCommand: (String) -> Unit,
+    /** Hands a long lock to the full-screen panel at the activity root. */
+    onRequestLockConfirm: (LockConfirmRequest) -> Unit,
     cycle: CycleReadout,
     /** Minute of day a bedtime lock lifts, or null when none stands. */
     curfewEndMinuteOfDay: Int?,
@@ -994,8 +1020,6 @@ fun TerminalHomeView(
         launcherDispatch(context, actions) { showManual = true }
     }
 
-    // A long lock held for a second Enter. Null except in that window.
-    var pending by remember { mutableStateOf<ConfirmPrompt.Pending?>(null) }
     // The answer to the last utility command, already rendered.
     //
     // Not a reaction and therefore not on a clock. It is cleared by the three
@@ -1077,15 +1101,14 @@ fun TerminalHomeView(
     /**
      * Back to the empty state.
      *
-     * The prompt, the filter, a pending lock confirmation and the manual are
-     * one surface, so they clear together. Command history is deliberately
+     * The prompt, the filter and the manual are one surface, so they clear
+     * together. Command history is deliberately
      * not touched: it is persisted, it is still recorded on every dispatch,
      * and clearing the prompt is not a request to forget what was typed. It
      * simply has no view any more.
      */
     fun clearPrompt() {
         query = ""
-        pending = null
         showManual = false
         messagingChoices = null
         // Called on the way out and on the way back in, which is where an
@@ -1216,25 +1239,11 @@ fun TerminalHomeView(
         val text = query.trim()
         if (text.isEmpty()) return DispatchResult.NotACommand
 
-        // A pending long lock first. The armed line is the canonical echo, so
-        // this only fires on the exact text the user was shown.
-        when (val decision = ConfirmPrompt.onSubmit(pending, text)) {
-            is ConfirmPrompt.Decision.Confirm -> {
-                pending = null
-                // Passed through rather than skipped, so the rule is visible
-                // here and exercised: CommandHistory drops it. Recording the
-                // echo would put an armed 30d line in a list the user taps.
-                onRecordCommand(text, true)
-                return dispatch.dispatch(decision.command, confirmed = true)
-            }
-            ConfirmPrompt.Decision.Dispatch -> pending = null
-        }
-
         return when (val parsed = CommandParser.parse(text)) {
             is ParseResult.Ok -> {
                 // What the user typed, not the canonical form. It comes back
                 // out of history the way they wrote it.
-                onRecordCommand(text, false)
+                onRecordCommand(text)
                 dispatch.dispatch(parsed.command)
             }
             is ParseResult.Err -> when (parsed.error) {
@@ -1245,6 +1254,61 @@ fun TerminalHomeView(
                 // trying to launch an app called "block".
                 else -> parsed.error.asFailure()
             }
+        }
+    }
+
+    /**
+     * What the console does with a command's outcome. One place, because the
+     * lock panel's commit comes back through here as well as Enter does.
+     */
+    fun handleOutcome(outcome: DispatchResult) {
+        when (outcome) {
+            is DispatchResult.Confirmed -> {
+                react(BitStateMachine.Reaction.Confirm(outcome.message(context)))
+                query = ""
+            }
+            // Not a reaction. It stays until the user does something else,
+            // which is the honest lifetime for content they asked for and may
+            // be copying somewhere.
+            is DispatchResult.Answered -> {
+                answer = outcome.message(context)
+                query = ""
+            }
+            // A third face, not the dry one. "Locks are not enforced yet" and
+            // "block what?" are different information, and showing the same
+            // face for both teaches the user to ignore it.
+            is DispatchResult.Unavailable ->
+                react(BitStateMachine.Reaction.Unavailable(outcome.message(context)))
+            is DispatchResult.Failed ->
+                react(BitStateMachine.Reaction.Failed(outcome.message(context)))
+            // A long lock. It goes to the full-screen panel rather than back
+            // into the prompt. The commit dispatches it confirmed and comes
+            // back through here; back on the panel writes nothing. A block
+            // whose app does not resolve to one package has no panel, and is
+            // dispatched confirmed straight away for the same refusal the
+            // one-step path gives, with nothing armed.
+            is DispatchResult.NeedsConfirmation -> {
+                val label = (outcome.command as? Command.Block)?.let { block ->
+                    (actions.resolveApp(block.appToken) as? AppTokenResolver.Result.One)?.let { one ->
+                        apps.firstOrNull { it.packageName == one.pkg }?.label ?: one.pkg
+                    }
+                }
+                val panel = LockConfirmation.panelFor(outcome.command, label)
+                if (panel == null) {
+                    handleOutcome(dispatch.dispatch(outcome.command, confirmed = true))
+                } else {
+                    query = ""
+                    onRequestLockConfirm(
+                        LockConfirmRequest(panel) {
+                            handleOutcome(dispatch.dispatch(panel.command, confirmed = true))
+                        },
+                    )
+                }
+            }
+            DispatchResult.NotACommand ->
+                if (filteredApps.isNotEmpty()) {
+                    launchAndClear(filteredApps.first().packageName)
+                }
         }
     }
 
@@ -1597,10 +1661,6 @@ fun TerminalHomeView(
                         // a mode, and leaving it up while the user works
                         // would hide the app list they are filtering.
                         showManual = false
-                        // Any edit cancels a pending confirmation. Leaving it
-                        // armed would mean an Enter on a half-typed line runs
-                        // something that was confirmed in a different form.
-                        pending = ConfirmPrompt.onTextChanged(pending, next)
                         // And any edit clears the last answer. Starting to
                         // type is the user moving on, which is the whole of
                         // what an answer waits for.
@@ -1617,58 +1677,19 @@ fun TerminalHomeView(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(
                         onGo = {
-                            // Everything below except NeedsConfirmation is a
-                            // finished command, and a finished command has no
-                            // use for the keyboard. It was staying up, which
-                            // halved the viewport the manual then rendered
-                            // into for no reason. A
-                            // confirmation keeps it, because the user has to
-                            // press Go again.
+                            // Every outcome is a finished command or a
+                            // full-screen panel, and neither has any use for
+                            // the keyboard. It was staying up, which halved
+                            // the viewport the manual then rendered into for
+                            // no reason.
                             // Cleared before the branch, so the Answered
                             // branch below is the only thing that can put one
                             // back. Clearing inside each other branch would
                             // be seven places to remember instead of one.
                             answer = null
                             val outcome = submit()
-                            if (outcome !is DispatchResult.NeedsConfirmation) {
-                                keyboard?.hide()
-                            }
-                            when (outcome) {
-                                is DispatchResult.Confirmed -> {
-                                    react(BitStateMachine.Reaction.Confirm(outcome.message(context)))
-                                    query = ""
-                                }
-                                // Not a reaction. It stays until the user
-                                // does something else, which is the honest
-                                // lifetime for content they asked for and may
-                                // be copying somewhere.
-                                is DispatchResult.Answered -> {
-                                    answer = outcome.message(context)
-                                    query = ""
-                                }
-                                // A third face, not the dry one. "Locks are
-                                // not enforced yet" and "block what?" are
-                                // different information, and showing the same
-                                // face for both teaches the user to ignore it.
-                                is DispatchResult.Unavailable ->
-                                    react(BitStateMachine.Reaction.Unavailable(outcome.message(context)))
-                                is DispatchResult.Failed ->
-                                    react(BitStateMachine.Reaction.Failed(outcome.message(context)))
-                                // Not a reaction: the echo goes into the
-                                // prompt and the instruction into the hint
-                                // line, so the thing being confirmed stays on
-                                // screen instead of expiring after two
-                                // seconds like a face would.
-                                is DispatchResult.NeedsConfirmation -> {
-                                    pending = ConfirmPrompt.arm(outcome.command, outcome.echo)
-                                    query = outcome.echo
-                                    lastKeystrokeMs = SystemClock.elapsedRealtime()
-                                }
-                                DispatchResult.NotACommand ->
-                                    if (filteredApps.isNotEmpty()) {
-                                        launchAndClear(filteredApps.first().packageName)
-                                    }
-                            }
+                            keyboard?.hide()
+                            handleOutcome(outcome)
                         },
                     ),
                     modifier = Modifier.fillMaxWidth(),
@@ -1676,9 +1697,7 @@ fun TerminalHomeView(
             }
         }
 
-        // One line, two jobs, and always drawn. A pending confirmation
-        // outranks the usage hint: the hint is something to glance at, and
-        // this is a question.
+        // The usage hint, always drawn.
         //
         // Composed unconditionally because it used to come and go between the
         // prompt and the list. The first keystroke produced a hint, inserted
@@ -1692,20 +1711,13 @@ fun TerminalHomeView(
         // on the first device that is not at 1.0 twice over. StatRow in
         // LeaseGateScreen declines a fixed column width for the same reason.
         //
-        // One line is reserved, not two. A confirmation long enough to wrap
-        // still costs a line, which is rare, deliberate and not the churn
-        // this fixes. The empty string is a reserved line and not copy, so it
-        // has nothing to translate.
-        val armed = pending
+        // One line is reserved, not two. The empty string is a reserved line
+        // and not copy, so it has nothing to translate.
         Text(
-            text = when {
-                armed != null -> stringResource(R.string.cmd_confirm_line, armed.line)
-                commandHint != null -> stringResource(R.string.cmd_hint_fmt, commandHint)
-                else -> ""
-            },
+            text = if (commandHint != null) stringResource(R.string.cmd_hint_fmt, commandHint) else "",
             fontFamily = FontFamily.Monospace,
             fontSize = 10.sp,
-            color = if (armed != null) PhosphorGreen else PhosphorDivider,
+            color = PhosphorDivider,
             modifier = Modifier.padding(top = 4.dp, start = 2.dp),
         )
 

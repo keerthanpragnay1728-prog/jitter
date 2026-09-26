@@ -191,8 +191,8 @@ class SettingsRepository(
     val commandHistory: Flow<List<String>> =
         store.data.map { it.commandHistoryList.toList() }
 
-    suspend fun recordCommand(line: String, confirmation: Boolean) =
-        store.recordCommand(line, confirmation)
+    suspend fun recordCommand(line: String) =
+        store.recordCommand(line)
 
     /** Only the user's additions. The shipped defaults are not editable. */
     val sensitivePrefixes: Flow<List<String>> =

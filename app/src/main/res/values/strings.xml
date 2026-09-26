@@ -516,7 +516,7 @@
     <!-- LockRegistry is extend-only, so a mistyped long lock is unfixable for
          its whole duration. The echo is the canonical parse, so a duration
          read differently than it was typed is visible before it is armed. -->
-    <string name="cmd_confirm_line">%1$s. Enter again to confirm, anything else cancels.</string>
+    <string name="cmd_confirm_line">%1$s. Confirm it on the lock panel.</string>
     <string name="cmd_hint_fmt">%1$s</string>
     <!--
       Usage shapes. Argument SHAPE only, never a value: one stray completion
@@ -577,6 +577,16 @@
       than as a navigation instruction: this is the place the lock is sending
       them back to, not a button on a form.
     -->
+    <!--
+      The console's confirmation for a lock above a day. Fixed-width terminal
+      fields, like the lock screen's, so not translatable. There is no cancel
+      string because there is no cancel button: back aborts.
+    -->
+    <string name="lock_confirm_title" translatable="false">IMMUTABLE LOCK REQUEST</string>
+    <string name="lock_confirm_target_fmt" translatable="false">TARGET // %1$s</string>
+    <string name="lock_confirm_all_tracked" translatable="false">ALL TRACKED</string>
+    <string name="lock_confirm_duration_fmt" translatable="false">DURATION // %1$s</string>
+    <string name="lock_confirm_commit" translatable="false">[ COMMIT LOCK ]</string>
     <string name="lock_exit" translatable="false">[ ARCHITECT\'S SPACE ]</string>
     <!--
       Bit's console speech. Past tense, deliberately: Bit only speaks on the
