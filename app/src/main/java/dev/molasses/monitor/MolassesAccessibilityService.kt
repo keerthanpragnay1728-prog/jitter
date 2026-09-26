@@ -14,6 +14,7 @@ import dev.molasses.core.console.ConsoleIds
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.diag.ServiceHealthPolicy
 import dev.molasses.core.latency.LatencyRegistry
+import dev.molasses.core.lease.GateHandover
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.lease.LaunchGate
 import dev.molasses.core.lease.LeaseManager
@@ -734,7 +735,16 @@ class MolassesAccessibilityService : AccessibilityService() {
      * fires without the user having just opened or just scrolled something.
      */
     private fun maybeLaunchGate(pkg: String): Boolean {
-        if (leaseGate.isShowing || gate.isShowing || lockOverlay.isShowing) return true
+        // Per package. A gate on screen counts only when it is this app's;
+        // another app's comes down and this one gets its own decision. See
+        // GateHandover for how A's gate used to let B through.
+        val anyShowing = leaseGate.isShowing || gate.isShowing || lockOverlay.isShowing
+        val owner = leaseGate.showingFor ?: gate.showingFor ?: lockOverlay.showingFor
+        when (val handover = GateHandover.forGate(anyShowing, owner, pkg)) {
+            GateHandover.Action.AlreadyOwn -> return true
+            is GateHandover.Action.ReleaseFirst -> dismissGateWindows("replaced by $pkg (was ${handover.owner})")
+            GateHandover.Action.Decide -> Unit
+        }
 
         val now = nowStamped()
         val decision = LaunchGate.decide(
@@ -985,6 +995,20 @@ class MolassesAccessibilityService : AccessibilityService() {
         overlayStep("lock overlay") { if (::lockOverlay.isInitialized) lockOverlay.dismiss(reason) }
     }
 
+    /**
+     * The three full-screen windows only, for a gate handed from one package
+     * to another. The shutter stays: it follows the current package and is
+     * re-pointed by the caller.
+     */
+    private fun dismissGateWindows(reason: String) {
+        overlayStep("gate") {
+            if (gate.isShowing) gate.abandon(reason)
+            gate.dismiss()
+        }
+        overlayStep("lease gate") { leaseGate.dismiss(reason) }
+        overlayStep("lock overlay") { lockOverlay.dismiss(reason) }
+    }
+
     private inline fun overlayStep(name: String, block: () -> Unit) {
         try {
             block()
@@ -994,6 +1018,13 @@ class MolassesAccessibilityService : AccessibilityService() {
     }
 
     private fun enterTarget(pkg: String) {
+        // A direct switch from another target closes that session first, as
+        // a trip through the launcher would have: its accounting, its
+        // watchdog and its windows. Without it A's gate stayed up over B.
+        val open = sessions.openId
+        if (open != null && GateHandover.mustCloseFirst(sessions.openPkg, pkg)) {
+            leaveTarget(open, "switched to $pkg")
+        }
         foregroundPkg = pkg
         val id = sessions.open(pkg)
         // Accounting first and unconditionally. Suppression is about the

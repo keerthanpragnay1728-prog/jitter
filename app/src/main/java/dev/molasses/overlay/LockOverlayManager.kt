@@ -73,6 +73,9 @@ class LockOverlayManager(
 
     val isShowing: Boolean get() = host?.isShowing == true
 
+    /** The package this window is up for, or null when it is not showing. */
+    val showingFor: String? get() = if (isShowing) currentPkg else null
+
     /**
      * Show the message. It stays until the user presses the way out.
      *
