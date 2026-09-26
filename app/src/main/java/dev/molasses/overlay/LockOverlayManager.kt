@@ -7,7 +7,7 @@ import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.model.EventType
-import dev.molasses.core.safety.MediaPause
+import dev.molasses.core.safety.OverlayAudio
 import dev.molasses.engine.FrictionLedger
 import dev.molasses.ui.lock.LockScreen
 import dev.molasses.ui.lock.lockOpensAtText
@@ -93,11 +93,10 @@ class LockOverlayManager(
      *
      * Idempotent while showing: a second scroll, or a duplicate foreground
      * event, must not stack two windows.
-     */
-    /**
+     *
      * @param atEntry raised as the locked app opens, rather than over a
-     *   session already running. Decides the media pause key only; see
-     *   `MediaPause`.
+     *   session already running. Decides audio focus and the media pause
+     *   key together; see `OverlayAudio`.
      */
     fun flash(
         pkg: String,
@@ -164,7 +163,7 @@ class LockOverlayManager(
         // out, over an app they are not allowed to use at all, so a locked app
         // playing audio behind a full-screen refusal is the same defect with
         // no upper bound on it.
-        focus.take("lock overlay for $pkg", sendPause = MediaPause.sendsPause(MediaPause.lock(atEntry)))
+        focus.take("lock overlay for $pkg", silence = OverlayAudio.silences(OverlayAudio.lock(atEntry)))
 
         onWindowsChanged()
         ledger.log(pkg, EventType.LOCK_ENFORCED, "remaining=${remainingText} reason=${reason.name}")
