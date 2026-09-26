@@ -3,12 +3,14 @@ package dev.molasses.monitor
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.repo.SettingsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -27,8 +29,21 @@ import kotlinx.coroutines.launch
  * superclass's `onReceive`, which a Kotlin subclass of `BroadcastReceiver`
  * cannot call, because the method it can see is abstract. An entry point has
  * no such trap.
+ *
+ * ## The PendingResult
+ * [goAsync] keeps the broadcast open while the coroutine runs, and `finish`
+ * closes it in a `finally`, so it is finished on every path: after the chime
+ * has played (ReminderChime.play suspends until it has), on an early return,
+ * and on a failure. A failure is logged and swallowed rather than rethrown:
+ * rethrown from this scope it would crash the process for a reminder, and
+ * the reminder is either already marked fired or re-armed on the next
+ * service connect.
  */
 class ReminderReceiver : BroadcastReceiver() {
+
+    private companion object {
+        const val TAG = "Molasses.Reminder"
+    }
 
     @EntryPoint
     @InstallIn(SingletonComponent::class)
@@ -47,11 +62,15 @@ class ReminderReceiver : BroadcastReceiver() {
                 when (action) {
                     ReminderAlarms.ACTION_FIRE -> {
                         val id = intent.getLongExtra(ReminderAlarms.EXTRA_ID, -1L)
-                        if (id >= 0L) ReminderAlarms.fire(context, store, id, late = false)
+                        if (id >= 0L) ReminderAlarms.fire(context, store, id)
                     }
                     Intent.ACTION_BOOT_COMPLETED ->
                         ReminderAlarms.rescheduleAll(context, store, deps.settingsRepository().nowStamped())
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "reminder broadcast $action failed", e)
             } finally {
                 pending.finish()
             }
