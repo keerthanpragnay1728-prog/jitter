@@ -1038,14 +1038,19 @@ produced it, which is the behaviour the shield was asked for anyway.
   sweep; neither can be removed without reopening one.
 
 **Reminders (`$ rem`)**
-- **Inexact by design.** Scheduled with `AlarmManager.setAndAllowWhileIdle`
-  and no exact-alarm permission. With the screen on a reminder is normally
-  close to its time. With the device idle Android batches it: allow-while-idle
-  alarms from one app are spaced at least about nine minutes apart, and
-  Android 12 and later documents inexact alarms as delivered within an hour of
-  their time, longer if the app is in a restricted standby bucket. Exact
-  delivery would need `SCHEDULE_EXACT_ALARM` or `USE_EXACT_ALARM`, which is a
-  separate decision and is not requested.
+- **Exact where Android allows it, and the answer says which.** Inexact
+  alarms slipped on hardware (a one minute reminder arrived 40 s late), so a
+  reminder is scheduled with `setExactAndAllowWhileIdle` whenever
+  `canScheduleExactAlarms()` is true: always below Android 12, through
+  `USE_EXACT_ALARM` on 13 and later (granted at install), and through
+  `SCHEDULE_EXACT_ALARM` on 12 and 12L unless revoked under Settings, Apps,
+  Special app access, Alarms and reminders. Otherwise it falls back to
+  `setAndAllowWhileIdle`, which with the device idle can be late, by up to an
+  hour on Android 12 and later, and the acknowledgement reads INEXACT.
+  `USE_EXACT_ALARM` is restricted on Google Play to alarm and calendar apps;
+  this app is distributed by sideload and F-Droid.
+- The acknowledgement stays on the console until the next keystroke, like a
+  calc answer.
 - **A missed tone means the text is seen only on the next visit to the
   launcher.** There is no notification, so no notification grant. The tone
   follows the ringer: silent plays nothing, vibrate vibrates. The text waits

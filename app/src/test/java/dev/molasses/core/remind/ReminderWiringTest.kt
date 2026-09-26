@@ -14,13 +14,25 @@ class ReminderWiringTest {
     private val manifest by lazy { repoFile("app/src/main/AndroidManifest.xml").readText() }
 
     @Test
-    fun `inexact scheduling, and no exact-alarm or new notification permission`() {
+    fun `exact when allowed, inexact otherwise, and the caller is told which`() {
         val alarms = repoFile("app/src/main/java/dev/molasses/monitor/ReminderAlarms.kt").readText()
-        assertTrue(alarms.contains("am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP"))
-        assertFalse(alarms.contains("setExact"))
-        for (p in listOf("SCHEDULE_EXACT_ALARM", "USE_EXACT_ALARM")) {
-            assertFalse("$p must not be requested", manifest.contains(p))
-        }
+        val schedule = functionBody(alarms, "fun schedule(")
+        val check = schedule.indexOf("am.canScheduleExactAlarms()")
+        val exact = schedule.indexOf("am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP")
+        val inexact = schedule.indexOf("am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP")
+        assertTrue(check in 0 until exact && exact < inexact)
+        assertTrue(schedule.contains("return Precision.EXACT"))
+        assertTrue(schedule.contains("Precision.INEXACT"))
+    }
+
+    @Test
+    fun `the acknowledgement is a held answer, delivered after the write`() {
+        val dispatch = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherDispatch.kt").readText()
+        val branch = dispatch.substring(dispatch.indexOf("is Command.Rem -> DispatchResult.Deferred"))
+            .substringBefore("is Command.Days ->")
+        assertTrue(branch.contains("DispatchResult.Answered("))
+        assertTrue(branch.contains("R.string.cmd_ans_rem_exact else R.string.cmd_ans_rem_inexact"))
+        assertFalse("not a fading reaction", branch.contains("DispatchResult.Confirmed("))
     }
 
     @Test

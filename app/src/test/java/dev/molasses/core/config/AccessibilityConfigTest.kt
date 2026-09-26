@@ -191,6 +191,35 @@ class AccessibilityConfigTest {
     }
 
     @Test
+    fun `the permission surface is exactly this list`() {
+        // Every uses-permission the manifest declares, by name. A new one
+        // fails here until it is added deliberately, with its reason in the
+        // manifest. The two exact-alarm permissions are $ rem's, and
+        // SCHEDULE_EXACT_ALARM is capped at API 32, where USE_EXACT_ALARM
+        // takes over.
+        val manifest = repoFile("app/src/main/AndroidManifest.xml").readText()
+        val declared = Regex("""<uses-permission[^>]*android:name="([^"]+)"""")
+            .findAll(manifest).map { it.groupValues[1] }.toSet()
+        assertEquals(
+            setOf(
+                "android.permission.PACKAGE_USAGE_STATS",
+                "android.permission.ACTIVITY_RECOGNITION",
+                "android.permission.RECEIVE_BOOT_COMPLETED",
+                "android.permission.POST_NOTIFICATIONS",
+                "android.permission.HIGH_SAMPLING_RATE_SENSORS",
+                "android.permission.VIBRATE",
+                "android.permission.USE_EXACT_ALARM",
+                "android.permission.SCHEDULE_EXACT_ALARM",
+            ),
+            declared,
+        )
+        val schedule = Regex("""<uses-permission[^>]*SCHEDULE_EXACT_ALARM[^>]*>""").find(manifest)!!.value
+        assertTrue(schedule.contains("android:maxSdkVersion=\"32\""))
+        val use = Regex("""<uses-permission[^>]*USE_EXACT_ALARM[^>]*>""").find(manifest)!!.value
+        assertFalse("USE_EXACT_ALARM must not be capped", use.contains("maxSdkVersion"))
+    }
+
+    @Test
     fun `no foreground service is declared`() {
         // CLAUDE.md, "Service model". The AccessibilityService is system-bound
         // and needs no FGS; adding one would force a specialUse type.

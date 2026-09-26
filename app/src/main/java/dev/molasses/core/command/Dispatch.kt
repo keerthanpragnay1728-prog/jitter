@@ -57,6 +57,19 @@ sealed interface DispatchResult {
 
     /** Not a command at all. The caller falls back to filtering apps. */
     data object NotACommand : DispatchResult
+
+    /**
+     * The answer depends on something that has to finish first, so it is
+     * not known when the command returns. `$ rem` is the one user: what it
+     * reports is the store's verdict on the cap and the precision the alarm
+     * was actually scheduled with, and both arrive after a write.
+     *
+     * The console calls [await] once with the function that shows an
+     * outcome, and the command calls that exactly once when it knows. The
+     * delivered outcome goes through the same handling as any other, so an
+     * [Answered] from here is held until the next keystroke like calc's.
+     */
+    data class Deferred(val await: (deliver: (DispatchResult) -> Unit) -> Unit) : DispatchResult
 }
 
 /**

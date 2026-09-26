@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
 import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.time.StampedInstant
@@ -12,16 +13,17 @@ import dev.molasses.data.datastore.CycleStateStore
 /**
  * Scheduling for `$ rem`, on AlarmManager.
  *
- * ## setAndAllowWhileIdle, and what that costs
- * No SCHEDULE_EXACT_ALARM and no USE_EXACT_ALARM: exact delivery is a
- * separate decision that needs one of those permissions, and this app does
- * not ask for it. So the alarm is inexact. With the screen on it is normally
- * close to its time. With the device idle, Android batches it: allow-while-
- * idle alarms from one app fire at most about once every nine minutes, and
- * on Android 12 and later the platform documents inexact alarms as delivered
- * within an hour of their time. A reminder can therefore arrive up to about
- * an hour late with the screen off, more if the system has put the app in a
- * restricted standby bucket. The README and the manual row say so.
+ * ## Exact when allowed, inexact otherwise, and the prompt says which
+ * Inexact alarms slipped on hardware (a 1m reminder arrived 40 s late), so
+ * reminders are exact where the platform lets them be:
+ * `setExactAndAllowWhileIdle` when `canScheduleExactAlarms()` is true, which
+ * it always is below Android 12, is by USE_EXACT_ALARM on 13 and later, and
+ * is by SCHEDULE_EXACT_ALARM on 12 and 12L unless the user has revoked it in
+ * the system's Alarms and reminders page. Otherwise, or if the exact call
+ * throws, `setAndAllowWhileIdle`: close to its time with the screen on,
+ * batched when the device is idle, and on Android 12 and later documented as
+ * within an hour. [schedule] returns which one was used and the prompt
+ * reports it.
  *
  * ## The wall clock, deliberately
  * RTC_WAKEUP rather than an elapsed alarm, because an elapsed alarm is gone
@@ -36,11 +38,25 @@ object ReminderAlarms {
     const val EXTRA_ID = "dev.molasses.extra.REMINDER_ID"
     private const val TAG = "Molasses.Reminder"
 
-    fun schedule(context: Context, id: Long, atWallMs: Long) {
-        val am = context.getSystemService(AlarmManager::class.java) ?: return
-        runCatching {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atWallMs, pendingIntent(context, id))
-        }.onFailure { Log.w(TAG, "could not schedule reminder $id", it) }
+    enum class Precision { EXACT, INEXACT }
+
+    /** @return the precision it was scheduled with, or null if it could not be scheduled at all. */
+    fun schedule(context: Context, id: Long, atWallMs: Long): Precision? {
+        val am = context.getSystemService(AlarmManager::class.java) ?: return null
+        val intent = pendingIntent(context, id)
+        val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
+        if (exactAllowed) {
+            val exact = runCatching {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atWallMs, intent)
+            }
+            if (exact.isSuccess) return Precision.EXACT
+            // A revocation can land between the check and the call.
+            Log.w(TAG, "exact alarm refused for reminder $id; falling back to inexact", exact.exceptionOrNull())
+        }
+        return runCatching {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atWallMs, intent)
+            Precision.INEXACT
+        }.onFailure { Log.w(TAG, "could not schedule reminder $id", it) }.getOrNull()
     }
 
     /**
