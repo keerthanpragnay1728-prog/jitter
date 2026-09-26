@@ -370,22 +370,34 @@ class LauncherActivity : ComponentActivity() {
                                         val c = Calendar.getInstance()
                                         c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
                                     },
-                                    remind = { whenSpec, text ->
+                                    remind = { whenSpec, text, done ->
                                         val now = settingsRepository.nowStamped()
                                         val c = Calendar.getInstance()
                                         val minute = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
                                         val due = ReminderBook.dueAt(whenSpec, now, minute)
                                         if (reminders.size >= ReminderBook.MAX) {
-                                            RemindOutcome.Full
+                                            done(RemindOutcome.Full)
                                         } else {
                                             scope.launch {
                                                 // The store re-checks the cap in its own
-                                                // transaction; only what it took is armed.
-                                                settingsRepository.addReminder(text, due)?.let {
-                                                    ReminderAlarms.schedule(this@LauncherActivity, it.id, it.due.wallMs)
+                                                // transaction; only what it took is armed,
+                                                // and the prompt reports the precision the
+                                                // alarm was actually set with.
+                                                val added = settingsRepository.addReminder(text, due)
+                                                if (added == null) {
+                                                    done(RemindOutcome.Full)
+                                                } else {
+                                                    val precision = ReminderAlarms.schedule(
+                                                        this@LauncherActivity, added.id, added.due.wallMs,
+                                                    )
+                                                    done(
+                                                        RemindOutcome.Scheduled(
+                                                            dueWallMs = added.due.wallMs,
+                                                            exact = precision == ReminderAlarms.Precision.EXACT,
+                                                        ),
+                                                    )
                                                 }
                                             }
-                                            RemindOutcome.Scheduled(due.wallMs)
                                         }
                                     },
                                 )
@@ -1358,6 +1370,12 @@ fun TerminalHomeView(
                 if (filteredApps.isNotEmpty()) {
                     launchAndClear(filteredApps.first().packageName)
                 }
+            // The answer comes later, through this same function, once the
+            // command knows it. See DispatchResult.Deferred.
+            is DispatchResult.Deferred -> {
+                query = ""
+                outcome.await { handleOutcome(it) }
+            }
         }
     }
 

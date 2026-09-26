@@ -66,7 +66,7 @@ import java.time.LocalDate
  */
 /** What `$ rem` did, for the prompt to report. */
 sealed interface RemindOutcome {
-    data class Scheduled(val dueWallMs: Long) : RemindOutcome
+    data class Scheduled(val dueWallMs: Long, val exact: Boolean) : RemindOutcome
 
     /** Twenty are pending. Nothing was added. */
     data object Full : RemindOutcome
@@ -109,11 +109,12 @@ class LauncherActions(
     /** Minutes since local midnight, for `$ bedtime` and `$ rem`. */
     val minuteOfDay: () -> Int,
     /**
-     * Set a reminder. Answers from the reminders already collected so the
-     * prompt can say at once whether it was taken; the store re-checks the
-     * cap inside its own transaction and schedules the alarm behind it.
+     * Set a reminder, and call back once with what happened: added and
+     * scheduled, exact or not, or refused because twenty are pending. The
+     * callback comes after the store write and the scheduling, on the main
+     * thread.
      */
-    val remind: (ReminderBook.When, String) -> RemindOutcome,
+    val remind: (ReminderBook.When, String, (RemindOutcome) -> Unit) -> Unit,
     val health: () -> ServiceHealth = { ServiceDiagnostics.health() },
 )
 
@@ -439,15 +440,26 @@ private fun execute(
 
     // Not a utility: it leaves state behind, which is why it is the one
     // deliberate exception to the console's boundary. See CLAUDE.md.
-    is Command.Rem -> when (val outcome = actions.remind(command.whenSpec, command.text)) {
-        is RemindOutcome.Scheduled -> DispatchResult.Confirmed(
-            R.string.cmd_ack_rem,
-            listOf(lockOpensAtText(context, outcome.dueWallMs)),
-        )
-        RemindOutcome.Full -> DispatchResult.Failed(
-            R.string.cmd_err_rem_full,
-            listOf(ReminderBook.MAX.toString()),
-        )
+    //
+    // Deferred, because what it reports is known only after the store has
+    // taken it and the alarm is set. Answered rather than Confirmed so the
+    // acknowledgement is held until the next keystroke, the way calc's is;
+    // a reaction faded before it could be read.
+    is Command.Rem -> DispatchResult.Deferred { deliver ->
+        actions.remind(command.whenSpec, command.text) { outcome ->
+            deliver(
+                when (outcome) {
+                    is RemindOutcome.Scheduled -> DispatchResult.Answered(
+                        ackKey = if (outcome.exact) R.string.cmd_ans_rem_exact else R.string.cmd_ans_rem_inexact,
+                        args = listOf(lockOpensAtText(context, outcome.dueWallMs)),
+                    )
+                    RemindOutcome.Full -> DispatchResult.Failed(
+                        R.string.cmd_err_rem_full,
+                        listOf(ReminderBook.MAX.toString()),
+                    )
+                },
+            )
+        }
     }
 
     is Command.Days -> when (val result = DateMath.parse(command.query, LocalDate.now())) {
@@ -657,6 +669,8 @@ fun DispatchResult.message(context: Context): String = when (this) {
     is DispatchResult.Unavailable -> context.getString(reasonKey, *formatArgs(args))
     is DispatchResult.NeedsConfirmation -> context.getString(R.string.cmd_confirm_line, echo)
     DispatchResult.NotACommand -> ""
+    // Never shown: the console waits for what it delivers instead.
+    is DispatchResult.Deferred -> ""
 }
 
 private fun formatArgs(args: List<String>): Array<Any> = (args + "").toTypedArray()
