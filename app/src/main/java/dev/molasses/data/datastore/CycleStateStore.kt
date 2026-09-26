@@ -17,6 +17,8 @@ import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.lease.LeaseLadder
 import dev.molasses.core.lease.LeaseManager
 import dev.molasses.core.launch.QuickLaunch
+import dev.molasses.core.remind.Reminder
+import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.lock.PrefixLock
@@ -453,6 +455,54 @@ class CycleStateStore(context: Context) {
      * rollover that promotes it those differ, and the engine's per app state
      * is the one that decides friction.
      */
+    // ------------------------------------------------------------ reminders
+
+    /** Every reminder not yet dismissed. See [ReminderBook]. */
+    val reminders: Flow<List<Reminder>> = store.data.map { s -> s.remindersList.map { it.toReminder() } }
+
+    suspend fun currentReminders(): List<Reminder> = current().remindersList.map { it.toReminder() }
+
+    /**
+     * Add a reminder, or refuse it when twenty are pending. The cap is
+     * checked inside the transaction, so two adds racing cannot make
+     * twenty one. Returns the reminder added, or null when refused.
+     */
+    suspend fun addReminder(text: String, due: StampedInstant): Reminder? {
+        var added: Reminder? = null
+        store.updateData { state ->
+            val list = state.remindersList.map { it.toReminder() }
+            val id = ReminderBook.nextId(list, state.reminderLastId)
+            when (val result = ReminderBook.add(list, id, text, due)) {
+                ReminderBook.Added.Full -> state
+                is ReminderBook.Added.Ok -> {
+                    added = result.reminder
+                    state.toBuilder()
+                        .clearReminders()
+                        .addAllReminders(result.list.map { it.toProto() })
+                        .setReminderLastId(id)
+                        .build()
+                }
+            }
+        }
+        return added
+    }
+
+    /** Mark [id] fired. It stays in the list, and on the console, until dismissed. */
+    suspend fun markReminderFired(id: Long, late: Boolean) {
+        store.updateData { state ->
+            val next = ReminderBook.fired(state.remindersList.map { it.toReminder() }, id, late)
+            state.toBuilder().clearReminders().addAllReminders(next.map { it.toProto() }).build()
+        }
+    }
+
+    /** The user dismissed [id] on the console. The only thing that removes one. */
+    suspend fun dismissReminder(id: Long) {
+        store.updateData { state ->
+            val next = ReminderBook.dismissed(state.remindersList.map { it.toReminder() }, id)
+            state.toBuilder().clearReminders().addAllReminders(next.map { it.toProto() }).build()
+        }
+    }
+
     /** The quick-launch rows as stored. Resolve through [QuickLaunch]. */
     val quickLaunch: Flow<QuickLaunch.Selection> = store.data.map {
         QuickLaunch.Selection(stored = it.quickLaunchPackagesList.toList(), chosen = it.quickLaunchChosen)

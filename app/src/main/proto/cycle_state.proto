@@ -191,6 +191,29 @@ message CycleState {
   // because the user removed every row. See core/launch/QuickLaunch.
   repeated string quick_launch_packages = 37;
   bool quick_launch_chosen = 38;
+
+  // $ rem. Every reminder not yet dismissed, fired or not. A fired one is
+  // the console's to show until the user dismisses it, which is what removes
+  // it: this list is its own queue, apart from console_queued and the speech
+  // budget, and it is here so a reminder that fired while the launcher was
+  // closed survives a process death. Capped at twenty by ReminderBook.
+  repeated ReminderEntry reminders = 39;
+  // The last id issued, so an id is never reused while an alarm that named
+  // an earlier holder of it could still be pending.
+  int64 reminder_last_id = 40;
+}
+
+// One $ rem. The due instant is stamped on all three clocks when it is set,
+// like LockEntry's start, so a reschedule on the same boot can measure on
+// elapsedRealtime and one after a reboot on the wall clock.
+message ReminderEntry {
+  int64 id = 1;
+  string text = 2;
+  int64 due_wall_ms = 3;
+  int64 due_elapsed_ms = 4;
+  int32 due_boot_id = 5;
+  bool fired = 6;
+  bool late = 7;
 }
 
 // One line of Bit's speech, in the form that survives a process death.

@@ -38,6 +38,10 @@ object CommandRender {
         is Command.Calc -> "calc ${command.expression}"
         is Command.Conv -> "conv ${command.query}"
         is Command.Days -> "days ${command.query}"
+        is Command.Rem -> when (val w = command.whenSpec) {
+            is dev.molasses.core.remind.ReminderBook.When.At -> "rem ${time(w.minuteOfDay)} ${command.text}"
+            is dev.molasses.core.remind.ReminderBook.When.In -> "rem ${duration(w.durationMs)} ${command.text}"
+        }
     }
 
     /**

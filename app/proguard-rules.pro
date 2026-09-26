@@ -29,6 +29,11 @@
 # in res/xml/accessibility_service_config.xml, which R8 does not scan.
 -keep class dev.molasses.ui.settings.SettingsActivity { *; }
 
+# ReminderReceiver. Named in the manifest, instantiated by the system for
+# BOOT_COMPLETED and for each reminder's alarm. Renamed, reminders would
+# never fire and never be re-armed after a reboot, with nothing on screen.
+-keep class dev.molasses.monitor.ReminderReceiver { *; }
+
 # LauncherActivity. Named in the manifest, and matched by string in
 # ForegroundEventRouter.LAUNCHER_CLASS_NAME against the class name the
 # platform puts on a WINDOW_STATE_CHANGED event. If it were renamed the router
@@ -46,7 +51,7 @@
 -keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { <fields>; }
 
 # The generated messages and enums in this app, by name: CycleState, AppState,
-# ConsoleQueued, ConsoleBudget, LockEntry, LeaseEntry, and the two proto enums
+# ConsoleQueued, ConsoleBudget, LockEntry, LeaseEntry, ReminderEntry, and the two proto enums
 # (LockReasonProto, CycleResetPolicyProto), all in package dev.molasses from
 # cycle_state.proto. The enums resolve by number through Internal.EnumLite.
 -keep class dev.molasses.CycleState { *; }
@@ -55,6 +60,7 @@
 -keep class dev.molasses.ConsoleBudget { *; }
 -keep class dev.molasses.LockEntry { *; }
 -keep class dev.molasses.LeaseEntry { *; }
+-keep class dev.molasses.ReminderEntry { *; }
 -keep enum dev.molasses.LockReasonProto { *; }
 -keep enum dev.molasses.CycleResetPolicyProto { *; }
 

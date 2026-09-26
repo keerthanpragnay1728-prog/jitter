@@ -1037,6 +1037,24 @@ produced it, which is the behaviour the shield was asked for anyway.
   `regularityWindowMs` / `minCvIntervals`. Both close defects found by the
   sweep; neither can be removed without reopening one.
 
+**Reminders (`$ rem`)**
+- **Inexact by design.** Scheduled with `AlarmManager.setAndAllowWhileIdle`
+  and no exact-alarm permission. With the screen on a reminder is normally
+  close to its time. With the device idle Android batches it: allow-while-idle
+  alarms from one app are spaced at least about nine minutes apart, and
+  Android 12 and later documents inexact alarms as delivered within an hour of
+  their time, longer if the app is in a restricted standby bucket. Exact
+  delivery would need `SCHEDULE_EXACT_ALARM` or `USE_EXACT_ALARM`, which is a
+  separate decision and is not requested.
+- **A missed tone means the text is seen only on the next visit to the
+  launcher.** There is no notification, so no notification grant. The tone
+  follows the ringer: silent plays nothing, vibrate vibrates. The text waits
+  on the console, in order, until each is dismissed.
+- Up to twenty pending. The twenty first is refused, nothing is dropped.
+- Alarms do not survive a reboot or a force stop. They are re-armed on
+  `BOOT_COMPLETED` and whenever the accessibility service connects, and one
+  that fell due while they were gone fires then, marked late.
+
 **Live gaps**
 
 These are neither platform ceilings nor decisions. Something in the app works

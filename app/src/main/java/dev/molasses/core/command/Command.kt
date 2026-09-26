@@ -84,6 +84,14 @@ sealed interface Command {
 
     /** `$ days until|since|between <date>`. See [Calc]. */
     data class Days(val query: String) : Command
+
+    /**
+     * `$ rem <time> <text>` or `$ rem <duration> <text>`. The text is the
+     * remainder of the line exactly as typed, internal spacing included. See
+     * `ReminderBook` for the queue and CLAUDE.md for why this command is an
+     * exception to the console's boundary.
+     */
+    data class Rem(val whenSpec: dev.molasses.core.remind.ReminderBook.When, val text: String) : Command
 }
 
 /** Why a line did not parse. Every one of these is shown to the user verbatim. */
@@ -97,6 +105,9 @@ sealed interface ParseError {
     data class BadTime(val token: String, val kind: dev.molasses.core.time.TimeParser.Kind) :
         ParseError
     data class BadToggle(val token: String) : ParseError
+
+    /** `$ rem`'s first argument is neither a time of day nor a duration. */
+    data class BadWhen(val token: String) : ParseError
 }
 
 /** Result of parsing one line. */

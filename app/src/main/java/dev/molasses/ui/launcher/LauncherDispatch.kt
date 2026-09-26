@@ -24,11 +24,13 @@ import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.BedtimeWindow
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRequest
+import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.util.Calc
 import dev.molasses.core.util.Convert
 import dev.molasses.core.util.DateMath
 import dev.molasses.core.util.Decimal
 import dev.molasses.monitor.ServiceDiagnostics
+import dev.molasses.ui.lock.lockOpensAtText
 import java.time.LocalDate
 
 /*
@@ -62,6 +64,14 @@ import java.time.LocalDate
  * Passed in rather than reached for, so this file has no Activity reference
  * and the dispatch table can be read in one screen.
  */
+/** What `$ rem` did, for the prompt to report. */
+sealed interface RemindOutcome {
+    data class Scheduled(val dueWallMs: Long) : RemindOutcome
+
+    /** Twenty are pending. Nothing was added. */
+    data object Full : RemindOutcome
+}
+
 class LauncherActions(
     val showLedger: () -> Unit,
     /** @return false when nothing handled the Intent. */
@@ -96,8 +106,14 @@ class LauncherActions(
      * only make the lock longer.
      */
     val armLock: (List<String>, Long, LockReason) -> Unit,
-    /** Minutes since local midnight, for `$ bedtime`. */
+    /** Minutes since local midnight, for `$ bedtime` and `$ rem`. */
     val minuteOfDay: () -> Int,
+    /**
+     * Set a reminder. Answers from the reminders already collected so the
+     * prompt can say at once whether it was taken; the store re-checks the
+     * cap inside its own transaction and schedules the alarm behind it.
+     */
+    val remind: (ReminderBook.When, String) -> RemindOutcome,
     val health: () -> ServiceHealth = { ServiceDiagnostics.health() },
 )
 
@@ -155,6 +171,8 @@ private object SubsystemSurface : EffectSurface {
         // Locks are persisted and enforced. Three commands became available
         // in one edit here, which is the whole economy of surfacing.
         "block", "focus", "bedtime" -> Availability.Available
+        // Reminders are scheduled and held; see ReminderAlarms.
+        "rem" -> Availability.Available
 
         else -> Availability.Unavailable(R.string.cmd_na_wiring)
     }
@@ -240,6 +258,7 @@ fun launcherRegistry(): CommandRegistry = CommandRegistry(
         calcUsage = R.string.cmd_usage_calc, calcDesc = R.string.cmd_desc_calc,
         convUsage = R.string.cmd_usage_conv, convDesc = R.string.cmd_desc_conv,
         daysUsage = R.string.cmd_usage_days, daysDesc = R.string.cmd_desc_days,
+        remUsage = R.string.cmd_usage_rem, remDesc = R.string.cmd_desc_rem,
     ),
 )
 
@@ -418,6 +437,19 @@ private fun execute(
         is Convert.Result.Failed -> DispatchResult.Failed(result.error.messageRes())
     }
 
+    // Not a utility: it leaves state behind, which is why it is the one
+    // deliberate exception to the console's boundary. See CLAUDE.md.
+    is Command.Rem -> when (val outcome = actions.remind(command.whenSpec, command.text)) {
+        is RemindOutcome.Scheduled -> DispatchResult.Confirmed(
+            R.string.cmd_ack_rem,
+            listOf(lockOpensAtText(context, outcome.dueWallMs)),
+        )
+        RemindOutcome.Full -> DispatchResult.Failed(
+            R.string.cmd_err_rem_full,
+            listOf(ReminderBook.MAX.toString()),
+        )
+    }
+
     is Command.Days -> when (val result = DateMath.parse(command.query, LocalDate.now())) {
         is DateMath.Result.Span -> DispatchResult.Answered(
             ackKey = daysAnswerRes(result.days),
@@ -581,6 +613,7 @@ fun ParseError.messageRes(): Int = when (this) {
     is ParseError.BadDuration -> R.string.cmd_err_duration
     is ParseError.BadTime -> R.string.cmd_err_time
     is ParseError.BadToggle -> R.string.cmd_err_toggle
+    is ParseError.BadWhen -> R.string.cmd_err_when
 }
 
 /** The token or usage hint to interpolate into [messageRes]. */
@@ -592,6 +625,7 @@ fun ParseError.argument(): String? = when (this) {
     is ParseError.BadDuration -> token
     is ParseError.BadTime -> token
     is ParseError.BadToggle -> token
+    is ParseError.BadWhen -> token
 }
 
 /** A parse failure as a dispatch result, so the prompt has one result type. */

@@ -410,6 +410,33 @@ Three utilities were admitted on it: `calc`, `conv` and `days`. Each takes a
 line, answers once, and keeps nothing between calls, which every one of their
 test files asserts directly rather than leaving as a claim.
 
+### `$ rem` is a deliberate exception, not a violation to clean up
+
+`$ rem` fails the second clause on purpose. A reminder is state the user will
+come back to read, and by the rule above it belongs in an app. The owner
+decided otherwise, and this is written down so a later reader does not delete
+it as a rule violation, the way the `rem` stub was deleted in 132aa42.
+
+The reasons, as decided:
+
+- **The first clause holds.** Opening a clock or a notes app to set "in 45
+  minutes, tea" costs more attention than the reminder is worth, and the
+  console is already where the user is when the thought arrives. That is the
+  exact question the first clause asks, and here it comes out the other way
+  from the dictionary.
+- **The state is bounded and self-clearing.** At most twenty pending, and a
+  reminder leaves the store when it is dismissed. It is not a list to curate.
+- **It announces itself where the user already looks.** No notification and
+  no new grant: a short tone that follows the ringer, and the text waiting on
+  the console until dismissed.
+
+What keeps it an exception rather than a precedent: it is the only command
+that stores anything, its queue is separate from Bit's speech budget and
+from `console_queued`, and it has no view of its own beyond the one row. A
+second stateful command needs its own decision recorded here, not this one
+cited. Delivery is inexact by design (no exact-alarm permission), and the
+README says how late it can be.
+
 ### The first clause is not decoration, and here is where it bit
 
 The second clause does most of the work and is easy to read as the whole

@@ -19,6 +19,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS"/>
+    <!-- $ rem vibrates when the ringer is on vibrate. Granted at install. -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
 
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true"/>
     <uses-feature android:name="android.hardware.sensor.stepdetector" android:required="false"/>
@@ -217,6 +219,20 @@
             correct and never would have to be undone. A temporary fix that
             has to be reverted is worse than a declared status quo.
             -->
+            <!--
+            $ rem: each reminder's alarm, and BOOT_COMPLETED to re-arm them
+            (RECEIVE_BOOT_COMPLETED is declared above). Not exported: the alarm
+            names this class explicitly and the boot broadcast comes from the
+            system, which reaches a non-exported receiver.
+            -->
+            <receiver
+            android:name=".monitor.ReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+            </receiver>
+
             <activity
             android:name=".ui.launcher.LauncherActivity"
             android:exported="true"

@@ -50,12 +50,15 @@ class CommandParserTest {
     }
 
     @Test
-    fun `log, rem and allow are not verbs any more`() {
+    fun `log and allow are not verbs any more`() {
         // Both parsed and then reported "not wired yet" from the subsystem
         // surface, permanently. A terminal that accepts a command it can
         // never run teaches the user to distrust the ones it can. They now
         // fail at the parser like any other word, which is what they are.
-        for (word in listOf("log", "rem", "allow", "log instagram", "allow yt 10m")) {
+        //
+        // rem was on this list. It is a verb again, and a working one, by
+        // owner decision: see CLAUDE.md and RemParseTest.
+        for (word in listOf("log", "allow", "log instagram", "allow yt 10m")) {
             val parsed = CommandParser.parse(word)
             assertTrue(
                 "'$word' still parses: $parsed",
@@ -63,7 +66,7 @@ class CommandParserTest {
                     parsed.error is ParseError.UnknownCommand,
             )
         }
-        for (verb in listOf("log", "rem", "allow")) {
+        for (verb in listOf("log", "allow")) {
             assertTrue(verb, verb !in CommandParser.VERBS)
             assertTrue(verb, verb !in CommandParser.USAGE)
         }
