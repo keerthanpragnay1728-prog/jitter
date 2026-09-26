@@ -25,7 +25,6 @@ class CycleWindowEngineTest {
     private val window = CycleResetPolicy.WINDOW_MS
 
     private class Rig(
-        policy: CycleResetPolicy = CycleResetPolicy.FIXED_WINDOW_6H,
         initial: EngineSnapshot? = null,
     ) {
         val store = FakeStore()
@@ -33,7 +32,7 @@ class CycleWindowEngineTest {
         val clock = SplitClock(wall = WALL_BASE, mono = 0, boot = 1)
         val scope = TestScope()
         val engine = FrictionEngine(
-            initial = initial ?: EngineSnapshot(resetPolicy = policy),
+            initial = initial ?: EngineSnapshot(),
             store = store,
             ledger = ledger,
             wallClock = clock,
@@ -357,24 +356,5 @@ class CycleWindowEngineTest {
         r2.at(31 * min)
         r2.tick(31 * min)
         assertEquals(window - 31 * min, r2.state().cycleRemainingMs)
-    }
-
-    @Test
-    fun `abstinence policy measures from last use and is also warp proof`() {
-        val r = Rig(policy = CycleResetPolicy.ABSTINENCE_6H)
-        r.enter(ig, 0)
-        r.scroll(ig, 19 * min)
-        val tier = r.snap(ig).tierIndex
-        r.exit(ig, 19 * min)
-
-        r.at(20 * min)
-        r.warpWallForward(7 * hour)
-        r.enter(ig, 20 * min)
-        assertEquals(tier, r.snap(ig).tierIndex)
-
-        // Six real hours away does roll it.
-        r.exit(ig, 21 * min)
-        r.enter(ig, 21 * min + window + 1)
-        assertEquals(0, r.snap(ig).tierIndex)
     }
 }

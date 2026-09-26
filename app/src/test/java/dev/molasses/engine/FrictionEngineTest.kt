@@ -1,7 +1,6 @@
 package dev.molasses.engine
 
 import dev.molasses.core.model.AppSnapshot
-import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EventType
 import dev.molasses.core.friction.FrictionCurve
@@ -503,51 +502,8 @@ class FrictionEngineTest {
     // ------------------------------------------------------ cycle rollover
 
     @Test
-    fun `abstinence policy rolls the cycle after six idle hours`() {
-        val r = Rig(EngineSnapshot(resetPolicy = CycleResetPolicy.ABSTINENCE_6H))
-        r.enter(ig, 0)
-        r.scroll(ig, 15 * min)
-        r.exit(ig, 15 * min)
-        assertEquals(3, r.snap(ig).tierIndex)
-
-        r.enter(ig, 15 * min + 6 * hour)
-
-        assertEquals("cycle should have rolled", 0, r.snap(ig).tierIndex)
-        assertEquals(0L, r.snap(ig).accumulatedMs)
-        assertEquals(FrictionDecision.NONE, r.scroll(ig, 15 * min + 6 * hour + 1 * min))
-    }
-
-    @Test
-    fun `abstinence policy does not roll one minute short of six hours`() {
-        val r = Rig(EngineSnapshot(resetPolicy = CycleResetPolicy.ABSTINENCE_6H))
-        r.enter(ig, 0)
-        r.scroll(ig, 15 * min)
-        r.exit(ig, 15 * min)
-
-        r.enter(ig, 15 * min + 6 * hour - 60_000)
-
-        assertEquals(3, r.snap(ig).tierIndex)
-        assertEquals(15 * min, r.snap(ig).accumulatedMs)
-    }
-
-    @Test
-    fun `abstinence policy does not roll while the app keeps being used`() {
-        val r = Rig(EngineSnapshot(resetPolicy = CycleResetPolicy.ABSTINENCE_6H))
-        r.enter(ig, 0)
-        // Seven hours of on-and-off use, never six clear hours away.
-        var t = 0L
-        repeat(7) {
-            r.scroll(ig, t + 1 * min)
-            r.exit(ig, t + 2 * min)
-            t += 1 * hour
-            r.enter(ig, t)
-        }
-        assertTrue("should still be laddered, tier=${r.snap(ig).tierIndex}", r.snap(ig).tierIndex >= 2)
-    }
-
-    @Test
-    fun `fixed window policy rolls six hours after the anchor even while in use`() {
-        val r = Rig(EngineSnapshot(resetPolicy = CycleResetPolicy.FIXED_WINDOW_6H))
+    fun `the cycle rolls six hours after the anchor even while in use`() {
+        val r = Rig(EngineSnapshot())
         r.enter(ig, 0)
         r.scroll(ig, 15 * min)
         r.exit(ig, 15 * min)

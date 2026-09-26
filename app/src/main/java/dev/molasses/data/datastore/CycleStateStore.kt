@@ -21,7 +21,6 @@ import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.lock.PrefixLock
 import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.model.AppSnapshot
-import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.session.TargetScope
 import dev.molasses.core.time.StampedInstant
@@ -84,7 +83,10 @@ class CycleStateStore(context: Context) {
                 .setLastSeenWallMs(System.currentTimeMillis())
                 .setLastSeenElapsedMs(SystemClock.elapsedRealtime())
                 .setOpenSessionPkg(openSessionPkg ?: "")
-                .setResetPolicy(snapshot.resetPolicy.toProto())
+                // Constant. The engine has one cycle policy; the field is
+                // kept, and written, so the file stays well formed for any
+                // build that still reads it.
+                .setResetPolicy(CycleResetPolicyProto.FIXED_WINDOW_6H)
             if (openSessionPkg == null) {
                 b.clearOpenSessionStartWallMs()
                 b.clearOpenSessionStartElapsedMs()
@@ -597,16 +599,6 @@ class CycleStateStore(context: Context) {
 
 // ------------------------------------------------------------------ mapping
 
-fun CycleResetPolicy.toProto(): CycleResetPolicyProto = when (this) {
-    CycleResetPolicy.ABSTINENCE_6H -> CycleResetPolicyProto.ABSTINENCE_6H
-    CycleResetPolicy.FIXED_WINDOW_6H -> CycleResetPolicyProto.FIXED_WINDOW_6H
-}
-
-fun CycleResetPolicyProto.toModel(): CycleResetPolicy = when (this) {
-    CycleResetPolicyProto.FIXED_WINDOW_6H -> CycleResetPolicy.FIXED_WINDOW_6H
-    else -> CycleResetPolicy.ABSTINENCE_6H
-}
-
 /**
  * Stored as an ordinal, resolved here and nowhere else.
  *
@@ -653,11 +645,6 @@ fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
     },
     cycleAnchorWallMs = cycleAnchorWallMs,
     lastTargetUseWallMs = lastTargetUseWallMs,
-    // Not read. The reset policy is no longer a setting: the engine runs
-    // FIXED_WINDOW_6H. The field and enum stay in the proto so every stored
-    // file still parses, including one where a user once chose the other
-    // policy, which would otherwise come back on the next restart.
-    resetPolicy = CycleResetPolicy.FIXED_WINDOW_6H,
     cycleAnchorElapsedMs = cycleAnchorElapsedMs,
     cycleAnchorBootId = cycleAnchorBootId,
     lastTargetUseElapsedMs = lastTargetUseElapsedMs,

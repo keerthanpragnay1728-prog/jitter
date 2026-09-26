@@ -7,7 +7,6 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import dev.molasses.core.friction.CycleRollover
-import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EventType
 import dev.molasses.core.time.ClockTamperClamp
@@ -160,7 +159,7 @@ class ForegroundReconciler(
 
     /**
      * A cycle can come due while the process is dead -- the common case, since
-     * six hours of abstinence usually means six hours of not running. The
+     * a six-hour window usually ends while the phone is doing something else. The
      * engine only checks on foreground entry, so the check also has to happen
      * here, using the clamped elapsed time rather than the raw wall delta.
      */
@@ -168,18 +167,11 @@ class ForegroundReconciler(
         snapshot: EngineSnapshot,
         now: StampedInstant,
     ): EngineSnapshot {
-        val reference = when (snapshot.resetPolicy) {
-            CycleResetPolicy.ABSTINENCE_6H -> StampedInstant(
-                wallMs = snapshot.lastTargetUseWallMs,
-                elapsedMs = snapshot.lastTargetUseElapsedMs,
-                bootId = snapshot.lastTargetUseBootId,
-            )
-            CycleResetPolicy.FIXED_WINDOW_6H -> StampedInstant(
-                wallMs = snapshot.cycleAnchorWallMs,
-                elapsedMs = snapshot.cycleAnchorElapsedMs,
-                bootId = snapshot.cycleAnchorBootId,
-            )
-        }
+        val reference = StampedInstant(
+            wallMs = snapshot.cycleAnchorWallMs,
+            elapsedMs = snapshot.cycleAnchorElapsedMs,
+            bootId = snapshot.cycleAnchorBootId,
+        )
         // Same rule as the engine tick, same helper. The clamp lives inside
         // CycleWindow now, so there is no separate tamper suppression here:
         // a wall clock moved forward credits nothing towards the age and the
@@ -189,8 +181,7 @@ class ForegroundReconciler(
         ledger.log(
             "",
             EventType.RECONCILED,
-            "cycle rollover on connect policy=${snapshot.resetPolicy} " +
-                "age=${CycleWindow.ageMs(reference, now)}ms",
+            "cycle rollover on connect age=${CycleWindow.ageMs(reference, now)}ms",
         )
         // Unanchored, not anchored at now. Nothing is in the foreground at
         // service-connect time, and the first target-app entry after this is

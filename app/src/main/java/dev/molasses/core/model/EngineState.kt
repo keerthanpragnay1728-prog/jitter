@@ -66,7 +66,6 @@ data class EngineState(
     val openSessionPkg: String? = null,
     val cycleAnchorWallMs: Long = 0,
     val lastTargetUseWallMs: Long = 0,
-    val resetPolicy: CycleResetPolicy = CycleResetPolicy.DEFAULT,
     /**
      * Deadline minus now, clamped into `[0, WINDOW_MS]`. This is the number
      * the status header shows as RESETS IN, and it is computed here rather
@@ -85,7 +84,6 @@ data class EngineSnapshot(
     val perApp: Map<String, AppSnapshot> = emptyMap(),
     val cycleAnchorWallMs: Long = 0,
     val lastTargetUseWallMs: Long = 0,
-    val resetPolicy: CycleResetPolicy = CycleResetPolicy.DEFAULT,
     /**
      * The monotonic and boot-count halves of the two wall-clock stamps above.
      * Persisted because without them a restart would reduce both stamps to

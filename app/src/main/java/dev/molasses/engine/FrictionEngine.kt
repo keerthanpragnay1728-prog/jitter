@@ -1,7 +1,6 @@
 package dev.molasses.engine
 
 import dev.molasses.core.model.AppSnapshot
-import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EngineState
 import dev.molasses.core.model.EventType
@@ -98,7 +97,7 @@ internal class MutableAppState(
  * user-settable, and the whole point of the ladder is that accumulated time
  * cannot be argued with.
  *
- * The cycle anchor and the abstinence window do have to survive a reboot, so
+ * The cycle anchor and the last-use stamp do have to survive a reboot, so
  * they carry a wall-clock stamp as well. They are held as `StampedInstant`
  * and every deadline question about them goes through `CycleWindow`, which
  * applies `ClockTamperClamp`. Setting the system clock forward six hours
@@ -185,8 +184,12 @@ class FrictionEngine(
 
     /**
      * Start of the current cycle, or [StampedInstant.UNSET] between cycles.
-     * Under `FIXED_WINDOW_6H` the deadline is this plus six hours; under
-     * `ABSTINENCE_6H` it is only provenance and [lastTargetUse] decides.
+     * The deadline is this plus six hours: the cycle is a fixed window.
+     *
+     * There was a second policy, `ABSTINENCE_6H`, measured from
+     * [lastTargetUse]. Nothing has been able to select it since the setting
+     * was removed, so its branches are gone here and in the reconciler. The
+     * enum and the proto field stay so stored files parse.
      */
     private var anchor: StampedInstant = StampedInstant(
         wallMs = initial.cycleAnchorWallMs,
@@ -199,8 +202,6 @@ class FrictionEngine(
         elapsedMs = initial.lastTargetUseElapsedMs,
         bootId = initial.lastTargetUseBootId,
     )
-
-    private val resetPolicy: CycleResetPolicy = initial.resetPolicy
 
     private var openPkg: String? = null
     private var openStartMonotonicMs: Long = 0
@@ -506,7 +507,6 @@ class FrictionEngine(
             perApp = apps.mapValues { (_, a) -> a.snapshot(liveAccumulatedMs(a, now)) },
             cycleAnchorWallMs = anchor.wallMs,
             lastTargetUseWallMs = lastTargetUse.wallMs,
-            resetPolicy = resetPolicy,
             cycleAnchorElapsedMs = anchor.elapsedMs,
             cycleAnchorBootId = anchor.bootId,
             lastTargetUseElapsedMs = lastTargetUse.elapsedMs,
@@ -552,13 +552,9 @@ class FrictionEngine(
      * which is the scope the invariant is actually about.
      */
     private fun maybeRollCycle(now: StampedInstant, nowMs: Long) {
-        val reference = when (resetPolicy) {
-            CycleResetPolicy.ABSTINENCE_6H -> lastTargetUse
-            CycleResetPolicy.FIXED_WINDOW_6H -> anchor
-        }
-        if (!CycleWindow.isDue(reference, now)) return
+        if (!CycleWindow.isDue(anchor, now)) return
 
-        val ageMs = CycleWindow.ageMs(reference, now)
+        val ageMs = CycleWindow.ageMs(anchor, now)
         val keys = apps.keys.toList()
         for (pkg in keys) {
             // The horizon crosses the rollover, and a widen waiting for one
@@ -587,7 +583,7 @@ class FrictionEngine(
         ledger.log(
             "",
             EventType.RECONCILED,
-            "cycle rollover policy=$resetPolicy age=${ageMs}ms open=${openPkg ?: "-"}",
+            "cycle rollover age=${ageMs}ms open=${openPkg ?: "-"}",
         )
         onCycleRolled()
     }
@@ -614,14 +610,7 @@ class FrictionEngine(
             openSessionPkg = openPkg,
             cycleAnchorWallMs = anchor.wallMs,
             lastTargetUseWallMs = lastTargetUse.wallMs,
-            resetPolicy = resetPolicy,
-            cycleRemainingMs = CycleWindow.remainingMs(
-                anchor = when (resetPolicy) {
-                    CycleResetPolicy.ABSTINENCE_6H -> lastTargetUse
-                    CycleResetPolicy.FIXED_WINDOW_6H -> anchor
-                },
-                now = now,
-            ),
+            cycleRemainingMs = CycleWindow.remainingMs(anchor = anchor, now = now),
         )
     }
 

@@ -116,10 +116,10 @@ object HorizonPolicy {
      *
      * ## Why a widen echoes and a narrow does not
      * The rollover delay turned out to be a cooling-off period rather than a
-     * cost. Under `ABSTINENCE_6H` the cycle resets after six hours with no
-     * target use, so the user most likely to want sixty minutes is the one
-     * who next opens the app after a long gap, which is exactly when the
-     * promotion has already fired. The delay stops the impulsive widen, which
+     * cost. Under the abstinence policy this app once had, the cycle reset
+     * after six hours with no target use, so the user most likely to want
+     * sixty minutes was the one who next opened the app after a long gap,
+     * which is exactly when the promotion had already fired. The delay stops the impulsive widen, which
      * is its job, and does nothing at all about the considered one. That left
      * the trip to settings carrying the whole defence by itself.
      *
