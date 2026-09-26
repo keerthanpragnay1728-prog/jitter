@@ -910,13 +910,40 @@ class MolassesAccessibilityService : AccessibilityService() {
      *
      * Distinct from [leaveTarget]: the session stays open and time keeps
      * accruing. This is only about what is on the glass.
+     *
+     * The one way every window this service owns comes down: pause, lock,
+     * disable, a financial app in front, and the three lifecycle exits,
+     * [onInterrupt], [onUnbind] and [onDestroy]. Teardown used to have its
+     * own list and it had dropped the lease gate, which left a focusable
+     * window and its audio focus behind; [onInterrupt] had dropped the lock
+     * overlay. One list cannot disagree with itself.
+     *
+     * Audio focus is released inside each manager's own dismiss, at the
+     * choke point every one of its exits runs through, so dismissing here is
+     * releasing. Each step is separate and caught: a manager that is not
+     * initialised yet, not showing, or whose removeView throws must not stop
+     * the next one coming down. `OverlayTeardownWiringTest` holds this list
+     * against the manager fields.
      */
     private fun tearDownOverlays(reason: String) {
-        shutter.release(reason)
-        shutter.detach()
-        if (gate.isShowing) gate.abandon(reason)
-        leaseGate.dismiss(reason)
-        lockOverlay.dismiss(reason)
+        overlayStep("shutter release") { if (::shutter.isInitialized) shutter.release(reason) }
+        overlayStep("shutter detach") { if (::shutter.isInitialized) shutter.detach() }
+        overlayStep("gate") {
+            if (::gate.isInitialized) {
+                if (gate.isShowing) gate.abandon(reason)
+                gate.dismiss()
+            }
+        }
+        overlayStep("lease gate") { if (::leaseGate.isInitialized) leaseGate.dismiss(reason) }
+        overlayStep("lock overlay") { if (::lockOverlay.isInitialized) lockOverlay.dismiss(reason) }
+    }
+
+    private inline fun overlayStep(name: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            Log.w(TAG, "overlay teardown: $name failed", e)
+        }
     }
 
     private fun enterTarget(pkg: String) {
@@ -1182,11 +1209,8 @@ class MolassesAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         // The system is telling us to stop whatever feedback we are giving.
         // An armed, invisible, touch-eating window is the worst thing to leave
-        // behind, so it goes first.
-        runCatching { shutter.release("onInterrupt") }
-        runCatching { shutter.detach() }
-        runCatching { if (gate.isShowing) gate.abandon("onInterrupt") }
-        runCatching { leaseGate.dismiss("onInterrupt") }
+        // behind, so the shutter goes first, inside the one shared list.
+        tearDownOverlays("onInterrupt")
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -1208,12 +1232,9 @@ class MolassesAccessibilityService : AccessibilityService() {
         // Persist before the scope dies, otherwise the last interval is lost
         // and has to be rebuilt by the reconciler.
         runCatching { if (::engine.isInitialized) engine.checkpoint(now()) }
-        runCatching { if (::shutter.isInitialized) { shutter.release("teardown"); shutter.detach() } }
-        runCatching { if (::gate.isInitialized) gate.dismiss() }
-        // The flash dismisses itself after its hold, so this only matters when
-        // the service dies mid-hold. Without it that window outlives the
-        // process that can remove it.
-        runCatching { if (::lockOverlay.isInitialized) lockOverlay.dismiss("teardown") }
+        // Every window, including the lease gate and the lock screen, which
+        // would otherwise outlive the process that can remove them.
+        tearDownOverlays("teardown")
         scope.cancel()
     }
 
