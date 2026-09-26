@@ -8,6 +8,7 @@ import dev.molasses.core.diag.LedgerExport
 import dev.molasses.core.diag.RouteTally
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.LockReason
+import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.lock.PrefixLock
 import dev.molasses.core.friction.FrictionCurve
@@ -103,6 +104,22 @@ class SettingsViewModel @Inject constructor(
 
     private val _installed = MutableStateFlow<List<InstalledApp>>(emptyList())
     val installed: StateFlow<List<InstalledApp>> = _installed.asStateFlow()
+
+    /** Every launchable app, system apps included, for the quick-launch picker. */
+    private val _launchable = MutableStateFlow<List<InstalledApp>>(emptyList())
+    val launchable: StateFlow<List<InstalledApp>> = _launchable.asStateFlow()
+
+    /** The console's quick-launch rows, as stored. Resolve through QuickLaunch. */
+    val quickLaunch: StateFlow<QuickLaunch.Selection> = repo.quickLaunch
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), QuickLaunch.Selection(emptyList(), chosen = false))
+
+    fun addQuickLaunch(entry: QuickLaunch.Entry) {
+        viewModelScope.launch { repo.addQuickLaunch(entry) }
+    }
+
+    fun removeQuickLaunch(entry: QuickLaunch.Entry) {
+        viewModelScope.launch { repo.removeQuickLaunch(entry) }
+    }
 
     /**
      * The tracked packages, **resolved**, which is what CFG has to show.
@@ -318,6 +335,7 @@ class SettingsViewModel @Inject constructor(
         _permissions.value = repo.permissionState()
         viewModelScope.launch {
             _installed.value = withContext(Dispatchers.IO) { repo.installedApps() }
+            _launchable.value = withContext(Dispatchers.IO) { repo.launchableApps() }
             _latency.value = withContext(Dispatchers.IO) { parseLatencies() }
             _gateOutcomes.value = withContext(Dispatchers.IO) { dao.gateOutcomesByPath() }
         }

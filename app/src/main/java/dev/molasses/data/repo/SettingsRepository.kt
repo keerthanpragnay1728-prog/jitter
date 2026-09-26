@@ -2,6 +2,7 @@ package dev.molasses.data.repo
 
 import android.app.AppOpsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
@@ -14,6 +15,7 @@ import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
+import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.session.TargetScope
 import dev.molasses.core.lock.LockRegistry
@@ -223,6 +225,38 @@ class SettingsRepository(
 
     /** The user's declared horizon per package. See [CycleStateStore.appHorizons]. */
     val appHorizons: Flow<Map<String, Long>> = store.appHorizons
+
+    /** The console's quick-launch rows, as stored. See [QuickLaunch]. */
+    val quickLaunch: Flow<QuickLaunch.Selection> = store.quickLaunch
+
+    suspend fun addQuickLaunch(entry: QuickLaunch.Entry) =
+        store.editQuickLaunch(::isLaunchable) { QuickLaunch.added(it, entry) }
+
+    suspend fun removeQuickLaunch(entry: QuickLaunch.Entry) =
+        store.editQuickLaunch(::isLaunchable) { QuickLaunch.removed(it, entry) }
+
+    /** Whether [pkg] is installed and has a launcher entry. */
+    fun isLaunchable(pkg: String): Boolean =
+        runCatching { appContext.packageManager.getLaunchIntentForPackage(pkg) != null }.getOrDefault(false)
+
+    /**
+     * Every app with a launcher entry, system apps included, for the
+     * quick-launch picker. Unlike [installedApps], which the target list
+     * reads, this does not drop system apps: a camera or a browser is
+     * exactly what someone wants one tap away.
+     */
+    fun launchableApps(): List<InstalledApp> {
+        val pm = appContext.packageManager
+        val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return runCatching { pm.queryIntentActivities(main, 0) }.getOrDefault(emptyList())
+            .asSequence()
+            .map { it.activityInfo.applicationInfo }
+            .filter { it.packageName != appContext.packageName }
+            .distinctBy { it.packageName }
+            .map { InstalledApp(it.packageName, pm.getApplicationLabel(it).toString()) }
+            .sortedBy { it.label.lowercase() }
+            .toList()
+    }
 
     suspend fun setAppHorizon(pkg: String, horizonMs: Long) =
         store.setAppHorizon(pkg, horizonMs)

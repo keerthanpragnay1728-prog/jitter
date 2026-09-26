@@ -178,6 +178,19 @@ message CycleState {
   // were fresh installs anyway. The migration is a no-op by construction
   // rather than by a step that could be skipped.
   bool targets_chosen = 36;
+
+  // The console's quick-launch rows, and whether the user has ever edited
+  // them. The same two-part shape as target_packages and targets_chosen.
+  //
+  // Each entry is a package name, or a built-in row spelled "@" plus its
+  // name: @phone, @messages, @calendar, @calculator, @clock. No package name
+  // can contain "@", so the two never collide. @messages is the row with the
+  // multi-client selector behind it, which is why it is not a package.
+  //
+  // False and empty shows the five defaults. True and empty shows nothing,
+  // because the user removed every row. See core/launch/QuickLaunch.
+  repeated string quick_launch_packages = 37;
+  bool quick_launch_chosen = 38;
 }
 
 // One line of Bit's speech, in the form that survives a process death.
