@@ -1,10 +1,10 @@
 package dev.molasses.debug
 
+import dev.molasses.core.repoRoot
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
@@ -22,8 +22,6 @@ import org.junit.Test
  */
 class DebugSurfaceTest {
 
-    private fun repoRoot(): File? = listOf(File("."), File(".."), File("/home/user/visceral"))
-        .firstOrNull { File(it, "app/src/main/java/dev/molasses").isDirectory }
 
     private fun read(root: File, path: String) = File(root, path).readText()
 
@@ -33,7 +31,6 @@ class DebugSurfaceTest {
     @Test
     fun `both variants supply the surface`() {
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
         assertTrue("missing $debugPath", File(root, debugPath).isFile)
         assertTrue("missing $releasePath", File(root, releasePath).isFile)
     }
@@ -41,10 +38,9 @@ class DebugSurfaceTest {
     @Test
     fun `release disables the surface and debug enables it`() {
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
         assertTrue(
             "debug variant must enable the surface",
-            read(root!!, debugPath).contains("ENABLED: Boolean = true"),
+            read(root, debugPath).contains("ENABLED: Boolean = true"),
         )
         assertTrue(
             "release variant must disable the surface",
@@ -55,8 +51,7 @@ class DebugSurfaceTest {
     @Test
     fun `the release gesture is a no-op and contains no pointer handling`() {
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
-        val release = read(root!!, releasePath)
+        val release = read(root, releasePath)
         for (forbidden in listOf("pointerInput", "awaitFirstDown", "withTimeoutOrNull", "awaitEachGesture")) {
             assertFalse(
                 "release DebugSurface must not contain $forbidden",
@@ -74,12 +69,11 @@ class DebugSurfaceTest {
         // A signature drift would only show up as a release build failure,
         // which is the variant nobody compiles while iterating.
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
         fun symbols(text: String) = Regex("""\b(?:const val|fun)\s+(\w+)""")
             .findAll(text).map { it.groupValues[1] }.toSet()
         assertEquals(
             "debug and release DebugSurface must declare the same members",
-            symbols(read(root!!, debugPath)),
+            symbols(read(root, debugPath)),
             symbols(read(root, releasePath)),
         )
     }
@@ -87,7 +81,6 @@ class DebugSurfaceTest {
     @Test
     fun `main never implements a bypass of its own`() {
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
         val main = File(root, "app/src/main/java/dev/molasses")
         val offenders = main.walkTopDown()
             .filter { it.extension == "kt" }
@@ -104,11 +97,10 @@ class DebugSurfaceTest {
     @Test
     fun `every debug-only entry point in main is gated on DebugSurface`() {
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
 
         // The gate bypass reaches the detector only through the composable
         // parameter, which is inert unless the debug gesture fires.
-        val gate = read(root!!, "app/src/main/java/dev/molasses/ui/gate/GateScreen.kt")
+        val gate = read(root, "app/src/main/java/dev/molasses/ui/gate/GateScreen.kt")
         assertTrue(
             "the bypass must be routed through DebugSurface.debugBypassGesture",
             gate.contains("Modifier.debugBypassGesture(onDebugBypass)"),
@@ -127,8 +119,7 @@ class DebugSurfaceTest {
         // A capture from a device must never let a bypassed session be read
         // back as a pass.
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
-        val manager = read(root!!, "app/src/main/java/dev/molasses/overlay/GateOverlayManager.kt")
+        val manager = read(root, "app/src/main/java/dev/molasses/overlay/GateOverlayManager.kt")
         assertTrue(
             "a debug bypass must write GATE_BYPASSED_DEBUG",
             manager.contains("EventType.GATE_BYPASSED_DEBUG"),
@@ -146,8 +137,6 @@ class DebugSurfaceTest {
  */
 class BitTraceTest {
 
-    private fun repoRoot(): File? = listOf(File("."), File(".."), File("/home/user/visceral"))
-        .firstOrNull { File(it, "app/src/main/java/dev/molasses").isDirectory }
 
     private fun read(root: File, path: String) = File(root, path).readText()
 
@@ -157,7 +146,6 @@ class BitTraceTest {
     @Test
     fun `both variants supply the trace`() {
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
         assertTrue("missing $debugPath", File(root, debugPath).isFile)
         assertTrue("missing $releasePath", File(root, releasePath).isFile)
     }
@@ -165,16 +153,14 @@ class BitTraceTest {
     @Test
     fun `release disables the trace and debug enables it`() {
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
-        assertTrue(read(root!!, debugPath).contains("ENABLED: Boolean = true"))
+        assertTrue(read(root, debugPath).contains("ENABLED: Boolean = true"))
         assertTrue(read(root, releasePath).contains("ENABLED: Boolean = false"))
     }
 
     @Test
     fun `the release trace writes nothing`() {
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
-        val release = read(root!!, releasePath)
+        val release = read(root, releasePath)
         for (forbidden in listOf("Log.d", "Log.i", "Log.w", "Log.e", "android.util.Log")) {
             assertFalse(
                 "release BitTrace must not contain $forbidden",
@@ -186,11 +172,10 @@ class BitTraceTest {
     @Test
     fun `both variants declare the same entry points`() {
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
         for (signature in listOf("fun tick(", "fun drew(")) {
             assertTrue(
                 "debug BitTrace is missing $signature",
-                read(root!!, debugPath).contains(signature),
+                read(root, debugPath).contains(signature),
             )
             assertTrue(
                 "release BitTrace is missing $signature",
@@ -206,8 +191,7 @@ class BitTraceTest {
         // fault from a rendering one, which is the only question it exists
         // to answer.
         val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
-        val launcher = read(root!!, "app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt")
+        val launcher = read(root, "app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt")
         assertTrue("BitTrace.tick is not called", launcher.contains("BitTrace.tick("))
         assertTrue("BitTrace.drew is not called", launcher.contains("BitTrace.drew("))
     }
