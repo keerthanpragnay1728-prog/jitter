@@ -11,13 +11,13 @@ class PrefixLockTest {
     fun `a new prefix covering a locked package is refused`() {
         val r = PrefixLock.admitted(stored = emptyList(), requested = listOf("com.instagram"), lockedPackages = listOf(ig))
         assertEquals(emptyList<String>(), r.prefixes)
-        assertEquals(listOf("com.instagram"), r.refused)
+        assertEquals(listOf(PrefixLock.Refusal("com.instagram", ig)), r.refused)
     }
 
     @Test
     fun `the exact package is refused too, whatever its spelling`() {
         val r = PrefixLock.admitted(emptyList(), listOf("  COM.Instagram.Android "), listOf(ig))
-        assertEquals(listOf("com.instagram.android"), r.refused)
+        assertEquals(listOf(PrefixLock.Refusal("com.instagram.android", ig)), r.refused)
     }
 
     @Test
@@ -26,21 +26,21 @@ class PrefixLockTest {
         // a dot boundary, the same rule SensitivePackages applies.
         val r = PrefixLock.admitted(emptyList(), listOf("com.insta"), listOf(ig))
         assertEquals(listOf("com.insta"), r.prefixes)
-        assertEquals(emptyList<String>(), r.refused)
+        assertEquals(emptyList<PrefixLock.Refusal>(), r.refused)
     }
 
     @Test
     fun `other entries in the same edit are kept`() {
         val r = PrefixLock.admitted(emptyList(), listOf("com.mybank", "com.instagram"), listOf(ig))
         assertEquals(listOf("com.mybank"), r.prefixes)
-        assertEquals(listOf("com.instagram"), r.refused)
+        assertEquals(listOf(PrefixLock.Refusal("com.instagram", ig)), r.refused)
     }
 
     @Test
     fun `a prefix already stored stays even if it now covers a lock`() {
         val r = PrefixLock.admitted(listOf("com.instagram"), listOf("com.instagram", "com.mybank"), listOf(ig))
         assertEquals(listOf("com.instagram", "com.mybank"), r.prefixes)
-        assertEquals(emptyList<String>(), r.refused)
+        assertEquals(emptyList<PrefixLock.Refusal>(), r.refused)
     }
 
     @Test
@@ -59,6 +59,18 @@ class PrefixLockTest {
     fun `blank entries are dropped, not refused`() {
         val r = PrefixLock.admitted(emptyList(), listOf("", "  "), listOf(ig))
         assertEquals(emptyList<String>(), r.prefixes)
-        assertEquals(emptyList<String>(), r.refused)
+        assertEquals(emptyList<PrefixLock.Refusal>(), r.refused)
+    }
+
+    @Test
+    fun `a prefix covering two locked packages names both`() {
+        val yt = "com.google.android.youtube"
+        val music = "com.google.android.apps.youtube.music"
+        val r = PrefixLock.admitted(emptyList(), listOf("com.google.android"), listOf(yt, music, ig))
+        assertEquals(
+            listOf(PrefixLock.Refusal("com.google.android", yt), PrefixLock.Refusal("com.google.android", music)),
+            r.refused,
+        )
+        assertEquals(emptyList<String>(), r.prefixes)
     }
 }

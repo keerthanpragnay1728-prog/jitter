@@ -53,6 +53,7 @@ import dev.molasses.core.settings.CfgRowKey
 import dev.molasses.core.settings.TargetGrouping
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lock.LockLadder
+import dev.molasses.core.lock.PrefixLock
 import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.lock.LockRequest
 import dev.molasses.core.diag.ServiceHealth
@@ -88,6 +89,7 @@ fun SettingsScreen(
     val trackingNothing by vm.trackingNothing.collectAsStateWithLifecycle()
     val gateMode by vm.gateMode.collectAsStateWithLifecycle()
     val sensitivePrefixes by vm.sensitivePrefixes.collectAsStateWithLifecycle()
+    val prefixRefusals by vm.prefixRefusals.collectAsStateWithLifecycle()
     val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
     val fontScale by vm.fontScale.collectAsStateWithLifecycle()
     val diag by vm.engineDiagnostics.collectAsStateWithLifecycle()
@@ -581,6 +583,8 @@ fun SettingsScreen(
             item(CfgRowKey.body(Section.SAFETY, "prefixes")) {
                 SensitivePrefixEditor(
                     userPrefixes = sensitivePrefixes,
+                    refusals = prefixRefusals,
+                    lockRemainingMs = vm::lockRemainingMs,
                     onChange = { vm.setSensitivePrefixes(it) },
                 )
             }
@@ -1127,6 +1131,8 @@ private fun DisableControl(onDisable: () -> Unit) {
 @Composable
 private fun SensitivePrefixEditor(
     userPrefixes: List<String>,
+    refusals: List<PrefixLock.Refusal>,
+    lockRemainingMs: (String) -> Long,
     onChange: (List<String>) -> Unit,
 ) {
     // Local draft so a partly typed line is not written to the store on every
@@ -1167,6 +1173,47 @@ private fun SensitivePrefixEditor(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.settings_safety_extra_save))
+        }
+        // What the last save dropped, in the locked target row's own style:
+        // the package dim, the standing lock's remainder beside it. A prefix
+        // that vanished from the field with nothing said would read as a
+        // broken save. See PrefixLock for why it was dropped.
+        if (refusals.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.settings_safety_prefix_refused),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            refusals.forEach { refusal ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.settings_safety_prefix_refused_row,
+                            refusal.prefix,
+                            refusal.lockedPkg,
+                        ),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    )
+                    val remainingMs = lockRemainingMs(refusal.lockedPkg)
+                    if (remainingMs > 0L) {
+                        Text(
+                            stringResource(
+                                R.string.settings_lock_remaining_fmt,
+                                CommandRender.duration(remainingMs),
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                }
+            }
         }
     }
 }

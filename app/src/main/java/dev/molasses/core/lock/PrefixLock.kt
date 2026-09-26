@@ -25,8 +25,15 @@ import dev.molasses.core.safety.SensitivePackages
  */
 object PrefixLock {
 
-    /** What to store, and what was refused so a caller can say so. */
-    data class Result(val prefixes: List<String>, val refused: List<String>)
+    /** A prefix that was not added, and the locked package it would have covered. */
+    data class Refusal(val prefix: String, val lockedPkg: String)
+
+    /**
+     * What to store, and what was refused so a caller can say so. One
+     * [Refusal] per locked package a refused prefix covers, so the screen can
+     * name each lock it would have voided.
+     */
+    data class Result(val prefixes: List<String>, val refused: List<Refusal>)
 
     /**
      * @param stored the user prefixes already in the store.
@@ -36,10 +43,14 @@ object PrefixLock {
     fun admitted(stored: List<String>, requested: List<String>, lockedPackages: Collection<String>): Result {
         val existing = stored.map(::normalise).toSet()
         val keep = mutableListOf<String>()
-        val refused = mutableListOf<String>()
+        val refused = mutableListOf<Refusal>()
         for (prefix in requested.map(::normalise).filter { it.isNotEmpty() }.distinct()) {
-            val voidsALock = lockedPackages.any { SensitivePackages.isSensitive(it, setOf(prefix)) }
-            if (prefix !in existing && voidsALock) refused += prefix else keep += prefix
+            val voided = lockedPackages.filter { SensitivePackages.isSensitive(it, setOf(prefix)) }
+            if (prefix !in existing && voided.isNotEmpty()) {
+                voided.forEach { refused += Refusal(prefix, it) }
+            } else {
+                keep += prefix
+            }
         }
         return Result(keep, refused)
     }
