@@ -3,7 +3,6 @@ package dev.molasses.core
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
@@ -61,17 +60,12 @@ class PurityTest {
         "DateMath.kt" to setOf("java.time.LocalDate"),
     )
 
-    private fun repoRoot(): File? = listOf(
-        File("."),
-        File(".."),
-        File("/home/user/visceral"),
-    ).firstOrNull { File(it, "app/src/main/java/dev/molasses").isDirectory }
-
-    private fun sourceRoot(): File? = listOf(
-        File("app/src/main/java/dev/molasses"),
-        File("../app/src/main/java/dev/molasses"),
-        File("/home/user/visceral/app/src/main/java/dev/molasses"),
-    ).firstOrNull { it.isDirectory }
+    /**
+     * Found by [repoRoot], which fails rather than skips. This test used to
+     * look in `.`, `..` and a hardcoded checkout path and skip when none
+     * matched, which from `tools/pure-verify` was every checkout but one.
+     */
+    private fun sourceRoot(): File = File(repoRoot(), "app/src/main/java/dev/molasses")
 
     /** Every file in the pure set, as the two lists above describe it. */
     private fun pureSources(root: File): List<File> = buildList {
@@ -84,12 +78,8 @@ class PurityTest {
     @Test
     fun `the pure set imports nothing from android`() {
         val root = sourceRoot()
-        // Skip rather than fail when run from a working directory that cannot
-        // see the sources; the compile-time guarantee still holds.
-        assumeTrue("source tree not locatable from ${File("").absolutePath}", root != null)
-
         val offenders = mutableListOf<String>()
-        val files = pureSources(root!!)
+        val files = pureSources(root)
 
         assertTrue("expected to find pure sources, found none under $root", files.isNotEmpty())
 
@@ -115,10 +105,7 @@ class PurityTest {
         // harness compiles something this test does not check, an Android
         // import could land in it unnoticed; if this test checks something the
         // harness does not compile, the guarantee is theoretical.
-        val root = repoRoot()
-        assumeTrue("repo root not locatable", root != null)
-        val build = File(root, "tools/pure-verify/build.gradle.kts")
-        assumeTrue("harness build file not found", build.isFile)
+        val build = repoFile("tools/pure-verify/build.gradle.kts")
 
         val block = build.readText()
             .substringAfter("val pureMain = listOf(")
@@ -136,11 +123,8 @@ class PurityTest {
 
     @Test
     fun `the pure set imports nothing from java but the one allowance`() {
-        val root = sourceRoot()
-        assumeTrue("source tree not locatable from ${File("").absolutePath}", root != null)
-
         val offenders = mutableListOf<String>()
-        for (f in pureSources(root!!)) {
+        for (f in pureSources(sourceRoot())) {
             if (!f.isFile) continue
             val allowed = javaAllowance[f.name].orEmpty()
             f.readLines().forEachIndexed { i, line ->
