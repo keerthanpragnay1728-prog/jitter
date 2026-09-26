@@ -74,7 +74,7 @@ class GateBlockTest {
         val eval = body.indexOf("GateBlock.evaluate(")
         val memory = body.indexOf("locks = locks.arm(pkg, now, verdict.durationMs, LockReason.BLOCK)")
         val store = body.indexOf("cycleStore.armLock(pkg, now, verdict.durationMs, LockReason.BLOCK)")
-        val screen = body.indexOf("enforceLockIfNeeded(pkg)")
+        val screen = body.indexOf("enforceLockIfNeeded(pkg, atEntry = false)")
         assertTrue("order: evaluate, memory, store, lock screen: $eval $memory $store $screen",
             eval in 0 until memory && memory < store && store < screen)
     }
