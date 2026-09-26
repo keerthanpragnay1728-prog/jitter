@@ -107,4 +107,20 @@ class LockRequestTest {
         assertTrue(LockLadder.STEPS_MS.any { it <= CommandRegistry.CONFIRM_ABOVE_MS })
         assertTrue(LockLadder.STEPS_MS.any { it > CommandRegistry.CONFIRM_ABOVE_MS })
     }
+
+    @Test
+    fun `confirmation is strictly above a day, so 1d arms and 3d confirms`() {
+        // CONFIRM_ABOVE_MS is a day and the comparison is strictly greater,
+        // which puts the 1d rung on the one-step side. Pinned by rung value
+        // so moving either the threshold or the comparison fails here.
+        assertEquals(24L * 60 * 60 * 1000, CommandRegistry.CONFIRM_ABOVE_MS)
+        val day = 24L * 60 * 60 * 1000
+        assertTrue(LockLadder.STEPS_MS.contains(day))
+        assertTrue("1d must arm in one step", evaluate(day) is LockRequest.Verdict.Arm)
+        assertTrue("3d must ask for confirmation", evaluate(3 * day) is LockRequest.Verdict.Confirm)
+        val below = LockLadder.STEPS_MS.filter { it <= day }
+        val above = LockLadder.STEPS_MS.filter { it > day }
+        assertEquals(listOf(1L, 4L, 12L, 24L).map { it * 60 * 60 * 1000 }, below)
+        assertEquals(listOf(3L, 7L, 14L, 30L).map { it * day }, above)
+    }
 }
