@@ -522,6 +522,7 @@ fun SettingsScreen(
                     selection = quickLaunch,
                     apps = launchable,
                     onAdd = vm::addQuickLaunch,
+                    onSwap = vm::swapQuickLaunch,
                     onRemove = vm::removeQuickLaunch,
                 )
             }
@@ -1199,18 +1200,36 @@ private fun DisableControl(onDisable: () -> Unit) {
  *
  * An app that has been uninstalled is not shown as a row here either. It is
  * pruned from the stored list by the next edit. See [QuickLaunch].
+ *
+ * Full, the picker is not offered for an add, which the store would refuse,
+ * but each row carries [swap]: tap it and the same picker opens to replace
+ * that row in its slot ([QuickLaunch.swapped]). So the picker is never hidden
+ * without a route to it.
  */
 @Composable
 private fun QuickLaunchEditor(
     selection: QuickLaunch.Selection,
     apps: List<InstalledApp>,
     onAdd: (QuickLaunch.Entry) -> Unit,
+    onSwap: (old: QuickLaunch.Entry, new: QuickLaunch.Entry) -> Unit,
     onRemove: (QuickLaunch.Entry) -> Unit,
 ) {
     val labels = remember(apps) { apps.associate { it.pkg to it.label } }
     val rows = QuickLaunch.visible(selection) { it in labels }
     val full = rows.size >= QuickLaunch.MAX_SLOTS
     var query by rememberSaveable { mutableStateOf("") }
+    // The row being replaced, by token so it survives rotation. Only a row
+    // that is still drawn counts; anything else reads as no swap in hand.
+    var swappingToken by rememberSaveable { mutableStateOf<String?>(null) }
+    val swapping = swappingToken?.let(QuickLaunch::decode)?.takeIf { it in rows }
+
+    // Every pick goes through here: a swap when one is in hand, else an add.
+    fun pick(entry: QuickLaunch.Entry) {
+        val old = swapping
+        if (old != null) onSwap(old, entry) else onAdd(entry)
+        swappingToken = null
+        query = ""
+    }
 
     @Composable
     fun labelFor(entry: QuickLaunch.Entry): String = when (entry) {
@@ -1249,6 +1268,20 @@ private fun QuickLaunchEditor(
                     maxLines = 1,
                     modifier = Modifier.weight(1f).padding(end = 8.dp),
                 )
+                // Full, the picker is reached through a swap on each row,
+                // so it is never hidden without a route to it.
+                if (full) {
+                    Text(
+                        stringResource(
+                            if (swapping == entry) R.string.settings_quick_swap_cancel else R.string.settings_quick_swap,
+                        ),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { swappingToken = if (swapping == entry) null else entry.token }
+                            .padding(end = 12.dp),
+                    )
+                }
                 Text(
                     stringResource(R.string.settings_quick_remove),
                     style = MaterialTheme.typography.bodyLarge,
@@ -1258,20 +1291,28 @@ private fun QuickLaunchEditor(
             }
         }
         Spacer(Modifier.height(8.dp))
-        if (full) {
+        if (full && swapping == null) {
             Text(
                 stringResource(R.string.settings_quick_full),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
             )
         } else {
+            if (swapping != null) {
+                Text(
+                    stringResource(R.string.settings_quick_swapping_fmt, labelFor(swapping)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
             val builtIns = QuickLaunch.BuiltIn.entries.map { QuickLaunch.Entry.Row(it) }.filter { it !in rows }
             builtIns.forEach { entry ->
                 Text(
                     labelFor(entry),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.fillMaxWidth().clickable { onAdd(entry) }.padding(vertical = 6.dp),
+                    modifier = Modifier.fillMaxWidth().clickable { pick(entry) }.padding(vertical = 6.dp),
                 )
             }
             OutlinedTextField(
@@ -1305,10 +1346,7 @@ private fun QuickLaunchEditor(
                         maxLines = 1,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                onAdd(entry)
-                                query = ""
-                            }
+                            .clickable { pick(entry) }
                             .padding(vertical = 6.dp),
                     )
                 }

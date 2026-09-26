@@ -117,6 +117,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repo.addQuickLaunch(entry) }
     }
 
+    fun swapQuickLaunch(old: QuickLaunch.Entry, new: QuickLaunch.Entry) {
+        viewModelScope.launch { repo.swapQuickLaunch(old, new) }
+    }
+
     fun removeQuickLaunch(entry: QuickLaunch.Entry) {
         viewModelScope.launch { repo.removeQuickLaunch(entry) }
     }
