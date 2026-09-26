@@ -64,8 +64,12 @@ internal class MutableAppState(
 ) {
     val tier = MonotonicInt(tierIndex)
 
-    /** Live accumulated at the last penalty evaluation. */
-    var penaltyAnchorMs: Long = 0
+    /**
+     * Live accumulated at the last penalty evaluation. Persisted, so a
+     * restart resumes charging from here rather than from the lease mark;
+     * see [AppSnapshot.penaltyAnchorMs] for what a missing one reads as.
+     */
+    var penaltyAnchorMs: Long = accumulatedMs
 
     fun snapshot(liveAccumulatedMs: Long = accumulatedMs) = AppSnapshot(
         pkg = pkg,
@@ -76,6 +80,7 @@ internal class MutableAppState(
         penaltyMs = penaltyMs,
         horizonMs = horizonMs,
         pendingHorizonMs = pendingHorizonMs,
+        penaltyAnchorMs = penaltyAnchorMs,
     )
 }
 
@@ -168,7 +173,12 @@ class FrictionEngine(
                 penaltyMs = s.penaltyMs,
                 horizonMs = s.horizonMs,
                 pendingHorizonMs = s.pendingHorizonMs,
-            )
+            ).also { app ->
+                // No stored anchor charges nothing retroactively: anchoring at
+                // zero, as this used to, re-billed everything past the lease
+                // mark that the ratchet had already charged before the restart.
+                app.penaltyAnchorMs = s.penaltyAnchorMs ?: s.accumulatedMs
+            }
         }
         .toMutableMap()
 
