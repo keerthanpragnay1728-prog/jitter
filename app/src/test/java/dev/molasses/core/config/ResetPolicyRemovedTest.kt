@@ -25,8 +25,7 @@ class ResetPolicyRemovedTest {
         assertTrue("toEngineSnapshot not found", start >= 0)
         val end = store.indexOf("\nfun ", start + 1).let { if (it < 0) store.length else it }
         val body = store.substring(start, end)
-        assertTrue(body.contains("resetPolicy = CycleResetPolicy.FIXED_WINDOW_6H,"))
-        assertFalse("the stored field must not be read", body.contains("resetPolicy = resetPolicy.toModel()"))
+        assertFalse("the stored policy must not reach the engine", body.contains("resetPolicy"))
     }
 
     @Test
@@ -54,5 +53,23 @@ class ResetPolicyRemovedTest {
     fun `the proto keeps the field so existing files parse`() {
         val proto = repoFile("app/src/main/proto/cycle_state.proto").readText()
         assertTrue(proto.contains("CycleResetPolicyProto reset_policy = 10;"))
+    }
+
+    @Test
+    fun `the engine and the reconciler have no second policy`() {
+        for (path in listOf(
+            "app/src/main/java/dev/molasses/engine/FrictionEngine.kt",
+            "app/src/main/java/dev/molasses/monitor/ForegroundReconciler.kt",
+        )) {
+            val text = repoFile(path).readText()
+            assertFalse("$path still branches on ABSTINENCE_6H", text.contains("CycleResetPolicy.ABSTINENCE_6H"))
+            assertFalse("$path still reads a reset policy", text.contains("resetPolicy"))
+        }
+    }
+
+    @Test
+    fun `the store writes the one policy there is`() {
+        val store = repoFile("app/src/main/java/dev/molasses/data/datastore/CycleStateStore.kt").readText()
+        assertTrue(store.contains(".setResetPolicy(CycleResetPolicyProto.FIXED_WINDOW_6H)"))
     }
 }

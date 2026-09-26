@@ -883,7 +883,7 @@ the only safe reading, because durations measured on the wall clock are
 user-settable and the whole point of the ladder is that accumulated time cannot
 be argued with.
 
-The cycle anchor and the abstinence window do have to survive a reboot, so they
+The cycle anchor and the last-use stamp do have to survive a reboot, so they
 carry a wall-clock stamp as well. Both are held as `StampedInstant` and every
 deadline question about them goes through `CycleWindow`, which applies
 `ClockTamperClamp`.
@@ -1090,7 +1090,7 @@ and neither of these is settled.
 - The cycle deadline is checked on foreground entry, on the 15 s checkpoint
   tick, and on service connect. Entry alone misses a session that runs past the
   deadline; the tick alone misses a cycle that comes due while the process is
-  dead, which is the common case under `ABSTINENCE_6H`.
+  dead, which is the common case.
 - A rollover with a target app open re-anchors at that instant, because the
   user is in a target app and that is what the anchor means. A rollover with
   nothing open leaves the cycle unanchored, so the next foreground entry starts

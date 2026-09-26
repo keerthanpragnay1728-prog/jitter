@@ -4,7 +4,6 @@ import dev.molasses.core.friction.CycleRollover
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.functionBody
 import dev.molasses.core.model.AppSnapshot
-import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.repoFile
 import kotlinx.coroutines.test.TestScope
@@ -44,7 +43,6 @@ class RolloverPathsTest {
         val e = FrictionEngine(
             initial = EngineSnapshot(
                 perApp = mapOf(pkg to spent),
-                resetPolicy = CycleResetPolicy.FIXED_WINDOW_6H,
                 cycleAnchorWallMs = 1_000,
                 cycleAnchorElapsedMs = 1_000,
                 cycleAnchorBootId = 1,
