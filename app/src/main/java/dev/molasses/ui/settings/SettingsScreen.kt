@@ -1,5 +1,6 @@
 package dev.molasses.ui.settings
 
+import android.os.SystemClock
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -52,6 +53,7 @@ import dev.molasses.core.settings.CfgAccordion
 import dev.molasses.core.settings.CfgAccordion.Section
 import dev.molasses.core.settings.CfgRowKey
 import dev.molasses.core.settings.TargetGrouping
+import dev.molasses.core.settings.UntrackCoolingOff
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.lock.LockLadder
@@ -402,7 +404,22 @@ fun SettingsScreen(
                     cycleRemainingMs = diag.cycleRemainingMs.takeIf { it > 0L },
                     horizonAwaitingConfirm =
                         horizonConfirm?.takeIf { it.first == app.pkg }?.second,
-                    onToggleTarget = { vm.toggleTarget(app.pkg) },
+                    onToggleTarget = {
+                        // ON applies at once. OFF waits out the cooling-off,
+                        // and a locked app never starts one (its toggle is
+                        // held anyway). See UntrackCoolingOff.
+                        if (app.pkg in targets) {
+                            coolingOff = UntrackCoolingOff.start(
+                                pkg = app.pkg,
+                                label = app.label,
+                                tracked = true,
+                                lockRemainingMs = remainingMs,
+                                nowElapsedMs = SystemClock.elapsedRealtime(),
+                            )
+                        } else {
+                            vm.toggleTarget(app.pkg)
+                        }
+                    },
                     onHorizon = { requested ->
                         // Nothing commits until HorizonPolicy says so, and the
                         // screen asks the same function the engine will. A first
@@ -652,6 +669,11 @@ fun SettingsScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
+    // The untrack cooling-off in progress, or null. remember and not
+    // rememberSaveable, on purpose: a rotation or a process death must
+    // forget it, which abandons it with the app still tracked.
+    var coolingOff by remember { mutableStateOf<UntrackCoolingOff.State?>(null) }
+
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
@@ -689,6 +711,19 @@ fun SettingsScreen(
                 val index = cfgRows.indexOfFirst { it.key == key }
                 if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
             }
+        }
+
+        // Last, so it covers the list and the rail.
+        coolingOff?.let { state ->
+            UntrackCoolingOffPanel(
+                state = state,
+                onConfirmRemove = {
+                    coolingOff = null
+                    vm.untrackTarget(state.pkg)
+                },
+                onKeepTracking = { coolingOff = null },
+                onLeave = { how -> coolingOff = UntrackCoolingOff.onLeave(coolingOff, how) },
+            )
         }
     }
 }

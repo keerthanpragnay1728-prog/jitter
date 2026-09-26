@@ -207,13 +207,18 @@ class CycleStateStore(context: Context) {
      * that twice. There is no way to write the target list that does not come
      * through here.
      */
-    suspend fun toggleTarget(pkg: String, now: StampedInstant) {
+    suspend fun toggleTarget(pkg: String, now: StampedInstant, onlyIfTracked: Boolean = false) {
         store.updateData { state ->
             val selection = TargetScope.Selection(
                 stored = state.targetPackagesList,
                 chosen = state.targetsChosen,
             )
             val current = TargetScope.resolve(selection, DEFAULT_TARGETS).toList()
+            // The untrack cooling-off commits through here with this set. It
+            // can only remove: if the list changed while the countdown ran
+            // and the app is no longer tracked, a toggle would add it back,
+            // which is not what CONFIRM REMOVE means.
+            if (onlyIfTracked && pkg !in current) return@updateData state
             val locks = LockRegistry.of(state.locksList.map { it.toLock() })
             val next = TargetLock.toggled(current, pkg, locks.remainingMs(pkg, now))
                 ?: return@updateData state

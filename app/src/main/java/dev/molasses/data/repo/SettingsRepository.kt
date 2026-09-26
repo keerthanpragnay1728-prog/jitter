@@ -221,6 +221,13 @@ class SettingsRepository(
      * `setTargets`: see [CycleStateStore.toggleTarget].
      */
     suspend fun toggleTarget(pkg: String) = store.toggleTarget(pkg, nowStamped())
+
+    /**
+     * Remove [pkg] from the tracked set, at the end of the untrack
+     * cooling-off. The same single writer and the same lock guard as
+     * [toggleTarget], restricted to removing.
+     */
+    suspend fun untrackTarget(pkg: String) = store.toggleTarget(pkg, nowStamped(), onlyIfTracked = true)
     suspend fun setGateMode(mode: GatePolicy.GateMode) = store.setGateMode(mode)
 
     /** The user's declared horizon per package. See [CycleStateStore.appHorizons]. */
