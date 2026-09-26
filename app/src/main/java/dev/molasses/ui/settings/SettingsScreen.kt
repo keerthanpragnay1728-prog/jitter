@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -124,7 +125,12 @@ fun SettingsScreen(
     // per row, across eighty apps, is a wall.
     val locks by vm.locks.collectAsStateWithLifecycle()
     var scrubbing by rememberSaveable { mutableStateOf<String?>(null) }
-    var stepIndex by rememberSaveable { mutableIntStateOf(0) }
+    // Saved as the duration the bar points at, not its position on the
+    // ladder. Saved state can outlive the process, and a position restored
+    // after the rungs change would name a different duration than the one
+    // the user moved the bar to.
+    var stepMs by rememberSaveable { mutableLongStateOf(LockLadder.MIN_MS) }
+    val stepIndex = LockLadder.indexOf(LockLadder.snap(stepMs))
     // The duration awaiting a second, deliberate press. Cleared by anything
     // else the user does, exactly as the command prompt clears its own.
     var awaitingConfirm by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -418,12 +424,13 @@ fun SettingsScreen(
                         // A fresh row starts one step above whatever already
                         // stands, because the only thing the scrubber can do to an
                         // existing lock is lengthen it.
-                        stepIndex = LockLadder.STEPS_MS.indexOfFirst { it > remainingMs }
-                            .coerceAtLeast(0)
+                        stepMs = LockLadder.durationAt(
+                            LockLadder.STEPS_MS.indexOfFirst { it > remainingMs }.coerceAtLeast(0),
+                        )
                         awaitingConfirm = null
                     },
                     onStep = {
-                        stepIndex = it
+                        stepMs = LockLadder.durationAt(it)
                         // Moving the bar cancels a pending confirmation. Leaving
                         // it armed would mean the second press arms a duration the
                         // user was not shown.

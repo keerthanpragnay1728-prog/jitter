@@ -12,7 +12,7 @@ class LockLadderTest {
     @Test
     fun `the steps are the documented ladder, ascending`() {
         assertEquals(
-            listOf(1 * hour, 2 * hour, 6 * hour, 12 * hour, 24 * hour, 3 * day, 7 * day, 30 * day),
+            listOf(1 * hour, 4 * hour, 12 * hour, 1 * day, 3 * day, 7 * day, 14 * day, 30 * day),
             LockLadder.STEPS_MS,
         )
         assertEquals(LockLadder.STEPS_MS.sorted(), LockLadder.STEPS_MS)
@@ -37,7 +37,7 @@ class LockLadderTest {
     @Test
     fun `snap picks the nearest step`() {
         assertEquals(1 * hour, LockLadder.snap(50 * 60 * 1000))
-        assertEquals(2 * hour, LockLadder.snap(2 * hour + 5 * 60 * 1000))
+        assertEquals(4 * hour, LockLadder.snap(4 * hour + 5 * 60 * 1000))
         assertEquals(24 * hour, LockLadder.snap(20 * hour))
         assertEquals(7 * day, LockLadder.snap(6 * day))
     }
@@ -51,16 +51,16 @@ class LockLadderTest {
 
     @Test
     fun `a tie rounds up, toward more friction`() {
-        // Exactly between 1h and 2h.
-        assertEquals(2 * hour, LockLadder.snap(90 * 60 * 1000))
+        // Exactly between 1h and 4h.
+        assertEquals(4 * hour, LockLadder.snap(150 * 60 * 1000))
         // Exactly between 3d and 7d.
         assertEquals(7 * day, LockLadder.snap(5 * day))
     }
 
     @Test
     fun `next returns the following step and saturates at the top`() {
-        assertEquals(2 * hour, LockLadder.next(1 * hour))
-        assertEquals(6 * hour, LockLadder.next(3 * hour))
+        assertEquals(4 * hour, LockLadder.next(1 * hour))
+        assertEquals(4 * hour, LockLadder.next(3 * hour))
         assertEquals(LockLadder.MAX_MS, LockLadder.next(30 * day))
         assertEquals(LockLadder.MAX_MS, LockLadder.next(400 * day))
     }
