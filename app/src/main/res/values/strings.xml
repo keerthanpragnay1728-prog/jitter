@@ -101,7 +101,10 @@
     <string name="settings_quick_count_fmt">%1$s of %2$s</string>
     <string name="settings_quick_empty">No rows. The console shows none until you add one.</string>
     <string name="settings_quick_remove">Remove</string>
-    <string name="settings_quick_full">Five rows. Remove one to add another.</string>
+    <string name="settings_quick_full">Five rows. Swap one to replace it in place, or remove one to add another.</string>
+    <string name="settings_quick_swap" translatable="false">[swap]</string>
+    <string name="settings_quick_swap_cancel" translatable="false">[cancel]</string>
+    <string name="settings_quick_swapping_fmt">Replacing %1$s. Pick a row or find an app.</string>
     <string name="settings_quick_search">Find an app</string>
     <!--
       The lock scrubber, in the target list. The same 1h to 30d ladder the

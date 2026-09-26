@@ -250,6 +250,9 @@ class SettingsRepository(
     suspend fun addQuickLaunch(entry: QuickLaunch.Entry) =
         store.editQuickLaunch(::isLaunchable) { QuickLaunch.added(it, entry) }
 
+    suspend fun swapQuickLaunch(old: QuickLaunch.Entry, new: QuickLaunch.Entry) =
+        store.editQuickLaunch(::isLaunchable) { QuickLaunch.swapped(it, old, new) }
+
     suspend fun removeQuickLaunch(entry: QuickLaunch.Entry) =
         store.editQuickLaunch(::isLaunchable) { QuickLaunch.removed(it, entry) }
 

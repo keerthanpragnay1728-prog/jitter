@@ -82,4 +82,45 @@ class QuickLaunchTest {
         // untouched.
         assertEquals(emptyList<Entry>(), QuickLaunch.resolve(Selection(QuickLaunch.pruned(none) { true }, chosen = true)))
     }
+
+    @Test
+    fun `a swap replaces the row in its slot and keeps the order`() {
+        val full = QuickLaunch.DEFAULTS
+        val calendar = Entry.Row(BuiltIn.CALENDAR)
+        val swapped = QuickLaunch.swapped(full, calendar, Entry.App(maps))
+        assertEquals(
+            listOf(
+                Entry.Row(BuiltIn.PHONE),
+                Entry.Row(BuiltIn.MESSAGES),
+                Entry.App(maps),
+                Entry.Row(BuiltIn.CALCULATOR),
+                Entry.Row(BuiltIn.CLOCK),
+            ),
+            swapped,
+        )
+    }
+
+    @Test
+    fun `a swap keeps the cap`() {
+        val full = QuickLaunch.DEFAULTS
+        var rows: List<Entry> = full
+        for ((i, pkg) in listOf(maps, camera, "a.b", "c.d", "e.f").withIndex()) {
+            rows = QuickLaunch.swapped(rows, rows[i], Entry.App(pkg)) ?: error("refused $pkg")
+            assertEquals(QuickLaunch.MAX_SLOTS, rows.size)
+        }
+        assertEquals(QuickLaunch.MAX_SLOTS, QuickLaunch.resolve(Selection(QuickLaunch.pruned(rows) { true }, chosen = true)).size)
+    }
+
+    @Test
+    fun `a swap to a row that is already pinned is refused`() {
+        val rows = QuickLaunch.DEFAULTS.dropLast(1) + Entry.App(maps)
+        assertNull(QuickLaunch.swapped(rows, Entry.Row(BuiltIn.PHONE), Entry.App(maps)))
+        assertNull(QuickLaunch.swapped(rows, Entry.Row(BuiltIn.PHONE), Entry.Row(BuiltIn.MESSAGES)))
+        assertNull("onto itself", QuickLaunch.swapped(rows, Entry.App(maps), Entry.App(maps)))
+    }
+
+    @Test
+    fun `a swap of a row that is not there is refused`() {
+        assertNull(QuickLaunch.swapped(QuickLaunch.DEFAULTS, Entry.App(maps), Entry.App(camera)))
+    }
 }

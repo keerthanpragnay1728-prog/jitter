@@ -96,4 +96,20 @@ object QuickLaunch {
     }
 
     fun removed(entries: List<Entry>, entry: Entry): List<Entry> = entries - entry
+
+    /**
+     * [entries] with [old] replaced by [new] in the same slot, or null.
+     *
+     * The route to the picker when the rows are full: [added] refuses at
+     * five, so a full section offers a swap per row instead of hiding the
+     * picker. The order is kept because the slot is kept, and the count
+     * cannot grow because nothing is appended. Refused when [old] is not a
+     * row, and when [new] is already pinned, including [new] equal to
+     * [old]: a swap that would duplicate a row is not a swap.
+     */
+    fun swapped(entries: List<Entry>, old: Entry, new: Entry): List<Entry>? {
+        val slot = entries.indexOf(old)
+        if (slot < 0 || new in entries) return null
+        return entries.toMutableList().also { it[slot] = new }
+    }
 }

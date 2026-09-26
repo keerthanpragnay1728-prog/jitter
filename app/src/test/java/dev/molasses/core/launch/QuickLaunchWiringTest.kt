@@ -52,4 +52,20 @@ class QuickLaunchWiringTest {
         val strings = repoFile("app/src/main/res/values/strings.xml").readText()
         assertTrue(strings.contains("""<string name="launcher_fav_app_fmt" translatable="false">[%1${'$'}s]</string>"""))
     }
+
+    @Test
+    fun `full, every row carries a swap into the picker, so the picker always has a route`() {
+        val screen = repoFile("app/src/main/java/dev/molasses/ui/settings/SettingsScreen.kt").readText()
+        val body = functionBody(screen, "private fun QuickLaunchEditor(")
+        val rowLoop = body.substring(body.indexOf("rows.forEach { entry ->"), body.indexOf("if (full && swapping == null) {"))
+        assertTrue(rowLoop.contains("if (full) {"))
+        assertTrue(rowLoop.contains("R.string.settings_quick_swap"))
+        assertTrue(rowLoop.contains("swappingToken = if (swapping == entry) null else entry.token"))
+        assertTrue("the picker hides only when full and no swap is in hand", body.contains("if (full && swapping == null) {"))
+        assertFalse(body.contains("        if (full) {\n            Text(\n                stringResource(R.string.settings_quick_full)"))
+        assertTrue(body.contains("if (old != null) onSwap(old, entry) else onAdd(entry)"))
+        val repo = repoFile("app/src/main/java/dev/molasses/data/repo/SettingsRepository.kt").readText()
+        assertTrue(repo.contains("store.editQuickLaunch(::isLaunchable) { QuickLaunch.swapped(it, old, new) }"))
+        assertTrue(screen.contains("onSwap = vm::swapQuickLaunch,"))
+    }
 }
