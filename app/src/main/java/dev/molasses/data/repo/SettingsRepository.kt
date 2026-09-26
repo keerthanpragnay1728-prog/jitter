@@ -17,6 +17,7 @@ import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.remind.Reminder
+import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.session.TargetScope
 import dev.molasses.core.lock.LockRegistry
@@ -237,8 +238,8 @@ class SettingsRepository(
     /** Every reminder not yet dismissed. See [dev.molasses.core.remind.ReminderBook]. */
     val reminders: Flow<List<Reminder>> = store.reminders
 
-    /** Null when twenty are already pending. See [CycleStateStore.addReminder]. */
-    suspend fun addReminder(text: String, due: StampedInstant): Reminder? = store.addReminder(text, due)
+    /** The store's verdict on the cap, decided in its transaction. See [CycleStateStore.addReminder]. */
+    suspend fun addReminder(text: String, due: StampedInstant): ReminderBook.Added = store.addReminder(text, due)
 
     /** The console's dismiss. The only thing that removes a reminder. */
     suspend fun dismissReminder(id: Long) = store.dismissReminder(id)

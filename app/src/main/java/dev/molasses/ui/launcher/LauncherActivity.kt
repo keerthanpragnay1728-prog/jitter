@@ -375,18 +375,16 @@ class LauncherActivity : ComponentActivity() {
                                         val c = Calendar.getInstance()
                                         val minute = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
                                         val due = ReminderBook.dueAt(whenSpec, now, minute)
-                                        if (reminders.size >= ReminderBook.MAX) {
-                                            done(RemindOutcome.Full)
-                                        } else {
-                                            scope.launch {
-                                                // The store re-checks the cap in its own
-                                                // transaction; only what it took is armed,
-                                                // and the prompt reports the precision the
-                                                // alarm was actually set with.
-                                                val added = settingsRepository.addReminder(text, due)
-                                                if (added == null) {
-                                                    done(RemindOutcome.Full)
-                                                } else {
+                                        scope.launch {
+                                            // The cap is the store's call, made in its own
+                                            // transaction, not a check on the list this
+                                            // screen last saw. Only what it took is armed,
+                                            // and the prompt reports the precision the
+                                            // alarm was actually set with.
+                                            when (val verdict = settingsRepository.addReminder(text, due)) {
+                                                ReminderBook.Added.Full -> done(RemindOutcome.Full)
+                                                is ReminderBook.Added.Ok -> {
+                                                    val added = verdict.reminder
                                                     val precision = ReminderAlarms.schedule(
                                                         this@LauncherActivity, added.id, added.due.wallMs,
                                                     )

@@ -114,4 +114,20 @@ class ReminderWiringTest {
         assertTrue(functionBody(store, "suspend fun dismissReminder(").contains("ReminderBook.dismissed("))
         assertTrue(functionBody(store, "suspend fun addReminder(").contains("ReminderBook.Added.Full -> state"))
     }
+
+    @Test
+    fun `the cap is the store's verdict, returned to the caller that reports it`() {
+        val store = repoFile("app/src/main/java/dev/molasses/data/datastore/CycleStateStore.kt").readText()
+        val add = functionBody(store, "suspend fun addReminder(")
+        assertTrue(store.contains("suspend fun addReminder(text: String, due: StampedInstant): ReminderBook.Added {"))
+        val txn = add.indexOf("store.updateData { state ->")
+        assertTrue(txn >= 0 && add.indexOf("ReminderBook.add(", txn) > txn && add.indexOf("verdict = result", txn) > txn)
+        assertTrue(add.contains("return verdict"))
+        val launcher = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
+        assertFalse("no check on a stale snapshot", launcher.contains("reminders.size >= ReminderBook.MAX"))
+        val remind = launcher.substring(launcher.indexOf("remind = { whenSpec, text, done ->")).substringBefore("onDialer = {")
+        assertTrue(remind.contains("when (val verdict = settingsRepository.addReminder(text, due))"))
+        assertTrue(remind.contains("ReminderBook.Added.Full -> done(RemindOutcome.Full)"))
+        assertTrue(remind.contains("is ReminderBook.Added.Ok ->"))
+    }
 }
