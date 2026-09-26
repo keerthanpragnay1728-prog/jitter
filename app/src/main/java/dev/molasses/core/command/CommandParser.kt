@@ -159,7 +159,7 @@ object CommandParser {
         else ok(build(args.joinToString(" ")))
 
     /**
-     * `rem <time|duration> <text>`.
+     * `rem <time|duration> <text>`, or a bare `rem` for the pending list.
      *
      * The first token is tried as a duration and then as a time of day. The
      * two forms cannot overlap: a duration always carries a unit letter
@@ -176,7 +176,9 @@ object CommandParser {
      */
     private fun remind(verb: String, text: String): ParseResult {
         val parts = text.split(Regex("\\s+"), limit = 3)
-        if (parts.size < 2) return err(ParseError.MissingArgument(verb, "time"))
+        // Nothing after the verb lists what is pending. Not a missing time:
+        // a bare rem has nothing to be missing from.
+        if (parts.size < 2 || parts[1].isEmpty()) return ok(Command.RemList)
         if (parts.size < 3 || parts[2].isBlank()) return err(ParseError.MissingArgument(verb, "text"))
         val token = parts[1]
         val body = parts[2].trim()

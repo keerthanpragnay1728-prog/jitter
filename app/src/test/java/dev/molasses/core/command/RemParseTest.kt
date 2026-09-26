@@ -31,8 +31,10 @@ class RemParseTest {
     }
 
     @Test
-    fun `missing pieces are named`() {
-        assertEquals(ParseError.MissingArgument("rem", "time"), err("rem"))
+    fun `a bare rem lists, and a missing text is still named`() {
+        assertEquals(Command.RemList, (CommandParser.parse("rem") as ParseResult.Ok).command)
+        assertEquals(Command.RemList, (CommandParser.parse("\$ rem") as ParseResult.Ok).command)
+        assertEquals(Command.RemList, (CommandParser.parse("rem   ") as ParseResult.Ok).command)
         assertEquals(ParseError.MissingArgument("rem", "text"), err("rem 10m"))
         assertEquals(ParseError.MissingArgument("rem", "text"), err("rem 10m   "))
     }
@@ -69,5 +71,11 @@ class RemParseTest {
     fun `the usage shape carries no value`() {
         val usage = CommandParser.USAGE.getValue("rem")
         assertTrue(usage.none { it.isDigit() })
+    }
+
+    @Test
+    fun `a bare rem renders back to itself and is the rem verb`() {
+        assertEquals("rem", CommandRender.render(Command.RemList))
+        assertEquals("rem", CommandRegistry.verbOf(Command.RemList))
     }
 }

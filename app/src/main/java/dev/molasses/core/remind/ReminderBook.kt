@@ -124,6 +124,16 @@ object ReminderBook {
     /** Removed when the user dismisses it, never when it fires. */
     fun dismissed(list: List<Reminder>, id: Long): List<Reminder> = list.filterNot { it.id == id }
 
+    /** How many a bare `rem` lists at most. */
+    const val LIST_MAX = 5
+
+    /**
+     * What a bare `rem` lists: unfired reminders, soonest first, ties by id,
+     * at most [LIST_MAX]. Never a fired one; see `Command.RemList`.
+     */
+    fun pending(list: List<Reminder>): List<Reminder> =
+        list.filter { !it.fired }.sortedWith(compareBy({ it.due.wallMs }, { it.id })).take(LIST_MAX)
+
     /** What the console shows, oldest due first. */
     fun toShow(list: List<Reminder>): List<Reminder> =
         list.filter { it.fired }.sortedWith(compareBy({ it.due.wallMs }, { it.id }))

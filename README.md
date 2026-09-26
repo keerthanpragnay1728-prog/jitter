@@ -1061,6 +1061,11 @@ produced it, which is the behaviour the shield was asked for anyway.
   was off sound it once, not once each. The text waits on the console, in
   order, until each is dismissed.
 - Up to twenty pending. The twenty first is refused, nothing is dropped.
+- A bare `rem` lists what is pending, soonest first, at most five, each
+  with its due time and text, held until the next keystroke. With none it
+  says NO PENDING REMINDERS. Fired reminders are not listed: they already
+  wait on the console until dismissed, and a list of past ones would be
+  something to come back and read.
 - Alarms do not survive a reboot or a force stop. They are re-armed on
   `BOOT_COMPLETED` and whenever the accessibility service connects, and one
   that fell due while they were gone fires then, marked late.

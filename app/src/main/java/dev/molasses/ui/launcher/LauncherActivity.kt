@@ -255,7 +255,7 @@ class LauncherActivity : ComponentActivity() {
                 .collectAsState(initial = QuickLaunch.Selection(emptyList(), chosen = false))
 
             // $ rem. The fired ones are shown on the console until dismissed;
-            // the whole list is read to answer the cap at the prompt.
+            // the pending ones are listed by a bare rem.
             val reminders by settingsRepository.reminders
                 .collectAsState(initial = emptyList())
 
@@ -393,6 +393,9 @@ class LauncherActivity : ComponentActivity() {
                                             }
                                         }
                                     },
+                                    // Reads the collected State when called, not
+                                    // a value captured when this was remembered.
+                                    pendingReminders = { reminders },
                                 )
                             },
                             onDialer = {
