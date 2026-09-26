@@ -373,6 +373,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repo.toggleTarget(pkg) }
     }
 
+    /** The commit at the end of the untrack cooling-off. Remove only. */
+    fun untrackTarget(pkg: String) {
+        viewModelScope.launch { repo.untrackTarget(pkg) }
+    }
+
     /**
      * The ledger as a file's worth of text.
      *

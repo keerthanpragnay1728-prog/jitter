@@ -89,6 +89,12 @@
     <string name="settings_section_suffix_fmt" translatable="false">// %1$s</string>
     <string name="settings_targets_none">None</string>
     <string name="settings_section_targets">Target apps</string>
+    <!-- The untrack cooling-off panel. Terminal field labels, like the lock
+         screen's, so not translatable. The two answers appear only at zero. -->
+    <string name="untrack_title" translatable="false">UNTRACK COOLING-OFF</string>
+    <string name="untrack_target_fmt" translatable="false">TARGET // %1$s</string>
+    <string name="untrack_confirm" translatable="false">[ CONFIRM REMOVE ]</string>
+    <string name="untrack_keep" translatable="false">[ KEEP TRACKING ]</string>
     <string name="settings_section_quick">Quick launch</string>
     <string name="settings_quick_body">The rows on the console. Up to five, any app, in the order you add them.</string>
     <string name="settings_quick_count_fmt">%1$s of %2$s</string>
