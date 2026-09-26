@@ -14,28 +14,31 @@ import kotlinx.coroutines.delay
  * The sound a reminder makes, and the whole of how it announces itself.
  *
  * No notification, so no POST_NOTIFICATIONS grant: the text waits on the
- * console instead. The tone follows the ringer. Silent plays nothing, vibrate
- * vibrates twice, normal plays two short beeps on the notification stream at
- * that stream's volume. A tone the user did not hear means the text is seen
+ * console instead. The tone follows the ringer. Silent plays nothing,
+ * vibrate vibrates once, normal plays one short, soft beep on the
+ * notification stream. A tone the user did not hear means the text is seen
  * only on the next visit to the launcher, and the README says so.
  *
- * ## Twice, and awaited
- * Two pulses of [PULSE_MS] with [GAP_MS] between them, then [TAIL_MS] before
- * the tone generator is released: [TOTAL_MS], 900 ms. [play] suspends for
- * all of it, so the receiver finishes its PendingResult only after the
- * second pulse. Finishing earlier lets the system reclaim the process with
- * the tone still queued. 900 ms plus a DataStore read and write is far
- * inside the 10 s a receiver has after goAsync, the shortest window any
- * broadcast gets. rescheduleAll sounds it once however many reminders it
- * fires late, so a boot with a backlog does not stack it.
+ * ## One tone, soft, and awaited
+ * `TONE_PROP_BEEP` at [VOLUME] of the stream's volume, capped at [TONE_MS].
+ * Not `TONE_PROP_BEEP2`: that tone is itself two beeps, so the earlier
+ * double play was four, and on hardware it was abrasive. [play] suspends for
+ * [TOTAL_MS], the tone's cap plus [TAIL_MS], before the generator is
+ * released, so the receiver finishes its PendingResult only after the tone.
+ * Releasing earlier ends it, and finishing earlier lets the system reclaim
+ * the process with the tone still queued. 250 ms plus a DataStore read and
+ * write is far inside the 10 s a receiver has after goAsync. rescheduleAll
+ * sounds it once however many reminders it fires late.
  */
 object ReminderChime {
 
     private const val TAG = "Molasses.Reminder"
-    const val PULSE_MS = 300L
-    const val GAP_MS = 200L
+    const val TONE_MS = 150L
     const val TAIL_MS = 100L
-    const val TOTAL_MS = PULSE_MS + GAP_MS + PULSE_MS + TAIL_MS
+    const val TOTAL_MS = TONE_MS + TAIL_MS
+
+    /** Of ToneGenerator's 0 to 100, relative to the notification stream. Half, for soft. */
+    const val VOLUME = 50
 
     suspend fun play(context: Context) {
         val am = context.getSystemService(AudioManager::class.java) ?: return
@@ -48,14 +51,12 @@ object ReminderChime {
 
     private suspend fun tone() {
         val generator = runCatching {
-            ToneGenerator(AudioManager.STREAM_NOTIFICATION, ToneGenerator.MAX_VOLUME)
+            ToneGenerator(AudioManager.STREAM_NOTIFICATION, VOLUME)
         }.onFailure { Log.w(TAG, "reminder tone failed", it) }.getOrNull() ?: return
         try {
-            generator.startTone(ToneGenerator.TONE_PROP_BEEP2, PULSE_MS.toInt())
-            delay(PULSE_MS + GAP_MS)
-            generator.startTone(ToneGenerator.TONE_PROP_BEEP2, PULSE_MS.toInt())
-            // Released after the second pulse, not before: releasing ends it.
-            delay(PULSE_MS + TAIL_MS)
+            generator.startTone(ToneGenerator.TONE_PROP_BEEP, TONE_MS.toInt())
+            // Released after the tone, not before: releasing ends it.
+            delay(TOTAL_MS)
         } catch (e: RuntimeException) {
             Log.w(TAG, "reminder tone failed", e)
         } finally {
@@ -71,9 +72,7 @@ object ReminderChime {
                 @Suppress("DEPRECATION")
                 context.getSystemService(Vibrator::class.java)
             }
-            // Off, on, off, on: two pulses, no repeat.
-            val pattern = longArrayOf(0L, PULSE_MS, GAP_MS, PULSE_MS)
-            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, -1))
+            vibrator?.vibrate(VibrationEffect.createOneShot(TONE_MS, VibrationEffect.DEFAULT_AMPLITUDE))
         }.onFailure { Log.w(TAG, "reminder vibration failed", it) }
         delay(TOTAL_MS)
     }

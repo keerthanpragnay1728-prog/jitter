@@ -84,19 +84,23 @@ class ReminderWiringTest {
     }
 
     @Test
-    fun `the chime plays twice, awaited, well inside the receiver window`() {
+    fun `one soft tone, awaited, well inside the receiver window`() {
         val src = repoFile("app/src/main/java/dev/molasses/monitor/ReminderChime.kt").readText()
         assertTrue(src.contains("suspend fun play(context: Context)"))
         val tone = functionBody(src, "private suspend fun tone(")
-        assertTrue(Regex("""generator\.startTone\(""").findAll(tone).count() == 2)
-        assertTrue(tone.indexOf("generator.release()") > tone.lastIndexOf("delay("))
+        assertTrue(Regex("""generator\.startTone\(""").findAll(tone).count() == 1)
+        assertTrue(tone.contains("generator.startTone(ToneGenerator.TONE_PROP_BEEP, TONE_MS.toInt())"))
+        assertFalse("BEEP2 is two beeps", src.contains("TONE_PROP_BEEP2"))
+        assertTrue(tone.contains("ToneGenerator(AudioManager.STREAM_NOTIFICATION, VOLUME)"))
+        assertTrue(src.contains("const val VOLUME = 50"))
+        assertTrue(tone.indexOf("generator.release()") > tone.indexOf("delay(TOTAL_MS)"))
         val vibrate = functionBody(src, "private suspend fun vibrate(")
-        assertTrue(vibrate.contains("longArrayOf(0L, PULSE_MS, GAP_MS, PULSE_MS)"))
-        assertTrue(vibrate.contains("createWaveform(pattern, -1)"))
+        assertTrue(vibrate.contains("VibrationEffect.createOneShot(TONE_MS"))
+        assertFalse("once, not a waveform", vibrate.contains("createWaveform"))
         assertTrue(vibrate.contains("delay(TOTAL_MS)"))
-        // 300 + 200 + 300 + 100. The shortest goAsync window is 10 s.
-        assertTrue(src.contains("const val TOTAL_MS = PULSE_MS + GAP_MS + PULSE_MS + TAIL_MS"))
-        assertTrue(src.contains("const val PULSE_MS = 300L") && src.contains("const val GAP_MS = 200L") && src.contains("const val TAIL_MS = 100L"))
+        // 150 + 100 = 250 ms. The shortest goAsync window is 10 s.
+        assertTrue(src.contains("const val TONE_MS = 150L") && src.contains("const val TAIL_MS = 100L"))
+        assertTrue(src.contains("const val TOTAL_MS = TONE_MS + TAIL_MS"))
     }
 
     @Test
