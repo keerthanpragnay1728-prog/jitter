@@ -28,3 +28,30 @@ fun functionBody(text: String, signature: String): String {
     }
     throw AssertionError("`$signature` never closes")
 }
+
+/**
+ * True when [at] falls inside a block opened by [opener] (which must end in
+ * `{`) that has not closed by then. Tries every earlier occurrence, so a
+ * closed block right before [at] does not hide an enclosing open one.
+ */
+fun insideOpenBlock(text: String, at: Int, opener: String): Boolean {
+    var start = text.lastIndexOf(opener, at)
+    while (start >= 0) {
+        var depth = 0
+        var i = start + opener.length - 1
+        var closed = false
+        while (i < at) {
+            when (text[i]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) { closed = true; break }
+                }
+            }
+            i++
+        }
+        if (!closed) return true
+        start = text.lastIndexOf(opener, start - 1)
+    }
+    return false
+}
