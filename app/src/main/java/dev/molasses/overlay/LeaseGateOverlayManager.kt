@@ -10,7 +10,7 @@ import androidx.compose.runtime.setValue
 import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateReadout
 import dev.molasses.core.lock.GateBlock
-import dev.molasses.core.safety.MediaPause
+import dev.molasses.core.safety.OverlayAudio
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.model.EventType
 import dev.molasses.engine.FrictionLedger
@@ -224,9 +224,9 @@ class LeaseGateOverlayManager(
         // screen.
         focus.take(
             "lease gate for $pkg",
-            // LEASE EXPIRED only. On entry the active session is usually the
-            // user's background music, not this app. See MediaPause.
-            sendPause = MediaPause.sendsPause(MediaPause.leaseGate(expired)),
+            // LEASE EXPIRED only. At entry neither focus nor the key: the
+            // audio is usually the user's own. See OverlayAudio.
+            silence = OverlayAudio.silences(OverlayAudio.leaseGate(expired)),
         )
 
         onWindowsChanged()

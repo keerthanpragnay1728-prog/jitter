@@ -9,7 +9,9 @@ import android.util.Log
 import android.view.KeyEvent
 
 /**
- * Silence whatever is playing while one of our full-screen windows is up.
+ * Silence whatever is playing while one of our full-screen windows is up,
+ * for the windows that silence at all. Which ones is `OverlayAudio`: not the
+ * entry gate and not a lock screen raised at entry.
  *
  * ## Why a countdown over continuing audio is not a gate
  * The lease gate can run for thirty seconds. Held over a feed that keeps
@@ -70,10 +72,12 @@ import android.view.KeyEvent
  * whichever app holds the active media session, the same route a headset
  * button takes.
  *
- * Whichever app, which is why it is not sent everywhere. On the entry gate
- * the active session is usually background music the user was already
- * playing, and pausing it left it paused for good after a lease. The caller
- * passes `MediaPause.sendsPause` for its overlay kind; see `MediaPause`.
+ * Whichever app, which is why neither half is used everywhere. At entry the
+ * active session is usually background music the user was already playing:
+ * the key left it paused for good after a lease, and the focus request alone
+ * still paused some players and did not reliably give them back. So the
+ * caller passes `OverlayAudio.silences` for its overlay kind, and one answer
+ * decides both the focus request and the key. See `OverlayAudio`.
  *
  * PAUSE, never PLAY_PAUSE. The toggle would start music that was already
  * stopped, which is the opposite of the point. And nothing is sent on
@@ -84,10 +88,13 @@ import android.view.KeyEvent
  * stays paused.
  *
  * ## On a device
- * `adb logcat -s Molasses.AudioFocus`. Each window that goes up logs
- * "audio focus taken for ..." or "audio focus refused for ... (result=N)",
- * then either "media pause dispatched for ..." or "media pause not sent
- * for ...". Each that comes down logs "audio focus released for ...". Audio still playing after "taken" and
+ * `adb logcat -s Molasses.AudioFocus`. A window at entry logs "audio focus
+ * not taken and media pause not sent for ..." and nothing else. Any other
+ * window that goes up logs "audio focus taken for ..." or "audio focus
+ * refused for ... (result=N)", then "media pause dispatched for ...". Each
+ * that held focus logs "audio focus released for ..." as it comes down. Audio
+ * that stops at entry after this change is not ours: no line at all is
+ * logged for it. Audio still playing after "taken" and
  * "media pause dispatched" is a player ignoring both focus and its media
  * session, which is the case only muting reaches.
  */
@@ -109,11 +116,18 @@ class AudioFocusHold(context: Context) {
     /**
      * Take focus. Idempotent: a second call while held does nothing.
      *
-     * @param sendPause also send the media pause key. No default: every
-     *   caller names its overlay kind through `MediaPause`.
+     * @param silence take focus and send the media pause key, both or
+     *   neither. No default: every caller names its overlay kind through
+     *   `OverlayAudio.silences`.
      */
-    fun take(reason: String, sendPause: Boolean) {
+    fun take(reason: String, silence: Boolean) {
         val am = audio ?: return
+        if (!silence) {
+            // At entry. Audio from the target app playing behind the window
+            // is not silenced; see OverlayAudio for why that is accepted.
+            Log.i(TAG, "audio focus not taken and media pause not sent for $reason")
+            return
+        }
         if (held != null) return
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(
@@ -138,14 +152,10 @@ class AudioFocusHold(context: Context) {
             // Not a failure of the window. See the class doc.
             Log.w(TAG, "audio focus refused for $reason (result=$result)")
         }
-        // Whatever focus answered, when this overlay sends it at all. A
-        // refusal usually means something else holds focus and may still be
-        // playing, which is exactly when the pause is needed.
-        if (sendPause) {
-            pausePlayback(am, reason)
-        } else {
-            Log.i(TAG, "media pause not sent for $reason")
-        }
+        // Whatever focus answered. A refusal usually means something else
+        // holds focus and may still be playing, which is exactly when the
+        // pause is needed.
+        pausePlayback(am, reason)
     }
 
     /**

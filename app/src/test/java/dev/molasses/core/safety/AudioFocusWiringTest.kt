@@ -40,6 +40,8 @@ class AudioFocusWiringTest {
 
     @Test
     fun `every full-screen window holds audio focus`() {
+        // Holds, not always takes: at entry the call is made and declines.
+        // See OverlayAudio.
         // The lock overlay was the one expected to be forgotten, because it
         // was a 1.8 second flash when it was written and is now unbounded.
         // The one actually forgotten was the walking gate, which never took
@@ -120,6 +122,11 @@ class AudioFocusWiringTest {
         val text = repoFile(hold).readText()
         val take = slice(text, "fun take(", "fun release(")
         assertTrue("take must dispatch the pause", take.contains("pausePlayback("))
+        assertTrue(
+            "the pause follows the focus request, past the one silence gate",
+            take.indexOf("if (!silence) {") < take.indexOf("am.requestAudioFocus(request)") &&
+                take.indexOf("am.requestAudioFocus(request)") < take.indexOf("pausePlayback(am, reason)"),
+        )
         val pause = slice(text, "private fun pausePlayback(", "private companion object")
         assertTrue(pause.contains("KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE"))
         assertTrue(pause.contains("KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE"))
