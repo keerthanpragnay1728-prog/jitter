@@ -12,7 +12,6 @@ import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
-import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.session.TargetScope
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
@@ -20,7 +19,6 @@ import dev.molasses.core.ui.FontScale
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.datastore.toEngineSnapshot
-import dev.molasses.data.datastore.toModel
 import dev.molasses.data.db.GateOutcomeRow
 import dev.molasses.data.db.UsageEventDao
 import dev.molasses.data.db.UsageEventEntity
@@ -67,7 +65,6 @@ data class EngineDiagnostics(
     val openSessionPkg: String?,
     val cycleAnchorWallMs: Long,
     val cycleRemainingMs: Long,
-    val resetPolicy: CycleResetPolicy,
     val appliedPackageNames: List<String>,
     val usedTargetFallback: Boolean,
     val routes: List<Pair<String, RouteTally.PackageTally>>,
@@ -152,8 +149,6 @@ class SettingsViewModel @Inject constructor(
         .map { TargetScope.trackingNothing(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    val resetPolicy: StateFlow<CycleResetPolicy> = repo.resetPolicy
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CycleResetPolicy.DEFAULT)
 
     /**
      * What each tracked app's horizon will be once the standing preference is
@@ -260,7 +255,6 @@ class SettingsViewModel @Inject constructor(
                     bootId = state.bootId,
                 ),
             ),
-            resetPolicy = state.resetPolicy.toModel(),
             appliedPackageNames = ServiceDiagnostics.appliedPackageNames,
             usedTargetFallback = ServiceDiagnostics.usedTargetFallback,
             routes = ServiceDiagnostics.tallySnapshot(),
@@ -280,7 +274,6 @@ class SettingsViewModel @Inject constructor(
             openSessionPkg = null,
             cycleAnchorWallMs = 0,
             cycleRemainingMs = 0,
-            resetPolicy = CycleResetPolicy.DEFAULT,
             appliedPackageNames = emptyList(),
             usedTargetFallback = false,
             routes = emptyList(),
@@ -390,9 +383,6 @@ class SettingsViewModel @Inject constructor(
         )
     }
 
-    fun setResetPolicy(policy: CycleResetPolicy) {
-        viewModelScope.launch { repo.setResetPolicy(policy) }
-    }
 
     /**
      * Declare a horizon. The engine decides whether it lands now or waits.

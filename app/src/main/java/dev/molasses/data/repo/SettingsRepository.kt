@@ -11,7 +11,6 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import dev.molasses.CycleState
 import dev.molasses.core.model.AppSnapshot
-import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
@@ -28,7 +27,6 @@ import dev.molasses.data.datastore.ConsoleState
 import dev.molasses.data.datastore.CycleStateStore
 import dev.molasses.data.datastore.pauseInstant
 import dev.molasses.data.datastore.toEngineSnapshot
-import dev.molasses.data.datastore.toModel
 import dev.molasses.monitor.MolassesAccessibilityService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -129,7 +127,6 @@ class SettingsRepository(
             chosen = it.targetsChosen,
         )
     }
-    val resetPolicy: Flow<CycleResetPolicy> = store.data.map { it.resetPolicy.toModel() }
     /**
      * What the gate asks for at the terminal tier. Below it, always the
      * countdown. See [dev.molasses.core.lease.GatePolicy].
@@ -222,7 +219,6 @@ class SettingsRepository(
      * `setTargets`: see [CycleStateStore.toggleTarget].
      */
     suspend fun toggleTarget(pkg: String) = store.toggleTarget(pkg, nowStamped())
-    suspend fun setResetPolicy(policy: CycleResetPolicy) = store.setResetPolicy(policy)
     suspend fun setGateMode(mode: GatePolicy.GateMode) = store.setGateMode(mode)
 
     /** The user's declared horizon per package. See [CycleStateStore.appHorizons]. */

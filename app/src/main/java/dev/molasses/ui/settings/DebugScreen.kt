@@ -179,7 +179,6 @@ fun DebugScreen(
                     },
                 )
                 MonoRow(R.string.debug_field_resets_in, formatDuration(diag.cycleRemainingMs))
-                MonoRow(R.string.debug_field_policy, diag.resetPolicy.name)
             }
         }
 

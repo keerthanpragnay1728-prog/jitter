@@ -302,9 +302,15 @@ report.
 ### 2. What does "resets only after 6 continuous hours" mean?
 
 The phrase is ambiguous between an abstinence window and a wall-clock window.
-Both are implemented and selectable in settings. The default is
-**`FIXED_WINDOW_6H`**: the cycle is anchored on the first target app you open
-from a clean state and ends six hours later whether you keep scrolling or not.
+The app runs **`FIXED_WINDOW_6H`**: the cycle is anchored on the first target
+app you open from a clean state and ends six hours later whether you keep
+scrolling or not.
+
+This used to be a setting, and the setting did nothing. The engine never
+applied a change, and its own checkpoint wrote its startup policy back over
+the user's choice within fifteen seconds. It was removed rather than wired,
+for the reason below. The enum and the stored proto field remain so every
+existing file parses; the value stored there is no longer read.
 
 `ABSTINENCE_6H` was the default originally, on the argument that a fixed window
 lets a user wait out the clock while still scrolling. That is true, and it is
@@ -1154,10 +1160,10 @@ setting offers a 25 second untimed typing task in its place. No sensors run in
 that mode. You can always leave with HOME or RECENTS; that takes the gate down
 without buying anything, and it comes back when you next scroll.
 
-**The only way out is to stop.** By default the counter resets after six
-continuous hours with no time in any of your target apps. You can switch it to
-a plain six-hour clock in settings, but then waiting it out while still
-scrolling works, which rather defeats the object.
+**The counter resets six hours after the cycle started.** The cycle starts
+the first time you open one of your target apps from a clean state, and ends
+six hours later whether you kept using the apps or not. There is no setting
+for it.
 
 **Battery.** Motion sensors run only while a gate is open on screen, and are
 unregistered the moment it passes, is abandoned, or times out after 90 seconds.

@@ -46,7 +46,6 @@ import dev.molasses.R
 import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
-import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.command.CommandRegistry
 import dev.molasses.core.settings.CfgAccordion
 import dev.molasses.core.settings.CfgAccordion.Section
@@ -87,7 +86,6 @@ fun SettingsScreen(
     val installed by vm.installed.collectAsStateWithLifecycle()
     val targets by vm.targets.collectAsStateWithLifecycle()
     val trackingNothing by vm.trackingNothing.collectAsStateWithLifecycle()
-    val policy by vm.resetPolicy.collectAsStateWithLifecycle()
     val gateMode by vm.gateMode.collectAsStateWithLifecycle()
     val sensitivePrefixes by vm.sensitivePrefixes.collectAsStateWithLifecycle()
     val pauseRemainingMs by vm.pauseRemainingMs.collectAsStateWithLifecycle()
@@ -472,30 +470,6 @@ fun SettingsScreen(
                         stringResource(R.string.settings_targets_empty),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
-            }
-        }
-
-        section(
-            state = accordion,
-            section = Section.POLICY,
-            title = R.string.settings_section_policy,
-            onToggle = { accordion = CfgAccordion.toggle(accordion, Section.POLICY) },
-        ) {
-            item(CfgRowKey.body(Section.POLICY, "rows")) {
-                Column {
-                    PolicyRow(
-                        selected = policy == CycleResetPolicy.ABSTINENCE_6H,
-                        title = R.string.settings_policy_abstinence_title,
-                        subtitle = R.string.settings_policy_abstinence_body,
-                        onSelect = { vm.setResetPolicy(CycleResetPolicy.ABSTINENCE_6H) },
-                    )
-                    PolicyRow(
-                        selected = policy == CycleResetPolicy.FIXED_WINDOW_6H,
-                        title = R.string.settings_policy_fixed_title,
-                        subtitle = R.string.settings_policy_fixed_body,
-                        onSelect = { vm.setResetPolicy(CycleResetPolicy.FIXED_WINDOW_6H) },
                     )
                 }
             }

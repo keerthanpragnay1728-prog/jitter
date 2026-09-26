@@ -58,9 +58,9 @@ class CfgAccordionTest {
 
     @Test
     fun `tapping an open section closes it`() {
-        var state = CfgAccordion.toggle(CfgAccordion.initial(), Section.POLICY)
-        state = CfgAccordion.toggle(state, Section.POLICY)
-        assertFalse(CfgAccordion.isOpen(state, Section.POLICY))
+        var state = CfgAccordion.toggle(CfgAccordion.initial(), Section.GATE)
+        state = CfgAccordion.toggle(state, Section.GATE)
+        assertFalse(CfgAccordion.isOpen(state, Section.GATE))
         assertNull(state.open)
     }
 

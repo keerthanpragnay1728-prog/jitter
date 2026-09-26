@@ -199,7 +199,7 @@ class FrictionEngine(
         bootId = initial.lastTargetUseBootId,
     )
 
-    private var resetPolicy: CycleResetPolicy = initial.resetPolicy
+    private val resetPolicy: CycleResetPolicy = initial.resetPolicy
 
     private var openPkg: String? = null
     private var openStartMonotonicMs: Long = 0
@@ -511,12 +511,6 @@ class FrictionEngine(
             lastTargetUseElapsedMs = lastTargetUse.elapsedMs,
             lastTargetUseBootId = lastTargetUse.bootId,
         )
-    }
-
-    internal fun setResetPolicy(policy: CycleResetPolicy) {
-        confinement()
-        resetPolicy = policy
-        publish()
     }
 
     private fun appState(pkg: String): MutableAppState =
