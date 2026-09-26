@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import dev.molasses.core.friction.CycleRollover
 import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EventType
@@ -194,8 +195,12 @@ class ForegroundReconciler(
         // Unanchored, not anchored at now. Nothing is in the foreground at
         // service-connect time, and the first target-app entry after this is
         // what starts the new cycle.
+        //
+        // Each app carries over through the same function the engine's
+        // rollover uses. This used to empty the map, which dropped a pending
+        // horizon widen and made it wait a whole extra cycle.
         return snapshot.copy(
-            perApp = emptyMap(),
+            perApp = CycleRollover.carryOver(snapshot.perApp),
             cycleAnchorWallMs = 0,
             cycleAnchorElapsedMs = 0,
             cycleAnchorBootId = 0,

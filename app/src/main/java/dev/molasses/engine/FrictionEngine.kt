@@ -5,6 +5,7 @@ import dev.molasses.core.model.CycleResetPolicy
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EngineState
 import dev.molasses.core.model.EventType
+import dev.molasses.core.friction.CycleRollover
 import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.model.FrictionDecision
@@ -163,24 +164,24 @@ class FrictionEngine(
     private val confinement: () -> Unit = {},
 ) {
     private val apps: MutableMap<String, MutableAppState> = initial.perApp
-        .mapValues { (pkg, s) ->
-            MutableAppState(
-                pkg = pkg,
-                accumulatedMs = s.accumulatedMs,
-                tierIndex = s.tierIndex,
-                leasesTaken = s.leasesTaken,
-                leaseUntilAccumulatedMs = s.leaseUntilAccumulatedMs,
-                penaltyMs = s.penaltyMs,
-                horizonMs = s.horizonMs,
-                pendingHorizonMs = s.pendingHorizonMs,
-            ).also { app ->
-                // No stored anchor charges nothing retroactively: anchoring at
-                // zero, as this used to, re-billed everything past the lease
-                // mark that the ratchet had already charged before the restart.
-                app.penaltyAnchorMs = s.penaltyAnchorMs ?: s.accumulatedMs
-            }
-        }
+        .mapValues { (_, s) -> mutableFrom(s) }
         .toMutableMap()
+
+    private fun mutableFrom(s: AppSnapshot) = MutableAppState(
+        pkg = s.pkg,
+        accumulatedMs = s.accumulatedMs,
+        tierIndex = s.tierIndex,
+        leasesTaken = s.leasesTaken,
+        leaseUntilAccumulatedMs = s.leaseUntilAccumulatedMs,
+        penaltyMs = s.penaltyMs,
+        horizonMs = s.horizonMs,
+        pendingHorizonMs = s.pendingHorizonMs,
+    ).also { app ->
+        // No stored anchor charges nothing retroactively: anchoring at
+        // zero, as this used to, re-billed everything past the lease
+        // mark that the ratchet had already charged before the restart.
+        app.penaltyAnchorMs = s.penaltyAnchorMs ?: s.accumulatedMs
+    }
 
     /**
      * Start of the current cycle, or [StampedInstant.UNSET] between cycles.
@@ -564,15 +565,9 @@ class FrictionEngine(
             // lands here. Everything else about the app starts over, which is
             // what makes the rollover the right moment: the accumulated total
             // the new curve is read against is zero, so a wider horizon can
-            // never arrive part way up a ramp it did not scale.
-            val promoted = HorizonPolicy.promote(
-                HorizonPolicy.of(apps.getValue(pkg).horizonMs, apps.getValue(pkg).pendingHorizonMs),
-            )
-            apps[pkg] = MutableAppState(
-                pkg = pkg,
-                horizonMs = promoted.horizonMs,
-                pendingHorizonMs = promoted.pendingHorizonMs,
-            )
+            // never arrive part way up a ramp it did not scale. The same
+            // function the reconciler's rollover on connect calls.
+            apps[pkg] = mutableFrom(CycleRollover.carryOver(apps.getValue(pkg).snapshot()))
         }
 
         if (openPkg != null) {
