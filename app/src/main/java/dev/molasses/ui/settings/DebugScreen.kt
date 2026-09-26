@@ -456,9 +456,16 @@ fun DebugScreen(
             OutlinedButton(onClick = { vm.clearLedger() }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.debug_clear_ledger))
             }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { vm.resetAllState() }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.debug_reset_all))
+            // Debug builds only. Resetting the proto clears every lock and
+            // lease and reverts the target list, none of which the target
+            // lock guard sees, so in a release build it was a one tap way out
+            // of a lock. DebugSurfaceTest fails on any clearAll call site
+            // outside this flag.
+            if (DebugSurface.ENABLED) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { vm.resetAllState() }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.debug_reset_all))
+                }
             }
         }
     }

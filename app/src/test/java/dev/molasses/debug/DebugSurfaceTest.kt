@@ -114,6 +114,48 @@ class DebugSurfaceTest {
         assertTrue("state editor must be behind DebugSurface.ENABLED", guardIndex in 1 until editorIndex)
     }
 
+    /**
+     * `clearAll` resets the whole proto: every lock, every lease, the target
+     * list. Nothing in the target lock guard sees it, so in release it would
+     * be a one tap way out of a lock. Every call site in main, and every call
+     * of the one ViewModel method that reaches it, must sit inside an
+     * `if (DebugSurface.ENABLED) {` block that is still open at the call.
+     */
+    @Test
+    fun `every call that can reach clearAll is behind DebugSurface`() {
+        val root = repoRoot()
+        val main = File(root, "app/src/main/java/dev/molasses")
+        val calls = listOf("clearAll(", "resetAllState(")
+        val sites = mutableListOf<String>()
+        val offenders = mutableListOf<String>()
+        main.walkTopDown().filter { it.extension == "kt" }.forEach { f ->
+            val text = f.readText()
+            for (call in calls) {
+                var at = text.indexOf(call)
+                while (at >= 0) {
+                    val isDeclaration = text.substring(maxOf(0, at - 4), at) == "fun "
+                    if (!isDeclaration) {
+                        val line = text.substring(0, at).count { it == '\n' } + 1
+                        sites += "${f.name}:$line"
+                        if (!insideDebugGuard(text, at)) offenders += "${f.name}:$line $call"
+                    }
+                    at = text.indexOf(call, at + call.length)
+                }
+            }
+        }
+        assertTrue("expected at least one call site, found none", sites.isNotEmpty())
+        assertTrue("outside DebugSurface.ENABLED: $offenders", offenders.isEmpty())
+    }
+
+    @Test
+    fun `the clearAll guard check rejects an unguarded call`() {
+        // The check above is only worth its green if it can go red.
+        val unguarded = "fun a() {\n    if (DebugSurface.ENABLED) {\n        x()\n    }\n    store.clearAll()\n}"
+        assertFalse(insideDebugGuard(unguarded, unguarded.indexOf("clearAll(")))
+        val guarded = "fun a() {\n    if (DebugSurface.ENABLED) {\n        store.clearAll()\n    }\n}"
+        assertTrue(insideDebugGuard(guarded, guarded.indexOf("clearAll(")))
+    }
+
     @Test
     fun `a bypassed gate is ledgered distinctly from a cleared one`() {
         // A capture from a device must never let a bypassed session be read
@@ -195,4 +237,31 @@ class BitTraceTest {
         assertTrue("BitTrace.tick is not called", launcher.contains("BitTrace.tick("))
         assertTrue("BitTrace.drew is not called", launcher.contains("BitTrace.drew("))
     }
+}
+
+private const val DEBUG_GUARD = "if (DebugSurface.ENABLED) {"
+
+/**
+ * True when [at] falls inside an `if (DebugSurface.ENABLED) {` block that has
+ * not closed yet. Brace counting only, with no string or comment awareness:
+ * the files it reads are Compose and ViewModel code whose braces balance, and
+ * a false answer fails the test rather than passing it.
+ */
+internal fun insideDebugGuard(text: String, at: Int): Boolean {
+    var guard = text.lastIndexOf(DEBUG_GUARD, at)
+    while (guard >= 0) {
+        var depth = 0
+        var i = guard + DEBUG_GUARD.length - 1
+        var closedBefore = false
+        while (i < at) {
+            when (text[i]) {
+                '{' -> depth++
+                '}' -> { depth--; if (depth == 0) { closedBefore = true; break } }
+            }
+            i++
+        }
+        if (!closedBefore) return true
+        guard = text.lastIndexOf(DEBUG_GUARD, guard - 1)
+    }
+    return false
 }

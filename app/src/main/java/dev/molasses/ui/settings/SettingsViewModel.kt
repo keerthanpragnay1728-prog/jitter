@@ -27,6 +27,7 @@ import dev.molasses.data.db.UsageEventEntity
 import dev.molasses.data.repo.InstalledApp
 import dev.molasses.data.repo.PermissionState
 import dev.molasses.data.repo.SettingsRepository
+import dev.molasses.debug.DebugSurface
 import dev.molasses.monitor.ServiceDiagnostics
 import dev.molasses.sensing.Thresholds
 import javax.inject.Inject
@@ -467,10 +468,16 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { withContext(Dispatchers.IO) { dao.clear() } }
     }
 
+    /**
+     * Debug builds only, checked here as well as at the button, so a second
+     * caller added later cannot reach [CycleStateStore.clearAll] in release.
+     */
     fun resetAllState() {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) { dao.clear() }
-            store.clearAll()
+        if (DebugSurface.ENABLED) {
+            viewModelScope.launch {
+                withContext(Dispatchers.IO) { dao.clear() }
+                store.clearAll()
+            }
         }
     }
 }
