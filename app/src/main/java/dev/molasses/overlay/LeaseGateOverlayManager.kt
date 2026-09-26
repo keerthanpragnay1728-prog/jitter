@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateReadout
+import dev.molasses.core.lock.GateBlock
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.model.EventType
 import dev.molasses.engine.FrictionLedger
@@ -72,6 +73,12 @@ class LeaseGateOverlayManager(
     private val onLeaseTaken: (pkg: String, durationMs: Long) -> Unit,
     private val onDeclined: (pkg: String, reason: String) -> Unit,
     /**
+     * A rung was chosen from [ BLOCK THIS APP ]. The service arms the lock
+     * through `LockRequest` and the same registry write as every other path,
+     * then shows the lock screen. See `GateBlock`.
+     */
+    private val onBlock: (pkg: String, durationMs: Long) -> Unit,
+    /**
      * Fired after the window is added or removed. This window belongs to our
      * own package, so without it the service reads the gate as the user going
      * home and closes the session it is gating.
@@ -114,6 +121,14 @@ class LeaseGateOverlayManager(
      */
     private var resolved = false
 
+    /**
+     * The block rungs are showing in place of [ BLOCK THIS APP ]. Compose
+     * state, and held here rather than in the screen, because the back key is
+     * handled here: back from the rung row closes the row and leaves the gate
+     * up, and only back from the gate itself declines.
+     */
+    private var blockPickerOpen by mutableStateOf(false)
+
     val isShowing: Boolean get() = host?.isShowing == true
 
     /** The package this window is up for, or null when it is not showing. */
@@ -148,6 +163,7 @@ class LeaseGateOverlayManager(
 
         currentPkg = pkg
         resolved = false
+        blockPickerOpen = false
 
         this.stats = stats
         val deadline = monotonicMs() + countdownMs
@@ -159,7 +175,13 @@ class LeaseGateOverlayManager(
         val h = OverlayHost(service, windowManager)
         host = h
 
-        h.show(onBackPressed = { decline("back") }) {
+        h.show(
+            onBackPressed = {
+                // Back from the rung row returns to the gate; it does not
+                // answer it.
+                if (blockPickerOpen) blockPickerOpen = false else decline("back")
+            },
+        ) {
             MolassesTheme(fontScale = fontScale()) {
                 LeaseGateScreen(
                     appLabel = label,
@@ -174,6 +196,10 @@ class LeaseGateOverlayManager(
                     panelUp = GateReadout.panelUp(remaining),
                     onTakeLease = { ms -> takeLease(ms) },
                     onTakeMeOut = { decline("take me out") },
+                    blockOffered = GateBlock.offered(expired),
+                    blockPickerOpen = blockPickerOpen,
+                    onOpenBlock = { blockPickerOpen = true },
+                    onBlock = { ms -> block(ms) },
                 )
             }
         }
@@ -260,6 +286,21 @@ class LeaseGateOverlayManager(
         // same reason GateOverlayManager does not write GATE_PASSED.
         dismissInternal()
         onLeaseTaken(pkg, durationMs)
+    }
+
+    /**
+     * A block rung was chosen. Resolves the gate like a lease does, and hands
+     * the decision to the service, which arms the lock and puts the lock
+     * screen up. No home action here: the lock screen replaces this window
+     * and its own way out is the one that goes home.
+     */
+    private fun block(durationMs: Long) {
+        val pkg = currentPkg ?: return
+        if (resolved) return
+        resolved = true
+        ledger.log(pkg, EventType.LEASE_DECLINED, "reason=block ${durationMs}ms")
+        dismissInternal()
+        onBlock(pkg, durationMs)
     }
 
     /**

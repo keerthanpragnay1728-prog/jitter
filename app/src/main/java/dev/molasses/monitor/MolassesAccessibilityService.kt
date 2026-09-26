@@ -19,7 +19,9 @@ import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.lease.LaunchGate
 import dev.molasses.core.lease.LeaseManager
 import dev.molasses.core.lock.LockEnforcement
+import dev.molasses.core.lock.GateBlock
 import dev.molasses.core.lock.LockOpensAt
+import dev.molasses.core.lock.LockRequest
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.latency.Segment
@@ -314,6 +316,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             },
             onLeaseTaken = ::grantLease,
             onDeclined = { _, _ -> },
+            onBlock = ::blockFromGate,
             fontScale = { fontScaleMultiplier },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
@@ -890,6 +893,40 @@ class MolassesAccessibilityService : AccessibilityService() {
         scope.launch {
             cycleStore.grantLease(pkg, now, durationMs, accumulated)
         }
+    }
+
+    /**
+     * [ BLOCK THIS APP ] on the LEASE EXPIRED gate.
+     *
+     * The same evaluation as every other way of arming a lock, then the same
+     * registry write: in memory first, so the lock screen that follows can
+     * read it, and the store behind it through `armLock`, the call CFG and
+     * the console make. Then the lock screen, through the ordinary
+     * enforcement path, which is what closes the session and puts it up.
+     *
+     * TooShort means a longer lock already stands; the user asked to be kept
+     * out, and they are, so the lock screen goes up for the lock that is
+     * there. Confirm and Invalid cannot come from the rungs this surface
+     * offers (see `GateBlock`); if one ever did, nothing is armed unconfirmed
+     * and the user is sent home rather than left in the app.
+     */
+    private fun blockFromGate(pkg: String, durationMs: Long) {
+        if (!ready) return
+        val now = nowStamped()
+        when (val verdict = GateBlock.evaluate(durationMs, locks.remainingMs(pkg, now))) {
+            is LockRequest.Verdict.Arm -> {
+                locks = locks.arm(pkg, now, verdict.durationMs, LockReason.BLOCK)
+                scope.launch { cycleStore.armLock(pkg, now, verdict.durationMs, LockReason.BLOCK) }
+                if (!enforceLockIfNeeded(pkg)) goHomeQuietly()
+            }
+            is LockRequest.Verdict.TooShort -> if (!enforceLockIfNeeded(pkg)) goHomeQuietly()
+            is LockRequest.Verdict.Confirm, LockRequest.Verdict.Invalid -> goHomeQuietly()
+        }
+    }
+
+    private fun goHomeQuietly() {
+        runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
+            .onFailure { Log.w(TAG, "GLOBAL_ACTION_HOME refused", it) }
     }
 
     /**

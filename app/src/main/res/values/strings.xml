@@ -38,6 +38,9 @@
     <string name="lease_gate_opens" translatable="false">OPENS TODAY</string>
     <string name="lease_gate_select" translatable="false">SELECT LEASE</string>
     <string name="lease_gate_out" translatable="false">[ TAKE ME OUT ]</string>
+    <!-- LEASE EXPIRED gate only. The rungs reuse lease_gate_button_fmt. -->
+    <string name="lease_gate_block" translatable="false">[ BLOCK THIS APP ]</string>
+    <string name="lease_gate_block_select" translatable="false">BLOCK FOR</string>
     <string name="lease_gate_button_fmt" translatable="false">[ %1$s ]</string>
     <!-- %1$s is the app label, already uppercased by the caller. -->
     <!-- What the next scroll costs. Three bands, one question; see NextScroll. -->
