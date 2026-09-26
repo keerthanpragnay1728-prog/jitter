@@ -1,5 +1,6 @@
 package dev.molasses.core.command
 
+import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.time.DurationParser
 import dev.molasses.core.time.TimeParser
 
@@ -31,7 +32,7 @@ object CommandParser {
     val VERBS: List<String> = listOf(
         "block", "focus", "bedtime", "sleep", "status",
         "alarm", "timer", "reboot", "poweroff", "wifi", "dnd",
-        "calc", "conv", "days",
+        "calc", "conv", "days", "rem",
         "help", "?",
     )
 
@@ -54,6 +55,7 @@ object CommandParser {
         "calc" to "calc <expression>",
         "conv" to "conv <amount> <from> <to>",
         "days" to "days until|since|between <date>",
+        "rem" to "rem <time|duration> <text>",
         "help" to "help",
         "?" to "?",
     )
@@ -95,6 +97,7 @@ object CommandParser {
             "calc" -> rest(verb, args, "expression") { Command.Calc(it) }
             "conv" -> rest(verb, args, "amount") { Command.Conv(it) }
             "days" -> rest(verb, args, "date") { Command.Days(it) }
+            "rem" -> remind(verb, text)
 
             else -> err(ParseError.UnknownCommand(verb))
         }
@@ -154,6 +157,41 @@ object CommandParser {
     ): ParseResult =
         if (args.isEmpty()) err(ParseError.MissingArgument(verb, expected))
         else ok(build(args.joinToString(" ")))
+
+    /**
+     * `rem <time|duration> <text>`.
+     *
+     * The first token is tried as a duration and then as a time of day. The
+     * two forms cannot overlap: a duration always carries a unit letter
+     * (`45m`, `2h`) and a time always carries am, pm or a colon. A token
+     * shaped like one but out of range keeps that form's own refusal, so
+     * `rem 25:00 x` says the time is out of range rather than that it is not
+     * a time at all.
+     *
+     * The text is the remainder of the line as typed, split off after the
+     * second whitespace run with a limit rather than rejoined from tokens,
+     * so its own spacing survives. It is the one argument this grammar leaves
+     * free, and nothing completes, ghosts or rewrites it: see
+     * [completeOnSpace], which only ever touches a verb.
+     */
+    private fun remind(verb: String, text: String): ParseResult {
+        val parts = text.split(Regex("\\s+"), limit = 3)
+        if (parts.size < 2) return err(ParseError.MissingArgument(verb, "time"))
+        if (parts.size < 3 || parts[2].isBlank()) return err(ParseError.MissingArgument(verb, "text"))
+        val token = parts[1]
+        val body = parts[2].trim()
+        when (val d = DurationParser.parse(token)) {
+            is DurationParser.Result.Ok -> return ok(Command.Rem(ReminderBook.When.In(d.ms), body))
+            is DurationParser.Result.Err ->
+                if (d.kind != DurationParser.Kind.MALFORMED) return err(ParseError.BadDuration(token, d.kind))
+        }
+        return when (val t = TimeParser.parse(token)) {
+            is TimeParser.Result.Ok -> ok(Command.Rem(ReminderBook.When.At(t.minuteOfDay), body))
+            is TimeParser.Result.Err ->
+                if (t.kind != TimeParser.Kind.MALFORMED) err(ParseError.BadTime(token, t.kind))
+                else err(ParseError.BadWhen(token))
+        }
+    }
 
     private fun noArgs(verb: String, args: List<String>, command: Command): ParseResult =
         if (args.isEmpty()) ok(command) else err(ParseError.TooManyArguments(verb))

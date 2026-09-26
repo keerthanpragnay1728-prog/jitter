@@ -117,6 +117,8 @@ import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.BitTap
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.launch.QuickLaunch
+import dev.molasses.core.remind.Reminder
+import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.launch.ShortcutLadder
 import dev.molasses.core.console.ConsoleSpeech
 import dev.molasses.core.console.Greeting
@@ -145,6 +147,7 @@ import dev.molasses.core.session.TargetScope
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.repo.CycleReadout
 import dev.molasses.data.repo.SettingsRepository
+import dev.molasses.monitor.ReminderAlarms
 import dev.molasses.monitor.ServiceDiagnostics
 import dev.molasses.ui.settings.SettingsActivity
 import dev.molasses.ui.theme.JitterBackground
@@ -251,6 +254,11 @@ class LauncherActivity : ComponentActivity() {
             val quickLaunch by settingsRepository.quickLaunch
                 .collectAsState(initial = QuickLaunch.Selection(emptyList(), chosen = false))
 
+            // $ rem. The fired ones are shown on the console until dismissed;
+            // the whole list is read to answer the cap at the prompt.
+            val reminders by settingsRepository.reminders
+                .collectAsState(initial = emptyList())
+
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showDrawer by remember { mutableStateOf(false) }
                 // A long console lock waiting on the full-screen panel. Held
@@ -324,6 +332,10 @@ class LauncherActivity : ComponentActivity() {
                             },
                             onRequestLockConfirm = { lockConfirm = it },
                             quickLaunch = quickLaunch,
+                            reminders = reminders,
+                            onDismissReminder = { id ->
+                                scope.launch { settingsRepository.dismissReminder(id) }
+                            },
                             // Remembered so the prompt can build its
                             // dispatcher once rather than on every keystroke.
                             actions = remember(pagerState) {
@@ -357,6 +369,24 @@ class LauncherActivity : ComponentActivity() {
                                     minuteOfDay = {
                                         val c = Calendar.getInstance()
                                         c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
+                                    },
+                                    remind = { whenSpec, text ->
+                                        val now = settingsRepository.nowStamped()
+                                        val c = Calendar.getInstance()
+                                        val minute = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
+                                        val due = ReminderBook.dueAt(whenSpec, now, minute)
+                                        if (reminders.size >= ReminderBook.MAX) {
+                                            RemindOutcome.Full
+                                        } else {
+                                            scope.launch {
+                                                // The store re-checks the cap in its own
+                                                // transaction; only what it took is armed.
+                                                settingsRepository.addReminder(text, due)?.let {
+                                                    ReminderAlarms.schedule(this@LauncherActivity, it.id, it.due.wallMs)
+                                                }
+                                            }
+                                            RemindOutcome.Scheduled(due.wallMs)
+                                        }
                                     },
                                 )
                             },
@@ -728,6 +758,8 @@ fun MainLauncherWorkspace(
     onRecordCommand: (String) -> Unit,
     onRequestLockConfirm: (LockConfirmRequest) -> Unit,
     quickLaunch: QuickLaunch.Selection,
+    reminders: List<Reminder>,
+    onDismissReminder: (Long) -> Unit,
     cycle: CycleReadout,
     curfewEndMinuteOfDay: Int?,
     nowStamped: () -> StampedInstant,
@@ -812,6 +844,8 @@ fun MainLauncherWorkspace(
                     onRecordCommand = onRecordCommand,
                     onRequestLockConfirm = onRequestLockConfirm,
                     quickLaunch = quickLaunch,
+                    reminders = reminders,
+                    onDismissReminder = onDismissReminder,
                     cycle = cycle,
                     curfewEndMinuteOfDay = curfewEndMinuteOfDay,
                     nowStamped = nowStamped,
@@ -850,6 +884,9 @@ fun TerminalHomeView(
     onRequestLockConfirm: (LockConfirmRequest) -> Unit,
     /** The user's quick-launch rows, as stored. Resolved here against [apps]. */
     quickLaunch: QuickLaunch.Selection,
+    /** Every reminder not yet dismissed. The fired ones are shown here, oldest first. */
+    reminders: List<Reminder>,
+    onDismissReminder: (Long) -> Unit,
     cycle: CycleReadout,
     /** Minute of day a bedtime lock lifts, or null when none stands. */
     curfewEndMinuteOfDay: Int?,
@@ -1572,6 +1609,22 @@ fun TerminalHomeView(
         // overlay: no new window, nothing in the collision guard, no exposure
         // to the financial suppression set. Bit speaks here or it does not
         // speak.
+        // $ rem. A fired reminder is shown here until it is dismissed, one at
+        // a time and oldest first, so several read in the order they fell
+        // due. Its own row and its own queue: it is something the user asked
+        // for, so it never passes through ConsoleSpeech, never counts against
+        // Bit's hourly or daily caps, and cannot be displaced by a notice.
+        ReminderBook.toShow(reminders).firstOrNull()?.let { reminder ->
+            ReminderRow(
+                face = BitGlyph.pad(BitStateMachine.NEUTRAL),
+                text = stringResource(
+                    if (reminder.late) R.string.console_reminder_late_fmt else R.string.console_reminder_fmt,
+                    reminder.text,
+                ),
+                onDismiss = { onDismissReminder(reminder.id) },
+            )
+        }
+
         val spoken = display as? BitDisplay.Spoken
         if (spoken != null) {
             val said = spoken as? BitDisplay.Speech
@@ -2813,6 +2866,49 @@ private const val CURSOR_IDLE_AFTER_MS = 900L
  * could be brushed off by a stray horizontal drag is a question that gets
  * answered by accident.
  */
+/**
+ * A fired reminder: Bit's face, the text, and [OK] to dismiss it.
+ *
+ * Not swipeable, unlike a notice. A reminder stays until the user says they
+ * have seen it, because it is the thing they asked to be told, and a stray
+ * drag must not be how it disappears.
+ */
+@Composable
+private fun ReminderRow(face: String, text: String, onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = face,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            color = PhosphorGreen,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = text,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            color = PhosphorGreen,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = stringResource(R.string.console_reminder_ok),
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            color = PhosphorGreen,
+            modifier = Modifier
+                .clickable(onClick = onDismiss)
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+        )
+    }
+}
+
 @Composable
 private fun ConsoleSpeechRow(
     face: String,

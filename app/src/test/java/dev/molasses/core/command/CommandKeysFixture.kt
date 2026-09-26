@@ -33,5 +33,6 @@ internal fun dummyCommandKeys(): CommandRegistry.Keys {
         calcUsage = id(), calcDesc = id(),
         convUsage = id(), convDesc = id(),
         daysUsage = id(), daysDesc = id(),
+        remUsage = id(), remDesc = id(),
     )
 }

@@ -116,6 +116,7 @@ class CommandRegistry(keys: Keys) {
         val calcUsage: Int, val calcDesc: Int,
         val convUsage: Int, val convDesc: Int,
         val daysUsage: Int, val daysDesc: Int,
+        val remUsage: Int, val remDesc: Int,
     )
 
     val specs: List<CommandSpec> = listOf(
@@ -145,6 +146,12 @@ class CommandRegistry(keys: Keys) {
         CommandSpec("focus", keys.focusUsage, keys.focusDesc, Surface.SUBSYSTEM,
             requiresConfirmAboveMs = CONFIRM_ABOVE_MS),
         CommandSpec("bedtime", keys.bedtimeUsage, keys.bedtimeDesc, Surface.SUBSYSTEM),
+
+        // Reminders. A subsystem of this app, scheduled with AlarmManager and
+        // held in the store. It came back after the stub was deleted, as a
+        // working command and a deliberate exception to the boundary rule
+        // above; see CLAUDE.md.
+        CommandSpec("rem", keys.remUsage, keys.remDesc, Surface.SUBSYSTEM),
 
         // STATE. Scroll the pager, open the manual, answer a question.
         // Nothing external can stop any of them.
@@ -210,6 +217,7 @@ class CommandRegistry(keys: Keys) {
             is Command.Calc -> "calc"
             is Command.Conv -> "conv"
             is Command.Days -> "days"
+            is Command.Rem -> "rem"
         }
 
         /** The duration a command would arm, or null when it arms nothing. */

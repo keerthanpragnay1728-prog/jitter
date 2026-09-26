@@ -494,6 +494,9 @@
     <string name="cmd_err_duration">Bad duration: %1$s. Try 30m, 2h, 1h30m, 3d.</string>
     <string name="cmd_err_time">Bad time: %1$s. Try 6am, 18:30, 6:30pm.</string>
     <string name="cmd_err_toggle">Expected on or off, got %1$s</string>
+    <string name="cmd_ack_rem">ACK: REMINDER SET FOR %1$s.</string>
+    <string name="cmd_err_rem_full">%1$s reminders are pending, the most there can be. Dismiss one first.</string>
+    <string name="cmd_err_when">Not a time or a duration: %1$s. Try 6pm, 18:30 or 45m.</string>
     <string name="cmd_err_unknown_app">No app matches %1$s</string>
     <string name="cmd_err_ambiguous_app">%1$s matches %2$s apps. A wrong lock cannot be undone.</string>
     <string name="cmd_err_no_targets">No tracked apps. Add some in settings first.</string>
@@ -553,6 +556,7 @@
     <string name="cmd_usage_calc" translatable="false">calc &lt;expression&gt;</string>
     <string name="cmd_usage_conv" translatable="false">conv &lt;amount&gt; &lt;from&gt; &lt;to&gt;</string>
     <string name="cmd_usage_days" translatable="false">days until|since|between &lt;date&gt;</string>
+    <string name="cmd_usage_rem" translatable="false">rem &lt;time|duration&gt; &lt;text&gt;</string>
     <!-- One line each, for the manual the registry generates. -->
     <string name="cmd_desc_block">Lock one app until the duration is up.</string>
     <string name="cmd_desc_focus">Lock every tracked app and silence notifications.</string>
@@ -571,6 +575,7 @@
     <string name="cmd_desc_calc">Work out an expression. A percent sign always means a hundredth of what it follows.</string>
     <string name="cmd_desc_conv">Convert between km mi, m ft, cm in, kg lb, g oz, kg st, c f, kph mph. Full names, plurals and a joining word all work: 5 kilometers to miles.</string>
     <string name="cmd_desc_days">Count days until, since, or between two dates. Write a year as 2026-12-25.</string>
+    <string name="cmd_desc_rem">Remind yourself at a time or after a while: rem 6pm call mum, rem 45m tea. Up to 20. Android may deliver it late with the screen off, by up to an hour on Android 12 and later. A tone plays unless the phone is silent, and the text waits here until you dismiss it.</string>
     <!--
       The manual carries the reason the ack no longer has room for, and the
       two reasons stay different on purpose. Wifi is a platform limit binding
@@ -619,6 +624,10 @@
     <string name="console_greeting_morning">good morning, architect</string>
     <string name="console_greeting_afternoon">afternoon, architect</string>
     <string name="console_greeting_late">still up, architect</string>
+    <!-- $ rem, on the console. Stays until [OK]. -->
+    <string name="console_reminder_fmt" translatable="false">REMINDER // %1$s</string>
+    <string name="console_reminder_late_fmt" translatable="false">REMINDER // %1$s // LATE</string>
+    <string name="console_reminder_ok" translatable="false">[OK]</string>
     <string name="console_do_it">[DO IT]</string>
     <string name="console_nah">[NAH]</string>
     <!-- App drawer -->

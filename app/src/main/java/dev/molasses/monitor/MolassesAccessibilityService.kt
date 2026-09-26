@@ -364,6 +364,10 @@ class MolassesAccessibilityService : AccessibilityService() {
             withContext(Dispatchers.Main.immediate) { ready = true }
             ServiceDiagnostics.onReady()
             Log.i(TAG, "ready: accepting events")
+            // $ rem. Alarms do not survive a reboot or a force stop, and the
+            // service connecting is the one moment this app reliably runs
+            // after either. Past-due reminders fire now, marked late.
+            ReminderAlarms.rescheduleAll(this@MolassesAccessibilityService, cycleStore, nowStamped())
         }
 
         // The silent-drop watchdog. Reconciliation awaits DataStore, and if
