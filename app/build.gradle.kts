@@ -79,6 +79,16 @@ android {
     }
 }
 
+// Room writes each schema version to app/schemas as JSON at compile time.
+// MolassesDatabase already set exportSchema = true, but with no location Room
+// only warned and wrote nothing, so there was no record of version 1 to write
+// a migration against. The files are meant to be committed: they are the
+// history a MigrationTestHelper test replays, and a version bump without its
+// JSON has nothing to compare to.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 // Kotlin 2.0 moved the Compose compiler into its own plugin
 // (org.jetbrains.kotlin.plugin.compose, applied above). Deliberately no
 // composeOptions { kotlinCompilerExtensionVersion = ... } block -- setting it
