@@ -140,6 +140,12 @@ fun SettingsScreen(
     // The duration awaiting a second, deliberate press. Cleared by anything
     // else the user does, exactly as the command prompt clears its own.
     var awaitingConfirm by rememberSaveable { mutableStateOf<Long?>(null) }
+    // The untrack cooling-off in progress, or null. Declared here, above
+    // buildCfgRows, because the target rows' toggle writes it from inside
+    // that builder and the panel at the bottom of this function reads it.
+    // remember and not rememberSaveable, on purpose: a rotation or a process
+    // death must forget it, which abandons it with the app still tracked.
+    var coolingOff by remember { mutableStateOf<UntrackCoolingOff.State?>(null) }
     // Selected targets always stay visible, even when they do not match the
     // filter. Otherwise typing a name silently hides what is already ticked
     // and the list reads as though the selection was lost.
@@ -668,11 +674,6 @@ fun SettingsScreen(
     val letters = remember(railLabels) { AlphaIndex.lettersOf(railLabels) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-
-    // The untrack cooling-off in progress, or null. remember and not
-    // rememberSaveable, on purpose: a rotation or a process death must
-    // forget it, which abandons it with the app still tracked.
-    var coolingOff by remember { mutableStateOf<UntrackCoolingOff.State?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
