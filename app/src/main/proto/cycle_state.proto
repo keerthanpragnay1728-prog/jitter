@@ -306,6 +306,17 @@ message AppState {
   // first launch after this ships, so it has to be the migration.
   int64 horizon_ms = 6;
   int64 pending_horizon_ms = 7;
+
+  // Live accumulated time at the ratchet's last evaluation: the point
+  // penalty_ms has already been charged up to. Without it a restart put the
+  // anchor at zero, so the next evaluation charged again from the lease mark
+  // over time the ratchet had already billed.
+  //
+  // `optional` for presence. A file written before this field has none, and
+  // that reads as "no anchor", which the engine resolves to the restored
+  // accumulated time: nothing is charged retroactively for an interval this
+  // build cannot see. A present zero is a real anchor at zero.
+  optional int64 penalty_anchor_ms = 8;
 }
 
 enum CycleResetPolicyProto {

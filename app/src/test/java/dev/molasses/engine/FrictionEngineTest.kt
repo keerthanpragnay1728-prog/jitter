@@ -585,14 +585,24 @@ class FrictionEngineTest {
 
         val r2 = Rig(persisted)
         r2.enter(ig, 0)
-        // Picks up mid-tier-2 with a lease already taken. The stall is above
-        // the true-time tier 2 value because the penalty carried through the
-        // snapshot.
-        assertTrue(
-            "penalty must survive the restart",
-            r2.snap(ig).penaltyMs > 0,
+        // Picks up mid-tier-2 with a lease already taken, and the penalty
+        // carried through the snapshot.
+        val carried = persisted.perApp.getValue(ig).penaltyMs
+        assertTrue("penalty must survive the restart", carried > 0)
+        assertEquals(carried, r2.snap(ig).penaltyMs)
+        // The first scroll after the restart is one second overdue and costs
+        // exactly that second. This used to assert a stall of at least 3000
+        // ms, which held only because the restarted engine anchored its
+        // ratchet at zero and billed the whole overdue stretch again,
+        // pinning the curve. The stall now is the curve at the true
+        // effective time.
+        val decision = r2.scroll(ig, 1_000)
+        assertEquals(carried + 1_000, r2.snap(ig).penaltyMs)
+        val expected = FrictionCurve.frictionAt(
+            accumulatedMs = FrictionCurve.effectiveMs(12 * min + 1_000, carried + 1_000),
+            horizonMs = FrictionCurve.DEFAULT_HORIZON_MS,
         )
-        assertTrue(r2.scroll(ig, 1_000).stallMs >= 3_000L)
+        assertEquals(expected.stallMs.toLong(), decision.stallMs)
         assertEquals(2, r2.snap(ig).tierIndex)
         assertEquals(1, r2.snap(ig).leasesTaken)
     }

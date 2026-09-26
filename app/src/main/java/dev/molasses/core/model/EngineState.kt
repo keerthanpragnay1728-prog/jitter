@@ -40,6 +40,13 @@ data class AppSnapshot(
      * [dev.molasses.core.friction.HorizonPolicy].
      */
     val pendingHorizonMs: Long = HorizonPolicy.NONE,
+    /**
+     * Live accumulated time at the penalty ratchet's last evaluation, the
+     * point [penaltyMs] has been charged up to. Null for "no anchor", which is
+     * what a file written before this was persisted reads as; the engine then
+     * anchors at [accumulatedMs] and charges nothing retroactively.
+     */
+    val penaltyAnchorMs: Long? = null,
 ) {
     /**
      * Sitting in this app past the lease that was taken for it.

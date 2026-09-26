@@ -618,6 +618,7 @@ fun AppSnapshot.toProto(): AppState = AppState.newBuilder()
     .setHorizonMs(horizonMs)
     .setPendingHorizonMs(pendingHorizonMs)
     .setPenaltyMs(penaltyMs)
+    .apply { penaltyAnchorMs?.let { setPenaltyAnchorMs(it) } }
     .build()
 
 fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
@@ -633,6 +634,9 @@ fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
             // would hand every restored package a lease it never took.
             leaseUntilAccumulatedMs = a.leaseUntilAccumulatedMs,
             penaltyMs = a.penaltyMs,
+            // Absent on every file written before the anchor was persisted.
+            // Null is "no anchor", not zero: see AppSnapshot.penaltyAnchorMs.
+            penaltyAnchorMs = if (a.hasPenaltyAnchorMs()) a.penaltyAnchorMs else null,
             // Zero is the migration: every install written before the horizon
             // existed reads it, and it has to mean the default rather than
             // the minimum clamped up from nothing.
