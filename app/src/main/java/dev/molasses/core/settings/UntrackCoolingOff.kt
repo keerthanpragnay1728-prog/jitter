@@ -53,6 +53,15 @@ object UntrackCoolingOff {
         return if (remaining == 0L) Phase.Ready else Phase.Counting(remaining)
     }
 
+    /**
+     * Whether [pkg] is the only tracked target, so removing it leaves nothing
+     * gated. A chosen empty selection resolves to no targets, not back to
+     * the defaults (see TargetScope.resolve), so this is exactly the case
+     * where confirming turns the app off in effect. The panel says so.
+     */
+    fun isLastTarget(pkg: String, tracked: Collection<String>): Boolean =
+        pkg in tracked && tracked.all { it == pkg }
+
     /** Whole seconds left, rounded up, so it reads 150 at the start and 0 only at zero. */
     fun seconds(remainingMs: Long): Long = (remainingMs.coerceAtLeast(0L) + 999L) / 1000L
 

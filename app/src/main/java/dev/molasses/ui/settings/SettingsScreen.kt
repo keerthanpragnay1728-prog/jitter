@@ -718,6 +718,9 @@ fun SettingsScreen(
         coolingOff?.let { state ->
             UntrackCoolingOffPanel(
                 state = state,
+                // From the live set, so it stays true to the store if the
+                // set changes while the countdown runs.
+                lastTarget = UntrackCoolingOff.isLastTarget(state.pkg, targets),
                 onConfirmRemove = {
                     coolingOff = null
                     vm.untrackTarget(state.pkg)
