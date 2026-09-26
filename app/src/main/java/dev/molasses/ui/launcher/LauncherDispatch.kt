@@ -24,6 +24,7 @@ import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.BedtimeWindow
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRequest
+import dev.molasses.core.remind.Reminder
 import dev.molasses.core.remind.ReminderArming
 import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.util.Calc
@@ -128,6 +129,8 @@ class LauncherActions(
      * thread.
      */
     val remind: (ReminderBook.When, String, (RemindOutcome) -> Unit) -> Unit,
+    /** Every reminder not yet dismissed, as the console last collected it. For a bare `$ rem`. */
+    val pendingReminders: () -> List<Reminder>,
     val health: () -> ServiceHealth = { ServiceDiagnostics.health() },
 )
 
@@ -471,6 +474,24 @@ private fun execute(
                         listOf(ReminderBook.MAX.toString()),
                     )
                 },
+            )
+        }
+    }
+
+    // A bare rem. Held like the set acknowledgement, and pending only: a
+    // fired reminder is already on the console until dismissed.
+    Command.RemList -> {
+        val pending = ReminderBook.pending(actions.pendingReminders())
+        if (pending.isEmpty()) {
+            DispatchResult.Answered(R.string.cmd_ans_rem_none)
+        } else {
+            DispatchResult.Answered(
+                ackKey = R.string.cmd_ans_rem_list,
+                args = listOf(
+                    pending.joinToString("\n") {
+                        context.getString(R.string.cmd_ans_rem_row, lockOpensAtText(context, it.due.wallMs), it.text)
+                    },
+                ),
             )
         }
     }

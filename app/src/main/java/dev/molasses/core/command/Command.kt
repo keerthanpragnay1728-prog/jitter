@@ -92,6 +92,14 @@ sealed interface Command {
      * exception to the console's boundary.
      */
     data class Rem(val whenSpec: dev.molasses.core.remind.ReminderBook.When, val text: String) : Command
+
+    /**
+     * `$ rem` with nothing after it: the pending reminders, soonest first,
+     * at most `ReminderBook.LIST_MAX`. Pending only. A fired reminder already
+     * waits on the console until dismissed, and a list of past ones is state
+     * the user comes back to read, which the console's boundary excludes.
+     */
+    data object RemList : Command
 }
 
 /** Why a line did not parse. Every one of these is shown to the user verbatim. */

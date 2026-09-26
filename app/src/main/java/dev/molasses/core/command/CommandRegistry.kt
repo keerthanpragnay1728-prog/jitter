@@ -218,6 +218,7 @@ class CommandRegistry(keys: Keys) {
             is Command.Conv -> "conv"
             is Command.Days -> "days"
             is Command.Rem -> "rem"
+            Command.RemList -> "rem"
         }
 
         /** The duration a command would arm, or null when it arms nothing. */

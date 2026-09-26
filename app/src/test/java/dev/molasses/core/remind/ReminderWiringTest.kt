@@ -155,4 +155,25 @@ class ReminderWiringTest {
         assertTrue(remind.contains("ReminderBook.Added.Full -> done(RemindOutcome.Full)"))
         assertTrue(remind.contains("is ReminderBook.Added.Ok ->"))
     }
+
+    @Test
+    fun `a bare rem is a held list of pending reminders, or NO PENDING REMINDERS`() {
+        val dispatch = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherDispatch.kt").readText()
+        val branch = dispatch.substring(dispatch.indexOf("Command.RemList -> {")).substringBefore("is Command.Days ->")
+        assertTrue(branch.contains("ReminderBook.pending(actions.pendingReminders())"))
+        assertTrue(branch.contains("DispatchResult.Answered(R.string.cmd_ans_rem_none)"))
+        assertTrue(branch.contains("ackKey = R.string.cmd_ans_rem_list"))
+        assertTrue(branch.contains("R.string.cmd_ans_rem_row, lockOpensAtText(context, it.due.wallMs), it.text"))
+        assertFalse("held, not a fading reaction", branch.contains("DispatchResult.Confirmed("))
+        assertFalse("pending only", branch.contains("toShow("))
+        val strings = repoFile("app/src/main/res/values/strings.xml").readText()
+        assertTrue(strings.contains("<string name=\"cmd_ans_rem_none\">NO PENDING REMINDERS</string>"))
+        // The usage line keeps its two argument shapes: it also drives the
+        // typing ghost, which splits it on spaces, so an optional bracket
+        // around both would leave a dangling "<text>]". The row's
+        // description names the bare form instead.
+        assertTrue(Regex("""name="cmd_desc_rem">[^<]*A bare rem lists the next five pending""").containsMatchIn(strings))
+        val launcher = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
+        assertTrue(launcher.contains("pendingReminders = { reminders },"))
+    }
 }

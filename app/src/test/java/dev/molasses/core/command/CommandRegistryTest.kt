@@ -26,6 +26,7 @@ class CommandRegistryTest {
         Command.Conv("5 km mi"),
         Command.Days("until 25 dec"),
         Command.Rem(dev.molasses.core.remind.ReminderBook.When.In(600_000), "text"),
+        Command.RemList,
     )
 
     @Test

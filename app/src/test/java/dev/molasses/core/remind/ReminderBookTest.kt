@@ -100,4 +100,22 @@ class ReminderBookTest {
         assertEquals(6, ReminderBook.nextId(list, lastIssued = 3))
         assertEquals(10, ReminderBook.nextId(emptyList(), lastIssued = 9))
     }
+
+    @Test
+    fun `a bare rem lists unfired reminders only, soonest first, at most five`() {
+        val list = (1L..8L).map { id -> Reminder(id, "r$id", at(wall0 + (10 - id) * min, 0)) }
+            .map { if (it.id == 7L) it.copy(fired = true) else it }
+        val pending = ReminderBook.pending(list)
+        assertEquals(ReminderBook.LIST_MAX, pending.size)
+        assertEquals(listOf(8L, 6L, 5L, 4L, 3L), pending.map { it.id })
+        assertFalse("never a fired one", pending.any { it.fired })
+    }
+
+    @Test
+    fun `ties on due time keep id order, and nothing pending is an empty list`() {
+        val same = at(wall0 + min, 0)
+        assertEquals(listOf(1L, 2L), ReminderBook.pending(listOf(Reminder(2, "b", same), Reminder(1, "a", same))).map { it.id })
+        assertEquals(emptyList<Reminder>(), ReminderBook.pending(listOf(Reminder(1, "a", same, fired = true))))
+        assertEquals(emptyList<Reminder>(), ReminderBook.pending(emptyList()))
+    }
 }
