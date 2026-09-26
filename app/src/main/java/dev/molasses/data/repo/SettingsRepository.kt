@@ -231,8 +231,9 @@ class SettingsRepository(
     suspend fun setAppHorizon(pkg: String, horizonMs: Long) =
         store.setAppHorizon(pkg, horizonMs)
 
+    /** Refuses a new prefix that would void a standing lock. See [CycleStateStore.setSensitivePrefixes]. */
     suspend fun setSensitivePrefixes(prefixes: List<String>) =
-        store.setSensitivePrefixes(prefixes)
+        store.setSensitivePrefixes(prefixes, nowStamped())
 
     suspend fun setPaused(active: Boolean) = store.setPaused(active, readBootCount())
 

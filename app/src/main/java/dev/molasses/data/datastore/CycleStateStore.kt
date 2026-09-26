@@ -18,6 +18,7 @@ import dev.molasses.core.lease.LeaseLadder
 import dev.molasses.core.lease.LeaseManager
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
+import dev.molasses.core.lock.PrefixLock
 import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.CycleResetPolicy
@@ -480,14 +481,23 @@ class CycleStateStore(context: Context) {
     /**
      * Extra never-draw-over prefixes. The shipped defaults are applied on top
      * of whatever is stored here, so this list can only widen the set.
+     *
+     * Guarded like [toggleTarget], inside the same transform that reads the
+     * locks: a new prefix that would cover a package with a standing lock is
+     * dropped, because a covered package is never drawn over and so its lock
+     * is never enforced. See [PrefixLock].
      */
-    suspend fun setSensitivePrefixes(prefixes: List<String>) {
-        store.updateData {
-            it.toBuilder()
+    suspend fun setSensitivePrefixes(prefixes: List<String>, now: StampedInstant) {
+        store.updateData { state ->
+            val locks = LockRegistry.of(state.locksList.map { it.toLock() })
+            val admitted = PrefixLock.admitted(
+                stored = state.sensitivePackagePrefixesList,
+                requested = prefixes,
+                lockedPackages = locks.active(now).map { it.pkg },
+            )
+            state.toBuilder()
                 .clearSensitivePackagePrefixes()
-                .addAllSensitivePackagePrefixes(
-                    prefixes.map { p -> p.trim().lowercase() }.filter { p -> p.isNotEmpty() },
-                )
+                .addAllSensitivePackagePrefixes(admitted.prefixes)
                 .build()
         }
     }
