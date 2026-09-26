@@ -688,7 +688,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         // polls nothing: it is a map lookup on a path that already does
         // arithmetic, and it only does work when the package is actually
         // locked.
-        if (enforceLockIfNeeded(pkg)) return
+        if (enforceLockIfNeeded(pkg, atEntry = false)) return
 
         if (overlaysSuppressed()) return
 
@@ -921,9 +921,9 @@ class MolassesAccessibilityService : AccessibilityService() {
             is LockRequest.Verdict.Arm -> {
                 locks = locks.arm(pkg, now, verdict.durationMs, LockReason.BLOCK)
                 scope.launch { cycleStore.armLock(pkg, now, verdict.durationMs, LockReason.BLOCK) }
-                if (!enforceLockIfNeeded(pkg)) goHomeQuietly()
+                if (!enforceLockIfNeeded(pkg, atEntry = false)) goHomeQuietly()
             }
-            is LockRequest.Verdict.TooShort -> if (!enforceLockIfNeeded(pkg)) goHomeQuietly()
+            is LockRequest.Verdict.TooShort -> if (!enforceLockIfNeeded(pkg, atEntry = false)) goHomeQuietly()
             is LockRequest.Verdict.Confirm, LockRequest.Verdict.Invalid -> goHomeQuietly()
         }
     }
@@ -1067,7 +1067,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         // churn at best and a leaked armed sink at worst. The watchdog is
         // still armed, because if the home action is refused it is the only
         // thing that will ever close this session.
-        if (enforceLockIfNeeded(pkg)) {
+        if (enforceLockIfNeeded(pkg, atEntry = true)) {
             armWatchdog(pkg, id)
             return
         }
@@ -1118,7 +1118,11 @@ class MolassesAccessibilityService : AccessibilityService() {
      * deliberately is not one: enforcement that can fire without the user
      * having just done something is a service that closes apps on its own.
      */
-    private fun enforceLockIfNeeded(pkg: String): Boolean {
+    /**
+     * @param atEntry the app is opening, rather than already in use. Passed
+     *   to the lock screen for the media pause decision only.
+     */
+    private fun enforceLockIfNeeded(pkg: String, atEntry: Boolean): Boolean {
         val now = nowStamped()
         val decision = LockEnforcement.decide(
             remainingMs = locks.remainingMs(pkg, now),
@@ -1152,6 +1156,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             // From the stored lock through the restriction clamp, never the
             // requested duration added to now. See LockOpensAt.
             opensAtWallMs = LockOpensAt.wallMs(locks, pkg, now) ?: (now.wallMs + decision.remainingMs),
+            atEntry = atEntry,
         )
         return true
     }

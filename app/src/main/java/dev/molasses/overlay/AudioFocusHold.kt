@@ -62,13 +62,18 @@ import android.view.KeyEvent
  * device's audio focus. The walking gate was the copy that was missing: it is
  * full screen and never took focus at all, so media played on under it.
  *
- * ## Focus alone does not stop every player, so [take] also sends pause
+ * ## Focus alone does not stop every player, so [take] can also send pause
  * Focus is a request. A player that ignores a transient loss keeps playing,
- * and more focus calls cannot change that. So [take] also dispatches
+ * and more focus calls cannot change that. So [take] can also dispatch
  * `KEYCODE_MEDIA_PAUSE`, down then up, through
  * `AudioManager.dispatchMediaKeyEvent`. That needs no permission and reaches
  * whichever app holds the active media session, the same route a headset
  * button takes.
+ *
+ * Whichever app, which is why it is not sent everywhere. On the entry gate
+ * the active session is usually background music the user was already
+ * playing, and pausing it left it paused for good after a lease. The caller
+ * passes `MediaPause.sendsPause` for its overlay kind; see `MediaPause`.
  *
  * PAUSE, never PLAY_PAUSE. The toggle would start music that was already
  * stopped, which is the opposite of the point. And nothing is sent on
@@ -81,8 +86,8 @@ import android.view.KeyEvent
  * ## On a device
  * `adb logcat -s Molasses.AudioFocus`. Each window that goes up logs
  * "audio focus taken for ..." or "audio focus refused for ... (result=N)",
- * then "media pause dispatched for ...". Each that comes down logs
- * "audio focus released for ...". Audio still playing after "taken" and
+ * then either "media pause dispatched for ..." or "media pause not sent
+ * for ...". Each that comes down logs "audio focus released for ...". Audio still playing after "taken" and
  * "media pause dispatched" is a player ignoring both focus and its media
  * session, which is the case only muting reaches.
  */
@@ -101,8 +106,13 @@ class AudioFocusHold(context: Context) {
      */
     private var held: AudioFocusRequest? = null
 
-    /** Take focus. Idempotent: a second call while held does nothing. */
-    fun take(reason: String) {
+    /**
+     * Take focus. Idempotent: a second call while held does nothing.
+     *
+     * @param sendPause also send the media pause key. No default: every
+     *   caller names its overlay kind through `MediaPause`.
+     */
+    fun take(reason: String, sendPause: Boolean) {
         val am = audio ?: return
         if (held != null) return
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
@@ -128,10 +138,14 @@ class AudioFocusHold(context: Context) {
             // Not a failure of the window. See the class doc.
             Log.w(TAG, "audio focus refused for $reason (result=$result)")
         }
-        // Whatever focus answered. A refusal usually means something else
-        // holds focus and may still be playing, which is exactly when the
-        // pause is needed.
-        pausePlayback(am, reason)
+        // Whatever focus answered, when this overlay sends it at all. A
+        // refusal usually means something else holds focus and may still be
+        // playing, which is exactly when the pause is needed.
+        if (sendPause) {
+            pausePlayback(am, reason)
+        } else {
+            Log.i(TAG, "media pause not sent for $reason")
+        }
     }
 
     /**

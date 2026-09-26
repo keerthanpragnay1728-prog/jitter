@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.WindowManager
 import dev.molasses.core.model.EventType
 import dev.molasses.core.model.GateOutcome
+import dev.molasses.core.safety.MediaPause
 import dev.molasses.engine.FrictionLedger
 import dev.molasses.sensing.MovementDetector
 import dev.molasses.ui.gate.GateScreen
@@ -127,7 +128,7 @@ class GateOverlayManager(
         // window that never appeared must not hold the device's audio. This
         // gate is full screen and runs for up to ninety seconds, and it never
         // took focus at all, so whatever was playing played on under it.
-        focus.take("walk gate for $pkg")
+        focus.take("walk gate for $pkg", sendPause = MediaPause.sendsPause(MediaPause.Overlay.WALK_GATE))
 
         // first() rather than collect{}: it completes the collection before
         // the handler runs, so teardown is not executing inside the very

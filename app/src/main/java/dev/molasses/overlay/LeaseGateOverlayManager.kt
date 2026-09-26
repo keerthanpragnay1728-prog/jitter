@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateReadout
 import dev.molasses.core.lock.GateBlock
+import dev.molasses.core.safety.MediaPause
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.model.EventType
 import dev.molasses.engine.FrictionLedger
@@ -221,7 +222,12 @@ class LeaseGateOverlayManager(
         // early return below never reaches dismissInternal, so nothing would
         // ever give it back: the device would be silent with no gate on
         // screen.
-        focus.take("lease gate for $pkg")
+        focus.take(
+            "lease gate for $pkg",
+            // LEASE EXPIRED only. On entry the active session is usually the
+            // user's background music, not this app. See MediaPause.
+            sendPause = MediaPause.sendsPause(MediaPause.leaseGate(expired)),
+        )
 
         onWindowsChanged()
         ledger.log(
