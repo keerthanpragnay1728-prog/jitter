@@ -19,6 +19,7 @@ import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.lease.LaunchGate
 import dev.molasses.core.lease.LeaseManager
 import dev.molasses.core.lock.LockEnforcement
+import dev.molasses.core.lock.LockOpensAt
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.latency.Segment
@@ -1102,7 +1103,15 @@ class MolassesAccessibilityService : AccessibilityService() {
         // lock ended the session, so the LOCK_ENFORCED row is the last thing
         // in it rather than something sitting in the middle of one.
         sessions.openId?.let { leaveTarget(it, "locked") }
-        lockOverlay.flash(pkg, labelFor(pkg), reason, decision.remainingMs)
+        lockOverlay.flash(
+            pkg = pkg,
+            label = labelFor(pkg),
+            reason = reason,
+            remainingMs = decision.remainingMs,
+            // From the stored lock through the restriction clamp, never the
+            // requested duration added to now. See LockOpensAt.
+            opensAtWallMs = LockOpensAt.wallMs(locks, pkg, now) ?: (now.wallMs + decision.remainingMs),
+        )
         return true
     }
 
