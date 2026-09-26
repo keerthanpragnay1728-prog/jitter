@@ -86,7 +86,6 @@
     <string name="settings_section_suffix_fmt" translatable="false">// %1$s</string>
     <string name="settings_targets_none">None</string>
     <string name="settings_section_targets">Target apps</string>
-    <string name="settings_section_policy">Cycle reset policy</string>
     <!--
       The lock scrubber, in the target list. The same 1h to 30d ladder the
       grammar accepts, and the same confirmation step above a day, because a
@@ -197,12 +196,6 @@
     <string name="settings_targets_no_match">No app matches that.</string>
     <string name="settings_targets_count_fmt">%1$s of %2$s apps</string>
     <string name="settings_targets_empty">No launchable apps listed yet.</string>
-
-    <string name="settings_policy_abstinence_title">After 6 hours away</string>
-    <string name="settings_policy_abstinence_body">The cycle resets only after six continuous hours with no time in any target app.</string>
-    <string name="settings_policy_fixed_title">Every 6 hours (default)</string>
-    <string name="settings_policy_fixed_body">The cycle resets six hours after it started, whether or not you kept using the apps.</string>
-
 
     <string name="settings_ladder_normal">0-5 min, normal</string>
     <string name="settings_ladder_terminal">%1$s min+ (terminal), gate every 5 min, %2$s ms stall</string>
@@ -389,7 +382,6 @@
     <string name="debug_field_open_session" translatable="false">open session</string>
     <string name="debug_field_cycle_anchor" translatable="false">cycle anchor</string>
     <string name="debug_field_resets_in" translatable="false">resets in</string>
-    <string name="debug_field_policy" translatable="false">policy</string>
     <string name="debug_section_events">EVENTS BY PACKAGE</string>
     <string name="debug_events_header" translatable="false">scroll / win / routed / ignored</string>
     <string name="debug_events_row" translatable="false">%1$s / %2$s / %3$s / %4$s</string>

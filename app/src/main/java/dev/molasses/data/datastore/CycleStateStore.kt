@@ -148,9 +148,6 @@ class CycleStateStore(context: Context) {
         }
     }
 
-    suspend fun setResetPolicy(policy: CycleResetPolicy) {
-        store.updateData { it.toBuilder().setResetPolicy(policy.toProto()).build() }
-    }
 
     suspend fun setFontScale(scale: FontScale) {
         store.updateData { it.toBuilder().setFontScaleOrdinal(scale.ordinal).build() }
@@ -656,7 +653,11 @@ fun CycleState.toEngineSnapshot(): EngineSnapshot = EngineSnapshot(
     },
     cycleAnchorWallMs = cycleAnchorWallMs,
     lastTargetUseWallMs = lastTargetUseWallMs,
-    resetPolicy = resetPolicy.toModel(),
+    // Not read. The reset policy is no longer a setting: the engine runs
+    // FIXED_WINDOW_6H. The field and enum stay in the proto so every stored
+    // file still parses, including one where a user once chose the other
+    // policy, which would otherwise come back on the next restart.
+    resetPolicy = CycleResetPolicy.FIXED_WINDOW_6H,
     cycleAnchorElapsedMs = cycleAnchorElapsedMs,
     cycleAnchorBootId = cycleAnchorBootId,
     lastTargetUseElapsedMs = lastTargetUseElapsedMs,

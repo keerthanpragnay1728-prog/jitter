@@ -57,7 +57,6 @@ object CfgAccordion {
         SETUP,
         LADDER,
         TARGETS,
-        POLICY,
         GATE,
         APPEARANCE,
         SAFETY,
