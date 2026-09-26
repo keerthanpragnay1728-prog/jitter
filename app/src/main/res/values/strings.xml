@@ -561,12 +561,13 @@
     <string name="cmd_desc_wifi">Open the wifi panel. No app has been able to switch wifi since Android 10, so wifi on and wifi off open the panel too.</string>
     <string name="cmd_desc_dnd">Open do not disturb settings. Setting DND needs a permission Jitter does not request, so dnd on and dnd off open settings too.</string>
     <!--
-      The lock flash. Four lines, shown for about a second and a half before
-      the user is sent home. The remaining time is the load-bearing one: it is
-      the difference between "something went wrong" and "I did this to myself
-      on purpose, for four more hours".
+      The lock screen. Field labels on a fixed-width terminal layout, like the
+      lease gate's, so not translatable: a longer word reflows the column. The
+      opening time under WILL BE OPEN BY is formatted in the device locale.
     -->
-    <string name="lock_flash_title">LOCKED</string>
+    <string name="lock_title" translatable="false">BLOCKED</string>
+    <string name="lock_target_fmt" translatable="false">TARGET // %1$s</string>
+    <string name="lock_opens_by" translatable="false">WILL BE OPEN BY</string>
     <!--
       The way out of the lock screen, and the only one now that the automatic
       bounce is gone. Addressed the way the greeting addresses the user rather
@@ -574,10 +575,6 @@
       them back to, not a button on a form.
     -->
     <string name="lock_exit" translatable="false">[ ARCHITECT\'S SPACE ]</string>
-    <string name="lock_reason_block">You blocked this app. There is no unlock.</string>
-    <string name="lock_reason_focus">Focus session. Every tracked app is locked.</string>
-    <string name="lock_reason_bedtime">Bedtime. Locked until morning.</string>
-    <string name="lock_reason_checkpoint">A checkpoint went unpaid.</string>
     <!--
       Bit's console speech. Past tense, deliberately: Bit only speaks on the
       launcher, and the observation is made inside a target app, so the line

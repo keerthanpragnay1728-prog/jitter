@@ -9,6 +9,7 @@ import dev.molasses.core.lock.LockReason
 import dev.molasses.core.model.EventType
 import dev.molasses.engine.FrictionLedger
 import dev.molasses.ui.lock.LockScreen
+import dev.molasses.ui.lock.lockOpensAtText
 import dev.molasses.ui.theme.MolassesTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -92,14 +93,17 @@ class LockOverlayManager(
      * Idempotent while showing: a second scroll, or a duplicate foreground
      * event, must not stack two windows.
      */
-    fun flash(pkg: String, label: String, reason: LockReason, remainingMs: Long) {
+    fun flash(pkg: String, label: String, reason: LockReason, remainingMs: Long, opensAtWallMs: Long) {
         if (isShowing) return
 
         currentPkg = pkg
         val h = OverlayHost(service, windowManager)
         host = h
 
+        // For the ledger row. The screen shows the opening instant instead,
+        // from the stored lock through the restriction clamp: see LockOpensAt.
         val remainingText = CommandRender.duration(remainingMs)
+        val opensAtText = lockOpensAtText(service, opensAtWallMs)
 
         // No onFirstDraw callback any more, and the reason it existed is
         // worth keeping written down. It was there because GLOBAL_ACTION_HOME
@@ -117,8 +121,7 @@ class LockOverlayManager(
             MolassesTheme(fontScale = fontScale()) {
                 LockScreen(
                     label = label,
-                    reason = reason,
-                    remainingText = remainingText,
+                    opensAtText = opensAtText,
                     onExit = { exit("user") },
                 )
             }
