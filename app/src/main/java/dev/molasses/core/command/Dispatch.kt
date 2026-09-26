@@ -1,5 +1,7 @@
 package dev.molasses.core.command
 
+import dev.molasses.core.lock.LockRequest
+
 /**
  * What happened to a command line.
  *
@@ -130,9 +132,17 @@ class CommandDispatch(
 
         // 3. Confirmation for a long lock. LockRegistry is extend-only, so a
         //    mistyped 30d is unfixable for a month.
+        //    Judged by LockRequest.evaluate, the one function every way of
+        //    arming a lock asks, so the console and CFG cannot disagree about
+        //    where the line is. The standing lock is not this question: a
+        //    long request is confirmed whatever is already there, and the
+        //    extend-only refusal comes after, from execute.
         val threshold = spec.requiresConfirmAboveMs
         val duration = CommandRegistry.durationOf(command)
-        if (!confirmed && threshold != null && duration != null && duration > threshold) {
+        if (threshold != null && duration != null &&
+            LockRequest.evaluate(duration, standingMs = 0L, confirmAboveMs = threshold, confirmed = confirmed)
+                is LockRequest.Verdict.Confirm
+        ) {
             return DispatchResult.NeedsConfirmation(command, CommandRender.render(command))
         }
 

@@ -234,14 +234,11 @@ class CycleStateStore(context: Context) {
      * The cap and the dedupe happen inside `updateData` rather than in the
      * caller, so two commands submitted in the same frame cannot both read a
      * nineteen entry list and write a twenty first.
-     *
-     * @param confirmation true when this Enter was the second Enter on a long
-     *   lock. See [dev.molasses.core.command.CommandHistory].
      */
-    suspend fun recordCommand(line: String, confirmation: Boolean) {
-        if (confirmation || line.isBlank()) return
+    suspend fun recordCommand(line: String) {
+        if (line.isBlank()) return
         store.updateData {
-            val next = CommandHistory.record(it.commandHistoryList, line, confirmation)
+            val next = CommandHistory.record(it.commandHistoryList, line)
             it.toBuilder().clearCommandHistory().addAllCommandHistory(next).build()
         }
     }

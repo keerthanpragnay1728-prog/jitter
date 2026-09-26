@@ -10,13 +10,13 @@ package dev.molasses.core.command
  * is the cheapest possible teaching aid: it is made of the user's own
  * successes.
  *
- * ## The confirmation step is never recorded
- * A long lock echoes its canonical form back and waits for a second Enter.
- * That second Enter carries text the app generated, not text the user typed,
- * and recording it would put a fully formed `block instagram 30d` into a list
- * the user taps through. Tapping would refill the prompt with an armed line,
- * one Enter from a month. The first Enter, the one the user actually typed, is
- * recorded instead, so the line comes back and asks to be confirmed again.
+ * ## A lock confirmation is never recorded, by construction
+ * A long lock is confirmed on a full-screen panel with a button, not by a
+ * second Enter on an echoed line, so there is no generated text that could
+ * reach this list. The line the user typed is recorded when they type it,
+ * and comes back from here asking to be confirmed again. This used to take a
+ * flag saying "this Enter was the confirmation, drop it"; with no such Enter
+ * left, the flag had no caller and is gone.
  *
  * ## Why a repeat moves rather than duplicates
  * Shells only drop adjacent duplicates, because their history is a scroll.
@@ -35,14 +35,8 @@ object CommandHistory {
      */
     const val MAX = 20
 
-    /**
-     * [history] with [line] on top.
-     *
-     * @param confirmation true when this Enter was the second Enter on a long
-     *   lock. Those are dropped: see the class doc.
-     */
-    fun record(history: List<String>, line: String, confirmation: Boolean): List<String> {
-        if (confirmation) return history
+    /** [history] with [line] on top. */
+    fun record(history: List<String>, line: String): List<String> {
         val text = line.trim()
         if (text.isEmpty()) return history
         return (listOf(text) + history.filterNot { it == text }).take(MAX)
