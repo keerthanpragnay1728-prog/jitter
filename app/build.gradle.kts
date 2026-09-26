@@ -9,6 +9,25 @@ plugins {
     alias(libs.plugins.protobuf)
 }
 
+/**
+ * versionCode from versionName, as MAJOR * 10000 + MINOR * 100 + PATCH.
+ *
+ * Derived so the two have one source (appVersion in libs.versions.toml) and
+ * raising the name raises the code. Android refuses an update whose code is
+ * not higher than the installed one, and a code typed by hand is the one that
+ * gets forgotten. The first build under this scheme is 0.2.0, code 200; the
+ * code shipped before it was 1.
+ */
+fun versionCodeOf(version: String): Int {
+    val parts = version.split('.').map { it.toInt() }
+    require(parts.size == 3) { "appVersion must be MAJOR.MINOR.PATCH, was $version" }
+    val (major, minor, patch) = parts
+    require(minor in 0..99 && patch in 0..99) { "MINOR and PATCH must be 0-99, was $version" }
+    return major * 10_000 + minor * 100 + patch
+}
+
+val appVersion: String = libs.versions.appVersion.get()
+
 android {
     namespace = "dev.molasses"
     compileSdk = 36
@@ -17,8 +36,8 @@ android {
         applicationId = "dev.molasses"
         minSdk = 30
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-feasibility"
+        versionCode = versionCodeOf(appVersion)
+        versionName = appVersion
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
