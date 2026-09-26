@@ -247,6 +247,16 @@ object LaunchGate {
      * @param leaseRemainingMs from [LeaseManager.remainingMs].
      * @param leasesTakenThisCycle drives the escalation, and also decides
      *   whether this gate is a returning one. See [GateCountdown].
+     * @param inCall a call is in progress, by the audio mode. A precondition
+     *   of attaching any gate, checked here so every mode goes through it.
+     *   The lease gate also dismisses itself on its tick when a call starts
+     *   after it is up; that check used to be the only one, so during a VoIP
+     *   call the gate attached on every scroll, took audio focus, and came
+     *   down 200 ms later. Passing records nothing, so the next entry or
+     *   scroll after the call asks again and the gate is never skipped for
+     *   the rest of the session. A false positive (some voice apps set
+     *   `MODE_IN_COMMUNICATION`) costs a gate, which is the accepted
+     *   direction: a gate over a call the user is trying to hear is worse.
      */
     fun decide(
         isTarget: Boolean,
@@ -257,9 +267,11 @@ object LaunchGate {
         leasesTakenThisCycle: Int,
         configuredMode: GatePolicy.GateMode,
         terminal: Boolean,
+        inCall: Boolean,
     ): Decision = when {
         !isTarget -> Decision.Pass("not a target")
         sensitiveForeground -> Decision.Pass("sensitive package")
+        inCall -> Decision.Pass("call in progress")
         locked -> Decision.Pass("locked, the lock flash owns this")
         paused -> Decision.Pass("paused")
         leaseRemainingMs > 0L -> Decision.Pass("lease active")

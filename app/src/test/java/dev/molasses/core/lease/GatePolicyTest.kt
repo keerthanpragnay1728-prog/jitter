@@ -120,9 +120,10 @@ class LaunchGateTest {
         leasesTakenThisCycle: Int = 0,
         configuredMode: GateMode = GateMode.COUNTDOWN,
         terminal: Boolean = false,
+        inCall: Boolean = false,
     ) = LaunchGate.decide(
         isTarget, leaseRemainingMs, sensitiveForeground, locked, paused,
-        leasesTakenThisCycle, configuredMode, terminal,
+        leasesTakenThisCycle, configuredMode, terminal, inCall,
     )
 
     @Test
@@ -156,6 +157,27 @@ class LaunchGateTest {
     fun `a sensitive package outranks everything else`() {
         val d = decide(sensitiveForeground = true, locked = true, paused = false, terminal = true)
         assertTrue(d is LaunchGate.Decision.Pass)
+    }
+
+    @Test
+    fun `a call in progress is a precondition of every gate mode`() {
+        for (mode in GateMode.entries) {
+            for (terminal in listOf(false, true)) {
+                val d = decide(inCall = true, configuredMode = mode, terminal = terminal)
+                assertTrue("$mode terminal=$terminal gated during a call", d is LaunchGate.Decision.Pass)
+            }
+        }
+    }
+
+    @Test
+    fun `a gate passed for a call comes back on the first ask after it`() {
+        // The VoIP loop: every scroll during the call asks again. Each ask
+        // must pass, and none of them may leave anything behind that skips
+        // the gate once the call is over.
+        repeat(20) { assertTrue(decide(inCall = true, leasesTakenThisCycle = 1) is LaunchGate.Decision.Pass) }
+        val after = decide(inCall = false, leasesTakenThisCycle = 1) as LaunchGate.Decision.Intercept
+        val never = decide(leasesTakenThisCycle = 1) as LaunchGate.Decision.Intercept
+        assertEquals("a call must not change the countdown owed", never, after)
     }
 
     @Test
