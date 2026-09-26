@@ -1046,7 +1046,10 @@ produced it, which is the behaviour the shield was asked for anyway.
   `SCHEDULE_EXACT_ALARM` on 12 and 12L unless revoked under Settings, Apps,
   Special app access, Alarms and reminders. Otherwise it falls back to
   `setAndAllowWhileIdle`, which with the device idle can be late, by up to an
-  hour on Android 12 and later, and the acknowledgement reads INEXACT.
+  hour on Android 12 and later, and the acknowledgement reads INEXACT. If
+  neither call succeeds, the reminder is still saved, the acknowledgement
+  reads SAVED FOR ... NOT ARMED, and it is armed when the service next
+  connects.
   `USE_EXACT_ALARM` is restricted on Google Play to alarm and calendar apps;
   this app is distributed by sideload and F-Droid.
 - The acknowledgement stays on the console until the next keystroke, like a

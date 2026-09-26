@@ -14,15 +14,36 @@ class ReminderWiringTest {
     private val manifest by lazy { repoFile("app/src/main/AndroidManifest.xml").readText() }
 
     @Test
-    fun `exact when allowed, inexact otherwise, and the caller is told which`() {
+    fun `schedule makes the two calls and ReminderArming decides what they mean`() {
         val alarms = repoFile("app/src/main/java/dev/molasses/monitor/ReminderAlarms.kt").readText()
         val schedule = functionBody(alarms, "fun schedule(")
-        val check = schedule.indexOf("am.canScheduleExactAlarms()")
-        val exact = schedule.indexOf("am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP")
-        val inexact = schedule.indexOf("am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP")
-        assertTrue(check in 0 until exact && exact < inexact)
-        assertTrue(schedule.contains("return Precision.EXACT"))
-        assertTrue(schedule.contains("Precision.INEXACT"))
+        assertTrue(alarms.contains("fun schedule(context: Context, id: Long, atWallMs: Long): ReminderArming.Armed {"))
+        assertTrue(schedule.contains("return ReminderArming.Armed.NOT_ARMED"))
+        val arm = schedule.indexOf("ReminderArming.arm(")
+        val check = schedule.indexOf("am.canScheduleExactAlarms()", arm)
+        val exact = schedule.indexOf("am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP", arm)
+        val inexact = schedule.indexOf("am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP", arm)
+        assertTrue(arm >= 0 && check > arm && exact > check && inexact > exact)
+        assertFalse("no second verdict beside the pure one", schedule.contains("Precision"))
+    }
+
+    @Test
+    fun `each arming outcome has its own acknowledgement`() {
+        val dispatch = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherDispatch.kt").readText()
+        val keys = functionBody(dispatch, "fun remindAckKey(")
+        assertTrue(keys.contains("ReminderArming.Armed.EXACT -> R.string.cmd_ans_rem_exact"))
+        assertTrue(keys.contains("ReminderArming.Armed.INEXACT -> R.string.cmd_ans_rem_inexact"))
+        assertTrue(keys.contains("ReminderArming.Armed.NOT_ARMED -> R.string.cmd_ans_rem_not_armed"))
+        assertFalse("exhaustive over the enum, no fallback", keys.contains("else ->"))
+        val strings = repoFile("app/src/main/res/values/strings.xml").readText()
+        val exact = Regex("""name="cmd_ans_rem_exact">([^<]*)<""").find(strings)!!.groupValues[1]
+        val inexact = Regex("""name="cmd_ans_rem_inexact">([^<]*)<""").find(strings)!!.groupValues[1]
+        val notArmed = Regex("""name="cmd_ans_rem_not_armed">([^<]*)<""").find(strings)!!.groupValues[1]
+        assertTrue(exact.contains("EXACT") && !exact.contains("INEXACT"))
+        assertTrue(inexact.contains("INEXACT"))
+        assertTrue(notArmed.contains("NOT ARMED") && !notArmed.contains("EXACT"))
+        val launcher = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
+        assertTrue(launcher.contains("done(RemindOutcome.Saved(dueWallMs = added.due.wallMs, armed = armed))"))
     }
 
     @Test
@@ -31,7 +52,7 @@ class ReminderWiringTest {
         val branch = dispatch.substring(dispatch.indexOf("is Command.Rem -> DispatchResult.Deferred"))
             .substringBefore("is Command.Days ->")
         assertTrue(branch.contains("DispatchResult.Answered("))
-        assertTrue(branch.contains("R.string.cmd_ans_rem_exact else R.string.cmd_ans_rem_inexact"))
+        assertTrue(branch.contains("ackKey = remindAckKey(outcome.armed)"))
         assertFalse("not a fading reaction", branch.contains("DispatchResult.Confirmed("))
     }
 

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import dev.molasses.core.remind.ReminderArming
 import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.data.datastore.CycleStateStore
@@ -22,8 +23,9 @@ import dev.molasses.data.datastore.CycleStateStore
  * the system's Alarms and reminders page. Otherwise, or if the exact call
  * throws, `setAndAllowWhileIdle`: close to its time with the screen on,
  * batched when the device is idle, and on Android 12 and later documented as
- * within an hour. [schedule] returns which one was used and the prompt
- * reports it.
+ * within an hour. If neither call succeeds the reminder stays saved and
+ * is armed by [rescheduleAll] on the next service connect. [schedule]
+ * returns which of the three happened and the prompt reports it.
  *
  * ## The wall clock, deliberately
  * RTC_WAKEUP rather than an elapsed alarm, because an elapsed alarm is gone
@@ -38,25 +40,32 @@ object ReminderAlarms {
     const val EXTRA_ID = "dev.molasses.extra.REMINDER_ID"
     private const val TAG = "Molasses.Reminder"
 
-    enum class Precision { EXACT, INEXACT }
-
-    /** @return the precision it was scheduled with, or null if it could not be scheduled at all. */
-    fun schedule(context: Context, id: Long, atWallMs: Long): Precision? {
-        val am = context.getSystemService(AlarmManager::class.java) ?: return null
-        val intent = pendingIntent(context, id)
-        val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
-        if (exactAllowed) {
-            val exact = runCatching {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atWallMs, intent)
-            }
-            if (exact.isSuccess) return Precision.EXACT
-            // A revocation can land between the check and the call.
-            Log.w(TAG, "exact alarm refused for reminder $id; falling back to inexact", exact.exceptionOrNull())
+    /**
+     * Arm [id]'s alarm and return how, never null: NOT_ARMED when no alarm
+     * could be set, including when AlarmManager is unavailable. The decision
+     * is [ReminderArming.arm]; this only makes the two calls.
+     */
+    fun schedule(context: Context, id: Long, atWallMs: Long): ReminderArming.Armed {
+        val am = context.getSystemService(AlarmManager::class.java)
+        if (am == null) {
+            Log.w(TAG, "no AlarmManager; reminder $id saved but not armed")
+            return ReminderArming.Armed.NOT_ARMED
         }
-        return runCatching {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atWallMs, intent)
-            Precision.INEXACT
-        }.onFailure { Log.w(TAG, "could not schedule reminder $id", it) }.getOrNull()
+        val intent = pendingIntent(context, id)
+        return ReminderArming.arm(
+            exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms(),
+            tryExact = {
+                runCatching { am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atWallMs, intent) }
+                    // A revocation can land between the check and the call.
+                    .onFailure { Log.w(TAG, "exact alarm refused for reminder $id; falling back to inexact", it) }
+                    .isSuccess
+            },
+            tryInexact = {
+                runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atWallMs, intent) }
+                    .onFailure { Log.w(TAG, "could not schedule reminder $id; saved but not armed", it) }
+                    .isSuccess
+            },
+        )
     }
 
     /**
