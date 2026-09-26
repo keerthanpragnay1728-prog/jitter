@@ -145,6 +145,17 @@ class FrictionEngine(
      * a way to reach persistence is how it stops being pure.
      */
     private val onCycleRolled: () -> Unit = {},
+    /**
+     * Called first by every public method. The engine is confined to one
+     * thread rather than locked: its per-app map is plain and unsynchronised,
+     * and [onScroll] is on the stall's latency path, where a lock contended by
+     * the checkpoint tick would be paid inside segment B. So the owner calls
+     * it from one thread only, and this is how the owner checks that.
+     *
+     * The service passes a main-thread assertion in debug builds and nothing
+     * in release. Pure code cannot name a thread, which is why it is injected.
+     */
+    private val confinement: () -> Unit = {},
 ) {
     private val apps: MutableMap<String, MutableAppState> = initial.perApp
         .mapValues { (pkg, s) ->
@@ -207,6 +218,7 @@ class FrictionEngine(
     // ---------------------------------------------------------------- public
 
     fun onForegroundEnter(pkg: String, nowMs: Long) {
+        confinement()
         // TYPE_WINDOW_STATE_CHANGED fires repeatedly inside a single app
         // (dialogs, tab switches, video overlays). Re-entering the app that is
         // already open must be a no-op or the session start would keep
@@ -233,6 +245,7 @@ class FrictionEngine(
     }
 
     fun onForegroundExit(pkg: String, nowMs: Long) {
+        confinement()
         if (openPkg != pkg) return
         closeSession(pkg, nowMs)
         ledger.log(pkg, EventType.PAUSED)
@@ -240,6 +253,7 @@ class FrictionEngine(
     }
 
     fun onScroll(pkg: String, nowMs: Long): FrictionDecision {
+        confinement()
         // Some apps emit scroll before any usable window-state transition.
         // Treating that as an implicit enter is strictly better than dropping
         // the time on the floor.
@@ -295,13 +309,17 @@ class FrictionEngine(
      * stall marker.
      */
     fun isTerminal(pkg: String, nowMs: Long): Boolean {
+        confinement()
         val app = apps[pkg] ?: return false
         return liveAccumulatedMs(app, nowMs) + app.penaltyMs >=
             FrictionCurve.terminalMs(app.horizonMs)
     }
 
     /** Leases granted on [pkg] in the current cycle. Drives the escalation. */
-    fun leasesTakenThisCycle(pkg: String): Int = apps[pkg]?.leasesTaken ?: 0
+    fun leasesTakenThisCycle(pkg: String): Int {
+        confinement()
+        return apps[pkg]?.leasesTaken ?: 0
+    }
 
     /**
      * Apply the user's declared horizon for [pkg].
@@ -316,6 +334,7 @@ class FrictionEngine(
      * into a widened curve stays forty minutes into it.
      */
     fun setHorizon(pkg: String, requestedMs: Long) {
+        confinement()
         val app = appState(pkg)
         val before = HorizonPolicy.of(app.horizonMs, app.pendingHorizonMs)
         val after = HorizonPolicy.request(before, requestedMs)
@@ -384,6 +403,7 @@ class FrictionEngine(
      * does not touch `accumulatedMs` or `tier` -- see the class doc.
      */
     fun onLeaseGranted(pkg: String, durationMs: Long, nowMs: Long) {
+        confinement()
         val app = appState(pkg)
         val live = liveAccumulatedMs(app, nowMs)
         // Close out whatever was overdue before moving the mark, or the
@@ -427,6 +447,7 @@ class FrictionEngine(
      * reconciler never has to scan more than a few minutes of `UsageStats`.
      */
     internal fun checkpoint(nowMs: Long) {
+        confinement()
         val now = now(nowMs)
         openPkg?.let { pkg ->
             val app = appState(pkg)
@@ -468,6 +489,7 @@ class FrictionEngine(
      * still persisted, but only as debug provenance.
      */
     internal fun snapshot(): EngineSnapshot {
+        confinement()
         val now = monotonicClock.elapsedMs()
         return EngineSnapshot(
             perApp = apps.mapValues { (_, a) -> a.snapshot(liveAccumulatedMs(a, now)) },
@@ -482,6 +504,7 @@ class FrictionEngine(
     }
 
     internal fun setResetPolicy(policy: CycleResetPolicy) {
+        confinement()
         resetPolicy = policy
         publish()
     }

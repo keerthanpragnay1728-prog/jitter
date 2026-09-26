@@ -3,11 +3,13 @@ package dev.molasses.monitor
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import dagger.hilt.android.AndroidEntryPoint
+import dev.molasses.BuildConfig
 import dev.molasses.core.console.ConsoleIds
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.diag.ServiceHealthPolicy
@@ -357,10 +359,15 @@ class MolassesAccessibilityService : AccessibilityService() {
                 // LeaseManager's doc makes about surviving process death.
                 leases = LeaseManager.of(it.leasesList.map { entry -> entry.toLease() })
             }
-            buildEngine(outcome.snapshot, outcome.bootId)
+            // On main, with the ready flag, because the engine is confined
+            // there (see [engineConfinement]) and because `ready` is read by
+            // onAccessibilityEvent on main with no other barrier.
+            withContext(Dispatchers.Main.immediate) {
+                buildEngine(outcome.snapshot, outcome.bootId)
+            }
             observeSettings()
             startCheckpointing()
-            ready = true
+            withContext(Dispatchers.Main.immediate) { ready = true }
             ServiceDiagnostics.onReady()
             Log.i(TAG, "ready: accepting events")
         }
@@ -382,6 +389,31 @@ class MolassesAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * The engine's thread confinement. Every call into [engine] is made on the
+     * main thread: the accessibility callbacks are already there, and the four
+     * callers that were not (construction at connect, the debug rebuild, the
+     * horizon re-apply in the settings observer and the checkpoint tick) hop
+     * there with `withContext(Dispatchers.Main.immediate)`. Confinement rather
+     * than a lock, because [FrictionEngine.onScroll] is on the stall's latency
+     * path and none of the hops are.
+     *
+     * Debug builds assert it on every engine call, so a new off-thread caller
+     * crashes in testing instead of racing on a device. Release checks
+     * nothing, since a check there could only crash a user's phone.
+     * `EngineConfinementWiringTest` reads every engine call site.
+     */
+    private val engineConfinement: () -> Unit =
+        if (BuildConfig.DEBUG) {
+            {
+                check(Looper.getMainLooper().isCurrentThread) {
+                    "FrictionEngine called off the main thread, on ${Thread.currentThread().name}"
+                }
+            }
+        } else {
+            {}
+        }
+
     private fun buildEngine(snapshot: EngineSnapshot, bootId: Int) {
         engine = FrictionEngine(
             initial = snapshot,
@@ -399,6 +431,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             // content-provider round trip on the accessibility thread.
             bootIdProvider = { bootId },
             scope = scope,
+            confinement = engineConfinement,
             // A rollover resets every counter the engine holds. The leases
             // live in the store, so they have to be told: a lease outliving
             // the cycle it was escalating against would hold the first gate
@@ -470,8 +503,10 @@ class MolassesAccessibilityService : AccessibilityService() {
                 // stored value be a standing preference instead of a command
                 // something has to remember it consumed.
                 if (ready) {
-                    for ((pkg, horizonMs) in state.appHorizonMsMap) {
-                        engine.setHorizon(pkg, horizonMs)
+                    withContext(Dispatchers.Main.immediate) {
+                        for ((pkg, horizonMs) in state.appHorizonMsMap) {
+                            engine.setHorizon(pkg, horizonMs)
+                        }
                     }
                 }
                 // Leases are deliberately absent here. The service owns them
@@ -529,7 +564,9 @@ class MolassesAccessibilityService : AccessibilityService() {
                     debugOverrideNonce = state.debugOverrideNonce
                     if (ready) {
                         Log.i(TAG, "debug state override, rebuilding engine")
-                        buildEngine(state.toEngineSnapshot(), bootId)
+                        withContext(Dispatchers.Main.immediate) {
+                            buildEngine(state.toEngineSnapshot(), bootId)
+                        }
                     }
                 }
             }
@@ -570,8 +607,10 @@ class MolassesAccessibilityService : AccessibilityService() {
             while (true) {
                 delay(CHECKPOINT_INTERVAL_MS)
                 ServiceDiagnostics.onHeartbeat()
-                val pkg = foregroundPkg
-                if (pkg != null && pkg in targets) engine.checkpoint(now())
+                withContext(Dispatchers.Main.immediate) {
+                    val pkg = foregroundPkg
+                    if (pkg != null && pkg in targets) engine.checkpoint(now())
+                }
             }
         }
     }
