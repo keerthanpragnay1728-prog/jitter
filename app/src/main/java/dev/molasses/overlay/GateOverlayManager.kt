@@ -69,6 +69,9 @@ class GateOverlayManager(
 
     val isShowing: Boolean get() = host?.isShowing == true
 
+    /** The package this window is up for, or null when it is not showing. */
+    val showingFor: String? get() = if (isShowing) currentPkg else null
+
     /**
      * Idempotent: a second call for the same package and tier is a no-op.
      *
