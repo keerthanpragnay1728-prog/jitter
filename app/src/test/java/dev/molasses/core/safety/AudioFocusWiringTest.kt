@@ -1,6 +1,8 @@
 package dev.molasses.core.safety
 
 import dev.molasses.core.repoFile
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,12 +35,16 @@ class AudioFocusWiringTest {
 
     private val gate = "app/src/main/java/dev/molasses/overlay/LeaseGateOverlayManager.kt"
     private val lock = "app/src/main/java/dev/molasses/overlay/LockOverlayManager.kt"
+    private val walk = "app/src/main/java/dev/molasses/overlay/GateOverlayManager.kt"
+    private val hold = "app/src/main/java/dev/molasses/overlay/AudioFocusHold.kt"
 
     @Test
-    fun `both full-screen windows hold audio focus`() {
-        // The lock overlay is the one that would be forgotten, because it was
-        // a 1.8 second flash when it was written and is now unbounded.
-        for (path in listOf(gate, lock)) {
+    fun `every full-screen window holds audio focus`() {
+        // The lock overlay was the one expected to be forgotten, because it
+        // was a 1.8 second flash when it was written and is now unbounded.
+        // The one actually forgotten was the walking gate, which never took
+        // focus at all and let media play on under it on a device.
+        for (path in listOf(gate, lock, walk)) {
             val text = repoFile(path).readText()
             assertTrue(
                 "$path should hold an AudioFocusHold",
@@ -51,7 +57,7 @@ class AudioFocusWiringTest {
 
     @Test
     fun `focus is taken only after the window is known to have attached`() {
-        for (path in listOf(gate, lock)) {
+        for (path in listOf(gate, lock, walk)) {
             val text = repoFile(path).readText()
             val guard = text.indexOf("if (!h.isShowing)")
             val take = text.indexOf("focus.take(")
@@ -92,6 +98,44 @@ class AudioFocusWiringTest {
                 "window attached, so a null host means nothing is held",
             hostCheck < release,
         )
+    }
+
+    @Test
+    fun `the walking gate releases in the choke point every exit runs through`() {
+        val body = slice(repoFile(walk).readText(), "private fun dismissInternal()", "companion object")
+        assertTrue("the walking gate must release audio focus in dismissInternal", body.contains("focus.release("))
+    }
+
+    @Test
+    fun `every full-screen manager is one the service owns, so none is missed`() {
+        // A fourth full-screen window would be a fourth place to forget focus.
+        val service = repoFile("app/src/main/java/dev/molasses/monitor/MolassesAccessibilityService.kt").readText()
+        val managers = Regex("""lateinit var \w+: (\w+OverlayManager)\b""").findAll(service)
+            .map { it.groupValues[1] }.filter { it != "ShutterOverlayManager" }.toSet()
+        assertEquals(setOf("GateOverlayManager", "LockOverlayManager", "LeaseGateOverlayManager"), managers)
+    }
+
+    @Test
+    fun `taking focus also sends a media pause, down and up`() {
+        val text = repoFile(hold).readText()
+        val take = slice(text, "fun take(", "fun release(")
+        assertTrue("take must dispatch the pause", take.contains("pausePlayback("))
+        val pause = slice(text, "private fun pausePlayback(", "private companion object")
+        assertTrue(pause.contains("KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE"))
+        assertTrue(pause.contains("KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE"))
+        assertTrue(pause.contains("dispatchMediaKeyEvent("))
+    }
+
+    @Test
+    fun `nothing ever sends play, and release sends no key at all`() {
+        // PLAY_PAUSE would start music that was stopped; PLAY on dismiss
+        // would resume what we interrupted. Neither is ours to do.
+        val text = repoFile(hold).readText()
+        for (forbidden in listOf("KEYCODE_MEDIA_PLAY", "KEYCODE_MEDIA_PLAY_PAUSE")) {
+            assertFalse("$forbidden must not appear in AudioFocusHold", Regex("""\b$forbidden\b""").containsMatchIn(text))
+        }
+        val release = slice(text, "fun release(", "private fun pausePlayback(")
+        assertFalse("release must not dispatch a key", release.contains("dispatchMediaKeyEvent"))
     }
 
     @Test
