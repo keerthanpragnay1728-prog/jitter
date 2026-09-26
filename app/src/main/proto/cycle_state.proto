@@ -44,9 +44,13 @@ message CycleState {
   // than something the Activity does directly.
   int64 preview_stall_nonce = 14;
 
-  // Debug builds only. Pins the commanded stall to a constant so arm and
-  // disarm transitions are countable while measuring segment D.
-  int64 debug_pinned_stall_ms = 15;
+  // 15 was debug_pinned_stall_ms and 26 was debug_forced_probability_pct,
+  // segment D capture aids. Neither ever had a control in any build: nothing
+  // could write them, and the service read the first in release anyway.
+  // Deleted, and reserved so the numbers are never reused with a new meaning
+  // against a file that may still carry an old value.
+  reserved 15, 26;
+  reserved "debug_pinned_stall_ms", "debug_forced_probability_pct";
 
   // The monotonic and boot-count halves of cycle_anchor_wall_ms and
   // last_target_use_wall_ms. A wall-clock stamp on its own is defeated by
@@ -85,12 +89,6 @@ message CycleState {
   // unknown value resolves to the default in one place, FontScale.fromOrdinal,
   // rather than needing a proto enum default that duplicates the same choice.
   int32 font_scale_ordinal = 25;
-
-  // Debug builds only. Companion to debug_pinned_stall_ms, which already pins
-  // the duration. At a 10% band, gathering 120 segment D samples needs over a
-  // thousand scrolls; forcing probability to 1.0 makes the capture practical.
-  // Zero means "use the curve"; 1..100 forces that percentage.
-  int32 debug_forced_probability_pct = 26;
 
   // The last twenty command lines, newest first. Capped and deduped by
   // CommandHistory before it is written, so the stored order is the display
