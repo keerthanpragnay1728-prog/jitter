@@ -67,6 +67,7 @@ class LeaseGrantVisibilityTest {
             leasesTakenThisCycle = leasesTaken,
             configuredMode = GatePolicy.GateMode.COUNTDOWN,
             terminal = false,
+            inCall = false,
         )
 
     @Test

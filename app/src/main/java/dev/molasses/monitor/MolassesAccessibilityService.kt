@@ -46,6 +46,7 @@ import dev.molasses.data.db.UsageEventDao
 import dev.molasses.data.repo.DataStoreEngineStore
 import dev.molasses.data.repo.RoomFrictionLedger
 import dev.molasses.engine.FrictionEngine
+import dev.molasses.overlay.CallDetector
 import dev.molasses.overlay.GateOverlayManager
 import dev.molasses.overlay.GateStats
 import dev.molasses.overlay.LeaseGateOverlayManager
@@ -211,6 +212,9 @@ class MolassesAccessibilityService : AccessibilityService() {
         )
     }
     private val sessions = ForegroundSessionTracker()
+
+    /** The call precondition for attaching a gate. See `LaunchGate.decide`. */
+    private val calls by lazy { CallDetector(this) }
 
 
     /**
@@ -703,6 +707,10 @@ class MolassesAccessibilityService : AccessibilityService() {
             leasesTakenThisCycle = engine.leasesTakenThisCycle(pkg),
             configuredMode = gateMode,
             terminal = engine.isTerminal(pkg, now()),
+            // whenUnknown = false, the lease gate's answer and for its
+            // reason: a detector that cannot tell must not open every
+            // target app free with nothing on screen saying so.
+            inCall = calls.inProgress(whenUnknown = false),
         )
         if (decision !is LaunchGate.Decision.Intercept) return false
 
