@@ -385,15 +385,10 @@ class LauncherActivity : ComponentActivity() {
                                                 ReminderBook.Added.Full -> done(RemindOutcome.Full)
                                                 is ReminderBook.Added.Ok -> {
                                                     val added = verdict.reminder
-                                                    val precision = ReminderAlarms.schedule(
+                                                    val armed = ReminderAlarms.schedule(
                                                         this@LauncherActivity, added.id, added.due.wallMs,
                                                     )
-                                                    done(
-                                                        RemindOutcome.Scheduled(
-                                                            dueWallMs = added.due.wallMs,
-                                                            exact = precision == ReminderAlarms.Precision.EXACT,
-                                                        ),
-                                                    )
+                                                    done(RemindOutcome.Saved(dueWallMs = added.due.wallMs, armed = armed))
                                                 }
                                             }
                                         }

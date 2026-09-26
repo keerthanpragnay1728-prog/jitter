@@ -24,6 +24,7 @@ import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.lock.BedtimeWindow
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRequest
+import dev.molasses.core.remind.ReminderArming
 import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.util.Calc
 import dev.molasses.core.util.Convert
@@ -66,10 +67,22 @@ import java.time.LocalDate
  */
 /** What `$ rem` did, for the prompt to report. */
 sealed interface RemindOutcome {
-    data class Scheduled(val dueWallMs: Long, val exact: Boolean) : RemindOutcome
+    /** Saved in the store, and armed however [armed] says, which may be not at all. */
+    data class Saved(val dueWallMs: Long, val armed: ReminderArming.Armed) : RemindOutcome
 
     /** Twenty are pending. Nothing was added. */
     data object Full : RemindOutcome
+}
+
+/**
+ * One acknowledgement per arming outcome, so the prompt never says INEXACT
+ * when nothing was scheduled. See [ReminderArming].
+ */
+@StringRes
+fun remindAckKey(armed: ReminderArming.Armed): Int = when (armed) {
+    ReminderArming.Armed.EXACT -> R.string.cmd_ans_rem_exact
+    ReminderArming.Armed.INEXACT -> R.string.cmd_ans_rem_inexact
+    ReminderArming.Armed.NOT_ARMED -> R.string.cmd_ans_rem_not_armed
 }
 
 class LauncherActions(
@@ -449,8 +462,8 @@ private fun execute(
         actions.remind(command.whenSpec, command.text) { outcome ->
             deliver(
                 when (outcome) {
-                    is RemindOutcome.Scheduled -> DispatchResult.Answered(
-                        ackKey = if (outcome.exact) R.string.cmd_ans_rem_exact else R.string.cmd_ans_rem_inexact,
+                    is RemindOutcome.Saved -> DispatchResult.Answered(
+                        ackKey = remindAckKey(outcome.armed),
                         args = listOf(lockOpensAtText(context, outcome.dueWallMs)),
                     )
                     RemindOutcome.Full -> DispatchResult.Failed(
