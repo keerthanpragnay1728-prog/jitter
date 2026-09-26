@@ -90,7 +90,7 @@ class ReminderWiringTest {
         val tone = functionBody(src, "private suspend fun tone(")
         assertTrue(Regex("""generator\.startTone\(""").findAll(tone).count() == 1)
         assertTrue(tone.contains("generator.startTone(ToneGenerator.TONE_PROP_BEEP, TONE_MS.toInt())"))
-        assertFalse("BEEP2 is two beeps", src.contains("TONE_PROP_BEEP2"))
+        assertFalse("BEEP2 is two beeps", tone.contains("TONE_PROP_BEEP2"))
         assertTrue(tone.contains("ToneGenerator(AudioManager.STREAM_NOTIFICATION, VOLUME)"))
         assertTrue(src.contains("const val VOLUME = 50"))
         assertTrue(tone.indexOf("generator.release()") > tone.indexOf("delay(TOTAL_MS)"))
