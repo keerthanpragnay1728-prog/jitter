@@ -6,6 +6,12 @@
 # compileSdk 36. Pinning 8.7.3 would fail configuration with
 # "compileSdk 36 requires a newer version of AGP".
 [versions]
+# The app's own version, and the only place it is written. versionName is this
+# string and versionCode is derived from it in app/build.gradle.kts, so the two
+# cannot disagree and a release cannot ship with a code that did not move.
+# Plain MAJOR.MINOR.PATCH, each part 0-99 for MINOR and PATCH.
+appVersion = "0.2.0"
+
 agp = "8.11.1"
 kotlin = "2.1.21"
 ksp = "2.1.21-2.0.1"
