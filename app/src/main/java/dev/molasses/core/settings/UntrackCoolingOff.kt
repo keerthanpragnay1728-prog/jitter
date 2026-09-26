@@ -54,13 +54,24 @@ object UntrackCoolingOff {
     }
 
     /**
-     * Whether [pkg] is the only tracked target, so removing it leaves nothing
-     * gated. A chosen empty selection resolves to no targets, not back to
-     * the defaults (see TargetScope.resolve), so this is exactly the case
-     * where confirming turns the app off in effect. The panel says so.
+     * Whether [pkg] is the last tracked target the user can see, so removing
+     * it leaves nothing gated. A chosen empty selection resolves to no
+     * targets, not back to the defaults (see TargetScope.resolve).
+     *
+     * ## Installed only, which is the bug this fixed
+     * The resolved tracked set is the stored list, and the stored list keeps
+     * packages that are not installed: a default like `com.twitter.android`
+     * on a device without it, or an app removed after it was tracked. CFG
+     * draws a row only for an installed app, so the user untracked what was
+     * visibly the last target while the set still held an invisible one, and
+     * the line never appeared. A package that is not installed cannot be
+     * opened and so gates nothing; it does not count against "last".
+     *
+     * [pkg] itself counts whatever [isInstalled] says of it: it is the row on
+     * screen, and an installed list still loading must not hide the line.
      */
-    fun isLastTarget(pkg: String, tracked: Collection<String>): Boolean =
-        pkg in tracked && tracked.all { it == pkg }
+    fun isLastTarget(pkg: String, tracked: Collection<String>, isInstalled: (String) -> Boolean): Boolean =
+        pkg in tracked && tracked.all { it == pkg || !isInstalled(it) }
 
     /** Whole seconds left, rounded up, so it reads 150 at the start and 0 only at zero. */
     fun seconds(remainingMs: Long): Long = (remainingMs.coerceAtLeast(0L) + 999L) / 1000L
