@@ -186,6 +186,8 @@ notes. Relief is designed in this file, at length, with its own clamp
 direction, and that did not make `$ allow` anything other than a verb that
 always refused. Design on paper is not a caller.
 
+The pinned-stall and forced-probability debug controls were deleted in 380c3bc because nothing could write them; segment D calibration on a new device needs them rebuilt, with a control that writes them, in the debug source set.
+
 ## Apply it where it changes, persist behind it
 
 **A value the service both changes and reads must be applied where it is
