@@ -4,7 +4,9 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.SystemClock
 import android.util.Log
+import android.view.KeyEvent
 
 /**
  * Silence whatever is playing while one of our full-screen windows is up.
@@ -51,13 +53,38 @@ import android.util.Log
  * to be on the glass; silence is what it would like as well, and a device that
  * declines is not a reason to leave the user unfrictioned.
  *
- * ## One class rather than two copies
- * The same reason [CallDetector] is a class. The lease gate and the lock
- * overlay both need this, and the lock overlay needs it more: it lives until
- * the user acts, over an app they may not use at all. Two copies of a
- * lifecycle-sensitive claim are two behaviours as soon as one is edited, and
- * the failure mode of the edited-away copy is a silent leak of the device's
- * audio focus.
+ * ## One class rather than three copies
+ * The same reason [CallDetector] is a class. The lease gate, the walking gate
+ * and the lock overlay all need this, and the lock overlay needs it most: it
+ * lives until the user acts, over an app they may not use at all. Copies of a
+ * lifecycle-sensitive claim are separate behaviours as soon as one is edited,
+ * and the failure mode of the edited-away copy is a silent leak of the
+ * device's audio focus. The walking gate was the copy that was missing: it is
+ * full screen and never took focus at all, so media played on under it.
+ *
+ * ## Focus alone does not stop every player, so [take] also sends pause
+ * Focus is a request. A player that ignores a transient loss keeps playing,
+ * and more focus calls cannot change that. So [take] also dispatches
+ * `KEYCODE_MEDIA_PAUSE`, down then up, through
+ * `AudioManager.dispatchMediaKeyEvent`. That needs no permission and reaches
+ * whichever app holds the active media session, the same route a headset
+ * button takes.
+ *
+ * PAUSE, never PLAY_PAUSE. The toggle would start music that was already
+ * stopped, which is the opposite of the point. And nothing is sent on
+ * [release]: we interrupted, we do not resume. That also matters for the
+ * focus half. Abandoning a transient claim hands focus back, and a player
+ * that paused only for the focus loss may resume on getting it back. A
+ * player that received the pause key treats it as the user pausing, and
+ * stays paused.
+ *
+ * ## On a device
+ * `adb logcat -s Molasses.AudioFocus`. Each window that goes up logs
+ * "audio focus taken for ..." or "audio focus refused for ... (result=N)",
+ * then "media pause dispatched for ...". Each that comes down logs
+ * "audio focus released for ...". Audio still playing after "taken" and
+ * "media pause dispatched" is a player ignoring both focus and its media
+ * session, which is the case only muting reaches.
  */
 class AudioFocusHold(context: Context) {
 
@@ -101,6 +128,24 @@ class AudioFocusHold(context: Context) {
             // Not a failure of the window. See the class doc.
             Log.w(TAG, "audio focus refused for $reason (result=$result)")
         }
+        // Whatever focus answered. A refusal usually means something else
+        // holds focus and may still be playing, which is exactly when the
+        // pause is needed.
+        pausePlayback(am, reason)
+    }
+
+    /**
+     * Pause whatever has the active media session. PAUSE and not the toggle,
+     * and never paired with a play later. See the class doc.
+     */
+    private fun pausePlayback(am: AudioManager, reason: String) {
+        val now = SystemClock.uptimeMillis()
+        runCatching {
+            am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE, 0))
+            am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE, 0))
+        }
+            .onSuccess { Log.i(TAG, "media pause dispatched for $reason") }
+            .onFailure { Log.w(TAG, "media pause dispatch threw for $reason", it) }
     }
 
     /** Give it back. Idempotent, and safe when it was never taken. */

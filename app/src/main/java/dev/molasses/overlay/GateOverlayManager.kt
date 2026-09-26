@@ -57,6 +57,9 @@ class GateOverlayManager(
     private var host: OverlayHost? = null
     private var currentPkg: String? = null
     private var currentTier: Int = 0
+
+    /** See [AudioFocusHold]. Taken after the window attaches, released in [dismissInternal]. */
+    private val focus = AudioFocusHold(service)
     private var timeoutJob: Job? = null
     private var watchJob: Job? = null
 
@@ -119,6 +122,12 @@ class GateOverlayManager(
             currentTier = 0
             return false
         }
+
+        // After the attach check, like the lease gate and the lock screen: a
+        // window that never appeared must not hold the device's audio. This
+        // gate is full screen and runs for up to ninety seconds, and it never
+        // took focus at all, so whatever was playing played on under it.
+        focus.take("walk gate for $pkg")
 
         // first() rather than collect{}: it completes the collection before
         // the handler runs, so teardown is not executing inside the very
@@ -195,6 +204,10 @@ class GateOverlayManager(
     }
 
     private fun dismissInternal() {
+        // The one choke point every way out runs through: a pass, an abandon,
+        // the timeout, a dismiss from the service, and a replacement by a new
+        // show. Released anywhere else and one of them leaks focus.
+        focus.release("walk gate down")
         // Both jobs null themselves out before invoking a handler, so a cancel
         // here never targets the coroutine that is currently running.
         timeoutJob?.cancel(); timeoutJob = null
