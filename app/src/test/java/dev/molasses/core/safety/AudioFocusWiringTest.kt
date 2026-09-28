@@ -178,6 +178,77 @@ class AudioFocusWiringTest {
         )
     }
 
+    // ------------------------------------------------ the music-stream mute
+
+    private val mute = "app/src/main/java/dev/molasses/overlay/StreamMute.kt"
+
+    @Test
+    fun `the mute is taken first in take and given back before any early return in release`() {
+        val text = repoFile(hold).readText()
+        val take = slice(text, "fun take(", "fun release(")
+        assertTrue(take.indexOf("StreamMute.take(appContext, holder, overlay)") in 0 until take.indexOf("val am = audio ?: return"))
+        val release = slice(text, "fun release(", "private companion object")
+        val restore = release.indexOf("StreamMute.release(appContext, holder)")
+        assertTrue("restore precedes the audio null check", restore in 0 until release.indexOf("val am = audio ?: return"))
+        assertTrue("and the held-request early return", restore < release.indexOf("val request = held ?: return"))
+    }
+
+    @Test
+    fun `every overlay's dismiss path restores, because each choke point releases its hold`() {
+        // The three choke points are asserted above to call focus.release;
+        // this pins that each manager holds its own AudioFocusHold, so each
+        // is a separate holder that must release before the stream is given
+        // back.
+        for (path in listOf(gate, lock, walk)) {
+            assertEquals(path, 1, Regex("""AudioFocusHold\(service\)""").findAll(repoFile(path).readText()).count())
+        }
+    }
+
+    @Test
+    fun `service connect restores a mute a dead process left, before any overlay exists`() {
+        val service = repoFile("app/src/main/java/dev/molasses/monitor/MolassesAccessibilityService.kt").readText()
+        val connect = slice(service, "override fun onServiceConnected()", "private fun ")
+        val restore = connect.indexOf("StreamMute.restoreOnConnect(this)")
+        assertTrue(restore >= 0)
+        assertTrue("before the first overlay manager", restore < connect.indexOf("ShutterOverlayManager("))
+        assertTrue("before the wm early return", restore < connect.indexOf("if (wm == null)"))
+        val text = repoFile(mute).readText()
+        val onConnect = slice(text, "fun restoreOnConnect(", "private fun unmute(")
+        assertTrue(onConnect.contains("MuteGuard.onConnect(ours) == MuteGuard.Action.UNMUTE && unmute(context)"))
+    }
+
+    @Test
+    fun `the flag is on disk before the mute and cleared after the unmute, synchronously`() {
+        val text = repoFile(mute).readText()
+        val take = slice(text, "fun take(", "fun release(")
+        assertTrue(take.indexOf("persist(context, ours = true)") in 0 until take.indexOf("AudioManager.ADJUST_MUTE"))
+        val unmute = slice(text, "private fun unmute(", "private fun persist(")
+        assertTrue(unmute.indexOf("AudioManager.ADJUST_UNMUTE") in 0 until unmute.indexOf("persist(context, ours = false)"))
+        assertTrue(slice(text, "private fun persist(", "private fun prefs(").contains(".commit()"))
+    }
+
+    @Test
+    fun `the mute flag only, never the level, never volume UI`() {
+        val text = repoFile(mute).readText()
+        assertTrue(text.contains("am.adjustStreamVolume(STREAM, AudioManager.ADJUST_MUTE, 0)"))
+        assertTrue(text.contains("am.adjustStreamVolume(STREAM, AudioManager.ADJUST_UNMUTE, 0)"))
+        assertFalse("never a level", text.contains("setStreamVolume("))
+        assertFalse(text.contains("ADJUST_LOWER") || text.contains("ADJUST_RAISE") || text.contains("FLAG_SHOW_UI"))
+        assertTrue(text.contains("private const val STREAM = AudioManager.STREAM_MUSIC"))
+    }
+
+    @Test
+    fun `a pre-muted stream is read before the decision, and a refused mute is survived`() {
+        val take = slice(repoFile(mute).readText(), "fun take(", "fun release(")
+        val read = take.indexOf("am.isStreamMute(STREAM)")
+        val decide = take.indexOf("MuteGuard.take(state, holder, OverlayAudio.silences(overlay), alreadyMuted)")
+        assertTrue(read in 0 until decide)
+        val call = take.indexOf("runCatching { am.adjustStreamVolume(STREAM, AudioManager.ADJUST_MUTE, 0) }")
+        assertTrue("the SecurityException is caught, not thrown", call > decide)
+        assertTrue(take.contains("state = MuteGuard.muteFailed(state)"))
+        assertTrue(take.contains("alreadyMuted=\$alreadyMuted applied=\$applied"))
+    }
+
     private fun slice(text: String, from: String, to: String): String {
         val start = text.indexOf(from)
         assertTrue("could not find `$from`", start >= 0)
