@@ -30,7 +30,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * ## A bundled chime, with the system sound behind it
  * The chime is `res/raw/jitter_chime.wav`, made by `tools/gen-chime.py`
- * (mono, 16-bit, 44.1 kHz, 280 ms, E5 with a soft octave, peak -12 dBFS),
+ * (mono, 16-bit, 44.1 kHz, 300 ms, C5 with a fifth and an octave under it,
+ * each decaying on its own clock, peak -12 dBFS),
  * played through MediaPlayer with `USAGE_NOTIFICATION_EVENT`: a file the
  * media stack decodes like any other notification sound, rather than a
  * ToneGenerator beep or a raw AudioTrack buffer, both of which were silent
