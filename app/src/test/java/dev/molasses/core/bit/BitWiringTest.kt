@@ -185,6 +185,16 @@ class BitWiringTest {
     }
 
     @Test
+    fun `a deferred answer that never lands times out and releases Enter`() {
+        val deferred = host.substring(host.indexOf("is DispatchResult.Deferred -> {")).substringBefore("\n        }\n    }\n")
+        assertTrue(deferred.contains("DeferredWait.start("))
+        assertTrue(deferred.contains("timedOut = DispatchResult.Failed(R.string.cmd_err_deferred_timeout)"))
+        assertFalse("not the raw await, which has no deadline", deferred.contains("outcome.await {"))
+        val release = deferred.indexOf("awaitingDeferred = false")
+        assertTrue("Enter is released on either result, before it is handled", release in 0 until deferred.indexOf("handleOutcome(result)"))
+    }
+
+    @Test
     fun `the prompt is a command line, not prose`() {
         val options = host.substring(host.indexOf("keyboardOptions = KeyboardOptions(")).substringBefore("keyboardActions")
         assertTrue(options.contains("autoCorrectEnabled = false"))

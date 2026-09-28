@@ -119,6 +119,7 @@ import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.BitTap
 import dev.molasses.core.command.CommandRegistry
+import dev.molasses.core.command.DeferredWait
 import dev.molasses.core.command.ReadingWindow
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.launch.QuickLaunch
@@ -1126,6 +1127,8 @@ fun TerminalHomeView(
     var killArmedId by remember { mutableStateOf<Long?>(null) }
     // A deferred command is in flight. See the Deferred branch of handleOutcome.
     var awaitingDeferred by remember { mutableStateOf(false) }
+    // Runs the deferred answer's deadline. Cancelled with the console.
+    val deferredScope = rememberCoroutineScope()
     LaunchedEffect(answerSerial) {
         val hold = answerHoldMs ?: return@LaunchedEffect
         delay(hold)
@@ -1447,12 +1450,24 @@ fun TerminalHomeView(
             // other failure.
             // With the line still in the prompt, a second Enter would run it
             // twice, so Enter is ignored until the answer lands.
+            //
+            // Not forever: after DeferredWait.TIMEOUT_MS with no answer, a
+            // failure line replaces it and Enter comes back, so a command
+            // that never answers cannot leave the prompt dead.
             is DispatchResult.Deferred -> {
                 Log.i(CONSOLE_TAG, "deferred: awaiting the command's answer")
                 awaitingDeferred = true
-                outcome.await {
+                DeferredWait.start(
+                    scope = deferredScope,
+                    deferred = outcome,
+                    timedOut = DispatchResult.Failed(R.string.cmd_err_deferred_timeout),
+                    onLate = { Log.w(CONSOLE_TAG, "deferred: answer arrived after the deadline and was dropped") },
+                ) { result ->
                     awaitingDeferred = false
-                    handleOutcome(it)
+                    if (result is DispatchResult.Failed && result.reasonKey == R.string.cmd_err_deferred_timeout) {
+                        Log.w(CONSOLE_TAG, "deferred: no answer in ${DeferredWait.TIMEOUT_MS}ms, Enter released")
+                    }
+                    handleOutcome(result)
                 }
             }
         }

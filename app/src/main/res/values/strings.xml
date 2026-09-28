@@ -508,6 +508,7 @@
     <string name="cmd_err_rem_full">%1$s reminders are pending, the most there can be. Dismiss one first.</string>
     <string name="cmd_err_when">Not a time, a duration or a date: %1$s. Try 6pm, 45m or 3 oct 9am.</string>
     <string name="cmd_err_rem_needs_time">A date needs a time: %1$s 9am.</string>
+    <string name="cmd_err_deferred_timeout">No answer in 3 seconds. It may still have run; type rem to check.</string>
     <string name="cmd_err_rem_past">That date and time has passed. Pick one ahead.</string>
     <string name="cmd_err_unknown_app">No app matches %1$s</string>
     <string name="cmd_err_ambiguous_app">%1$s matches %2$s apps. A wrong lock cannot be undone.</string>
