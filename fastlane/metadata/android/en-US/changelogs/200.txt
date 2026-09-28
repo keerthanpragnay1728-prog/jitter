@@ -1,0 +1,5 @@
+First public release.
+
+- A first-run guide on the launcher: accessibility, usage access, targets and known limits, with the steps for Android's restricted setting.
+- Release builds are signed with a single release key. Builds signed with the debug key cannot be updated to this one: uninstall first, which clears their data.
+- YouTube is governed by the lease gate only. The content-change scroll proxy was removed.
