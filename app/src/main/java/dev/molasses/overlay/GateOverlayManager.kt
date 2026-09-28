@@ -1,5 +1,6 @@
 package dev.molasses.overlay
 
+import dev.molasses.core.friction.HorizonReading
 import android.content.Context
 import android.util.Log
 import android.view.WindowManager
@@ -62,7 +63,7 @@ class GateOverlayManager(
 ) {
     private var host: OverlayHost? = null
     private var currentPkg: String? = null
-    private var currentTier: Int = 0
+    private var currentReading: HorizonReading? = null
 
     private var timeoutJob: Job? = null
     private var watchJob: Job? = null
@@ -86,18 +87,21 @@ class GateOverlayManager(
     val showingFor: String? get() = if (isShowing) currentPkg else null
 
     /**
-     * Idempotent: a second call for the same package and tier is a no-op.
+     * Idempotent: a second call for the same package is a no-op.
      *
      * @return whether a window is genuinely on the glass afterwards. False
      *   means the app is uncovered and the caller must fall through to
      *   ordinary friction. See `LaunchGate.Outcome`.
      */
-    fun show(pkg: String, tier: Int, alternativeChallenge: Boolean): Boolean {
-        if (isShowing && currentPkg == pkg && currentTier == tier) return true
+    fun show(pkg: String, reading: HorizonReading, alternativeChallenge: Boolean): Boolean {
+        // The same package's gate is already up. Keyed on the package alone:
+        // the reading moves every second, and re-showing on it would restart
+        // the detector under a user who is mid-walk.
+        if (isShowing && currentPkg == pkg) return true
         if (isShowing) dismissInternal()
 
         currentPkg = pkg
-        currentTier = tier
+        currentReading = reading
         resolved = false
 
         // A fresh host per gate: OverlayHost is single-use by construction.
@@ -124,7 +128,7 @@ class GateOverlayManager(
         ) {
             MolassesTheme(fontScale = fontScale()) {
                 GateScreen(
-                    tier = tier,
+                    reading = reading,
                     pkg = pkg,
                     progressFlow = detector.progress,
                     alternativeChallenge = alternativeChallenge,
@@ -145,7 +149,7 @@ class GateOverlayManager(
             detector.stop()
             host = null
             currentPkg = null
-            currentTier = 0
+            currentReading = null
             return false
         }
 
@@ -176,13 +180,13 @@ class GateOverlayManager(
      * racing the timeout, is dropped.
      *
      * Everything teardown needs is captured before [dismissInternal] runs,
-     * because that clears [currentPkg] and [currentTier].
+     * because that clears [currentPkg] and [currentReading].
      */
     private fun resolve(outcome: GateOutcome) {
         val pkg = currentPkg ?: return
         if (resolved) return
         resolved = true
-        val tier = currentTier
+        val at = readingDetail(currentReading)
 
         // No row for the walk itself. Clearing it does not buy anything on
         // its own: it puts the lease panel up, and LEASE_TAKEN is written by
@@ -194,7 +198,7 @@ class GateOverlayManager(
             ledger.log(
                 pkg,
                 EventType.GATE_BYPASSED_DEBUG,
-                "tier=$tier path=${outcome.path}",
+                "$at path=${outcome.path}",
             )
         }
 
@@ -213,7 +217,7 @@ class GateOverlayManager(
         val pkg = currentPkg ?: return
         if (resolved) return
         resolved = true
-        ledger.log(pkg, EventType.GATE_ABANDONED, "reason=$reason tier=$currentTier")
+        ledger.log(pkg, EventType.GATE_ABANDONED, "reason=$reason ${readingDetail(currentReading)}")
         dismissInternal()
         onAbandoned(pkg)
     }
@@ -255,8 +259,13 @@ class GateOverlayManager(
         host = null
         onWindowsChanged()
         currentPkg = null
-        currentTier = 0
+        currentReading = null
     }
+
+    /** The ledger detail for where the app stood when its gate was shown. */
+    private fun readingDetail(reading: HorizonReading?): String =
+        if (reading == null) "horizon=unknown"
+        else "effectiveMs=${reading.effectiveMs} horizonMs=${reading.horizonMs}"
 
     companion object {
         /** SS8: unregister sensors on pass, abandon, or this timeout. */

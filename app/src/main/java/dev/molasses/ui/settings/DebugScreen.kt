@@ -37,6 +37,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.diag.LedgerExport
 import dev.molasses.core.diag.ServiceHealth
+import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.friction.HorizonReading
 import dev.molasses.core.session.IgnoreReason
 import dev.molasses.debug.DebugSurface
 import dev.molasses.engine.TierPolicy
@@ -390,18 +392,27 @@ fun DebugScreen(
                         R.string.debug_field_accumulated,
                         stringResource(R.string.debug_value_seconds, row.accumulatedMs / 1000),
                     )
+                    // The count of five minute blocks, nothing more. Friction
+                    // and terminal come from the horizon, below.
+                    MonoRow(R.string.debug_field_tier_index, row.tierIndex.toString())
+                    val reading = HorizonReading(row.accumulatedMs, row.penaltyMs, row.horizonMs)
                     MonoRow(
-                        R.string.debug_field_tier_index,
-                        if (TierPolicy.isTerminal(row.tierIndex)) {
-                            stringResource(R.string.debug_tier_terminal, row.tierIndex)
-                        } else {
-                            row.tierIndex.toString()
-                        },
+                        R.string.debug_field_horizon,
+                        stringResource(
+                            if (reading.terminal) R.string.debug_horizon_terminal_fmt else R.string.debug_horizon_fmt,
+                            reading.horizonMinutes.toString(),
+                            reading.percentOfHorizon.toString(),
+                        ),
                     )
+                    // What the curve commands at this point, not the old
+                    // ladder's fixed rung.
+                    val point = FrictionCurve.frictionAt(reading.effectiveMs, row.horizonMs)
                     MonoRow(
                         R.string.debug_field_stall,
                         stringResource(
-                            R.string.debug_value_ms, TierPolicy.stallMsFor(row.tierIndex),
+                            R.string.debug_value_stall,
+                            point.stallMs.toString(),
+                            Math.round(point.probability * 100).toString(),
                         ),
                     )
                     // True time and effective time as two numbers, never one.

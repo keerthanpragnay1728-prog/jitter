@@ -81,6 +81,7 @@ data class LadderRow(
     val leaseUntilAccumulatedMs: Long,
     /** Never added to [accumulatedMs]. True time and effective time are two numbers. */
     val penaltyMs: Long,
+    val horizonMs: Long,
 )
 
 /** Requested vs. actual armed duration, parsed back out of the ledger. */
@@ -314,6 +315,7 @@ class SettingsViewModel @Inject constructor(
                         leasesTaken = it.leasesTaken,
                         leaseUntilAccumulatedMs = it.leaseUntilAccumulatedMs,
                         penaltyMs = it.penaltyMs,
+                        horizonMs = it.horizonMs,
                     )
                 }
                 .sortedByDescending { it.accumulatedMs }

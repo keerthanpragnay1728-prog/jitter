@@ -32,7 +32,8 @@ class CycleLineTest {
     fun `the ordinary line reads as specced`() {
         val f = CycleLine.fields(app(), 4 * hour + 12 * minute)
         assertEquals("38m", f.cycle)
-        assertEquals("02", f.tier)
+        // 38 of a 25 minute default horizon, floored.
+        assertEquals("152%", f.horizon)
         assertEquals("4h12m", f.resets)
         assertNull("no penalty means no segment, not a zero", f.penalty)
     }
@@ -58,7 +59,7 @@ class CycleLineTest {
         // kind of small lie that makes the rest of a readout untrustworthy.
         val f = CycleLine.fields(null, 4 * hour)
         assertEquals(CycleLine.UNKNOWN, f.cycle)
-        assertEquals(CycleLine.UNKNOWN, f.tier)
+        assertEquals(CycleLine.UNKNOWN, f.horizon)
         assertNull(f.penalty)
         assertEquals("4h", f.resets)
     }
@@ -74,34 +75,33 @@ class CycleLineTest {
     fun `nothing at all is four unknowns`() {
         val f = CycleLine.fields(null, null)
         assertEquals(CycleLine.UNKNOWN, f.cycle)
-        assertEquals(CycleLine.UNKNOWN, f.tier)
+        assertEquals(CycleLine.UNKNOWN, f.horizon)
         assertEquals(CycleLine.UNKNOWN, f.resets)
         assertNull(f.penalty)
     }
 
-    // ------------------------------------------------------------- the tier
+    // ---------------------------------------------------------- the horizon
 
     @Test
-    fun `the tier is two digits so the line does not reflow at ten`() {
-        assertEquals("00", CycleLine.tier(0))
-        assertEquals("02", CycleLine.tier(2))
-        assertEquals("09", CycleLine.tier(9))
-        assertEquals("10", CycleLine.tier(10))
+    fun `the horizon counts the penalty, because the curve does`() {
+        // 38 + 4 = 42 of 25: what friction is read against.
+        assertEquals("168%", CycleLine.horizon(app(penaltyMs = 4 * minute)))
     }
 
     @Test
-    fun `a tier past two digits is printed, not clamped`() {
-        // The index is unbounded past the terminal by design. A reflow at
-        // tier 100 is a better price than a column that lies.
-        assertEquals("104", CycleLine.tier(104))
+    fun `the horizon is the app's own, not the default`() {
+        assertEquals("63%", CycleLine.horizon(app().copy(horizonMs = 60 * minute)))
     }
 
     @Test
-    fun `a negative tier is unknown, not a negative number`() {
-        assertEquals(CycleLine.UNKNOWN, CycleLine.tier(-1))
+    fun `100 percent is exactly where the engine turns terminal`() {
+        val atHorizon = app(accumulatedMs = 25 * minute)
+        val justShort = app(accumulatedMs = 25 * minute - 1)
+        assertEquals("100%", CycleLine.horizon(atHorizon))
+        assertEquals("99%", CycleLine.horizon(justShort))
+        assertTrue(dev.molasses.core.friction.FrictionCurve.isTerminal(atHorizon.accumulatedMs, 0, atHorizon.horizonMs))
+        assertTrue(!dev.molasses.core.friction.FrictionCurve.isTerminal(justShort.accumulatedMs, 0, justShort.horizonMs))
     }
-
-    // --------------------------------------------------------- the duration
 
     @Test
     fun `durations drop seconds`() {
