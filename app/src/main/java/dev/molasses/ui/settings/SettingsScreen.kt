@@ -315,7 +315,7 @@ fun SettingsScreen(
                     onClick = onRequestNotifications,
                 )
             }
-            // Re-enters the launcher's first-run flow. Never marked done, so
+            // Re-opens the first-run flow on this screen. Never marked done, so
             // it stays tappable: ChecklistRow disables a satisfied row.
             item(CfgRowKey.body(Section.SETUP, "onboarding")) {
                 ChecklistRow(

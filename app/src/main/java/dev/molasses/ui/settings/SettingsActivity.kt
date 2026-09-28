@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,8 +21,10 @@ import dagger.hilt.android.AndroidEntryPoint
 import dev.molasses.core.settings.CfgAccordion
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.repo.SettingsRepository
-import dev.molasses.ui.launcher.EXTRA_ONBOARDING
-import dev.molasses.ui.launcher.LauncherActivity
+import dev.molasses.core.setup.Onboarding
+import dev.molasses.ui.setup.SetupFlowController
+import dev.molasses.ui.setup.SetupFlowGate
+import dev.molasses.ui.setup.SetupSession
 import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.MolassesTheme
 import javax.inject.Inject
@@ -58,10 +61,25 @@ class SettingsActivity : ComponentActivity() {
      */
     private var openSection by mutableStateOf<CfgAccordion.Section?>(null)
 
+    /** The first-run flow's reads and routes. A field, because it registers an activity result. */
+    private val setup = SetupFlowController(this) { settingsRepository }
+
+    /**
+     * The flow has stepped aside so the user can edit targets here. Back ends
+     * it: back to the flow when the flow was on this screen, back to the
+     * console when the console sent the user here ([detourFinishes]).
+     * Leaving the screen ends it too, so the flow is there on return.
+     */
+    private var targetsDetour by mutableStateOf(false)
+    private var detourFinishes = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        if (savedInstanceState == null) openSection = sectionFrom(intent)
+        if (savedInstanceState == null) {
+            openSection = sectionFrom(intent)
+            detourFrom(intent)
+        }
 
         setContent {
             // Read here, not defaulted. This screen carries the font size
@@ -81,19 +99,36 @@ class SettingsActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = JitterBackground,
                 ) {
-                if (showDebug) {
-                    DebugScreen(onBack = { showDebug = false })
-                } else {
-                    SettingsScreen(
-                        onOpenAccessibility = { open(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
-                        onOpenUsageAccess = { open(Settings.ACTION_USAGE_ACCESS_SETTINGS) },
-                        onRequestActivityRecognition = { requestActivityRecognition() },
-                        onRequestNotifications = { requestNotifications() },
-                        onOpenDebug = { showDebug = true },
-                        onOpenOnboarding = { openOnboarding() },
-                        openSection = openSection,
-                        onSectionOpened = { openSection = null },
-                    )
+                // Until setup is complete this shows the first-run flow
+                // instead of CFG, which is what a fresh sideload opens from
+                // the app drawer. Closing it reveals CFG.
+                SetupFlowGate(
+                    controller = setup,
+                    repository = settingsRepository,
+                    onEditTargets = {
+                        detourFinishes = false
+                        targetsDetour = true
+                        openSection = CfgAccordion.Section.TARGETS
+                    },
+                    suspended = targetsDetour,
+                ) {
+                    BackHandler(enabled = targetsDetour) {
+                        if (detourFinishes) finish() else targetsDetour = false
+                    }
+                    if (showDebug) {
+                        DebugScreen(onBack = { showDebug = false })
+                    } else {
+                        SettingsScreen(
+                            onOpenAccessibility = { open(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
+                            onOpenUsageAccess = { open(Settings.ACTION_USAGE_ACCESS_SETTINGS) },
+                            onRequestActivityRecognition = { requestActivityRecognition() },
+                            onRequestNotifications = { requestNotifications() },
+                            onOpenDebug = { showDebug = true },
+                            onOpenOnboarding = { SetupSession.update(Onboarding::request) },
+                            openSection = openSection,
+                            onSectionOpened = { openSection = null },
+                        )
+                    }
                 }
                 }
             }
@@ -104,18 +139,31 @@ class SettingsActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         sectionFrom(intent)?.let { openSection = it }
+        detourFrom(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        setup.onResume()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        targetsDetour = false
+    }
+
+    /** The console's route to TARGETS: step the flow aside, and Back returns there. */
+    private fun detourFrom(intent: Intent) {
+        if (intent.getBooleanExtra(EXTRA_SETUP_DETOUR, false)) {
+            detourFinishes = true
+            targetsDetour = true
+        }
     }
 
     private fun sectionFrom(intent: Intent): CfgAccordion.Section? =
         intent.getStringExtra(EXTRA_OPEN_SECTION)?.let { name ->
             CfgAccordion.Section.entries.firstOrNull { it.name == name }
         }
-
-    /** The first-run flow lives on the launcher. Hand over and get out of its way. */
-    private fun openOnboarding() {
-        startActivity(Intent(this, LauncherActivity::class.java).putExtra(EXTRA_ONBOARDING, true))
-        finish()
-    }
 
     private fun open(action: String) {
         runCatching { startActivity(Intent(action)) }
@@ -134,5 +182,8 @@ class SettingsActivity : ComponentActivity() {
     companion object {
         /** A [CfgAccordion.Section] name to open on arrival. */
         const val EXTRA_OPEN_SECTION = "dev.molasses.extra.OPEN_SECTION"
+
+        /** Sent with [EXTRA_OPEN_SECTION] by the first-run flow on the console. */
+        const val EXTRA_SETUP_DETOUR = "dev.molasses.extra.SETUP_DETOUR"
     }
 }

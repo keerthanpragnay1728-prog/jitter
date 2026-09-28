@@ -654,6 +654,7 @@
     <string name="onboarding_mark_open_fmt" translatable="false">[ ] %1$s</string>
     <string name="onboarding_a11y_name">ACCESSIBILITY</string>
     <string name="onboarding_usage_name">USAGE ACCESS</string>
+    <string name="onboarding_home_name">HOME APP</string>
     <string name="onboarding_targets_name">TARGETS</string>
     <string name="onboarding_limits_name">KNOWN LIMITS</string>
     <string name="onboarding_a11y_body">Jitter needs its accessibility service to see which app is in front and when you scroll. Nothing is gated without it.</string>
@@ -668,6 +669,10 @@
     <string name="onboarding_open_settings" translatable="false">[ OPEN SETTINGS ]</string>
     <string name="onboarding_open_app_info" translatable="false">[ OPEN APP INFO ]</string>
     <string name="onboarding_usage_body">Usage access lets Jitter rebuild your time if it is killed mid-session.</string>
+    <string name="onboarding_home_body">Set Jitter as your home app. Its console replaces your home screen.</string>
+    <string name="onboarding_home_fallback">No chooser appeared? Pick Jitter in the home app settings.</string>
+    <string name="onboarding_home_open" translatable="false">[ SET HOME APP ]</string>
+    <string name="onboarding_home_settings" translatable="false">[ OPEN HOME SETTINGS ]</string>
     <string name="onboarding_targets_body">These apps are tracked. The defaults are fine, and CFG can change them any time.</string>
     <string name="onboarding_targets_none">Nothing is tracked, so nothing will be gated.</string>
     <string name="onboarding_targets_edit" translatable="false">[ EDIT IN CFG ]</string>

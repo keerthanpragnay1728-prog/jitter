@@ -15,7 +15,6 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
 import android.provider.Settings
-import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -152,9 +151,7 @@ import dev.molasses.core.ui.PowerBar
 import dev.molasses.debug.BitTrace
 import dev.molasses.data.datastore.ConsoleState
 import dev.molasses.core.session.TargetScope
-import dev.molasses.core.setup.Onboarding
 import dev.molasses.core.settings.CfgAccordion
-import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.repo.CycleReadout
 import dev.molasses.data.repo.SettingsRepository
@@ -162,6 +159,8 @@ import dev.molasses.monitor.ReminderAlarms
 import dev.molasses.monitor.ServiceDiagnostics
 import dev.molasses.ui.lock.lockOpensAtText
 import dev.molasses.ui.settings.SettingsActivity
+import dev.molasses.ui.setup.SetupFlowController
+import dev.molasses.ui.setup.SetupFlowGate
 import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.MolassesTheme
 import dev.molasses.ui.theme.PhosphorDim
@@ -204,44 +203,14 @@ class LauncherActivity : ComponentActivity() {
      */
     private val installedApps: List<LaunchableApp> by lazy { queryLaunchableApps() }
 
-    // ------------------------------------------------------------ first run
-    //
-    // Activity fields rather than composition state because onResume and
-    // onNewIntent write them. See core/setup/Onboarding and OnboardingScreen.
-
-    /** CFG SETUP asked for the flow again. See [EXTRA_ONBOARDING]. */
-    private var onboardingRequested by mutableStateOf(false)
-
     /**
-     * Closed for this session: DONE, LATER or Back. LATER and Back exist so
-     * a user who cannot enable the service still has a home screen; the
-     * flow comes back on the next cold start until it has been completed.
+     * The first-run flow's reads and routes for this activity. A field,
+     * because it registers an activity result. See SetupFlowGate.
      */
-    private var onboardingClosed by mutableStateOf(false)
-    private var targetsSeen by mutableStateOf(false)
-    private var limitsSeen by mutableStateOf(false)
-
-    /** The detectable half of the facts, re-read on resume and by the poll. */
-    private var setupGrants by mutableStateOf(
-        Onboarding.Facts(serviceReady = false, accessibilityEnabled = false, usageAccess = false, targetsSeen = false, limitsSeen = false),
-    )
-
-    /** A Settings screen was opened from the flow and we have not resumed since. */
-    private var awayInSettings = false
-
-    /**
-     * Came back from Settings at least once this session. Drives the
-     * restricted-settings unlock, which cannot be detected; see
-     * [Onboarding.showUnlock].
-     */
-    private var returnedFromSettings by mutableStateOf(false)
+    private val setup = SetupFlowController(this) { settingsRepository }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_ONBOARDING, false)) {
-            requestOnboarding()
-        }
-        refreshSetupGrants()
         // Edge to edge stays here: it is a window layout attribute and it is
         // correct from onCreate. Hiding the bar is not, and does not; see
         // onWindowFocusChanged.
@@ -307,29 +276,6 @@ class LauncherActivity : ComponentActivity() {
             val reminders by settingsRepository.reminders
                 .collectAsState(initial = emptyList())
 
-            // Null until the store answers, so neither the flow nor the
-            // console is drawn on a guess. See Onboarding.shouldShow.
-            val onboardingComplete by settingsRepository.onboardingComplete
-                .collectAsState<Boolean, Boolean?>(initial = null)
-            val setupFacts = setupGrants.copy(targetsSeen = targetsSeen, limitsSeen = limitsSeen)
-            val showOnboarding = onboardingComplete?.let { completedOnce ->
-                !onboardingClosed && Onboarding.shouldShow(completedOnce, onboardingRequested)
-            }
-
-            // The two grants are toggled in Settings, and the bind lands a
-            // moment after the toggle, often while this screen is already
-            // back in front. Resume alone would miss it.
-            val grantOutstanding = showOnboarding == true &&
-                Onboarding.current(setupFacts).let {
-                    it == Onboarding.Step.ACCESSIBILITY || it == Onboarding.Step.USAGE_ACCESS
-                }
-            LaunchedEffect(grantOutstanding) {
-                while (grantOutstanding) {
-                    delay(SETUP_POLL_MS)
-                    refreshSetupGrants()
-                }
-            }
-
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showDrawer by remember { mutableStateOf(false) }
                 // A long console lock waiting on the full-screen panel. Held
@@ -347,8 +293,6 @@ class LauncherActivity : ComponentActivity() {
                 // has nowhere above it to go.
                 BackHandler(enabled = true) {
                     when {
-                        // Back on the first-run flow is LATER.
-                        showOnboarding == true -> onboardingClosed = true
                         // Back aborts a lock confirmation and writes nothing.
                         // It is the panel's only way out besides the commit.
                         lockConfirm != null -> lockConfirm = null
@@ -364,209 +308,178 @@ class LauncherActivity : ComponentActivity() {
                     color = JitterBackground,
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        when (showOnboarding) {
-                            // The store has not answered. One blank frame
-                            // rather than a flash of the wrong screen.
-                            null -> Unit
-                            // Instead of the workspace, not over it: the
-                            // console delivers Bit's lines and spends their
-                            // budget while composed, and would do it unseen.
-                            true -> OnboardingScreen(
-                                facts = setupFacts,
-                                showUnlock = Onboarding.showUnlock(
-                                    setupFacts, returnedFromSettings, Build.VERSION.SDK_INT,
-                                ),
-                                trackedLabels = badgedApps.filter { it.isTarget }.map { it.label },
-                                onOpenAccessibility = {
-                                    openSetupSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        SetupFlowGate(
+                            controller = setup,
+                            repository = settingsRepository,
+                            onEditTargets = {
+                                // CFG opens on TARGETS with the flow stepped
+                                // aside, and Back there returns here.
+                                startActivity(
+                                    Intent(this@LauncherActivity, SettingsActivity::class.java)
+                                        .putExtra(SettingsActivity.EXTRA_OPEN_SECTION, CfgAccordion.Section.TARGETS.name)
+                                        .putExtra(SettingsActivity.EXTRA_SETUP_DETOUR, true),
+                                )
+                            },
+                        ) {
+                            MainLauncherWorkspace(
+                                appList = badgedApps,
+                                pagerState = pagerState,
+                                onOpenDrawer = { showDrawer = true },
+                                onOpenSettings = {
+                                    startActivity(Intent(this@LauncherActivity, SettingsActivity::class.java))
                                 },
-                                onOpenAppInfo = {
-                                    openSetupSettings(
-                                        Intent(
-                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                            Uri.fromParts("package", packageName, null),
-                                        ),
-                                    )
+                                onLaunchPackage = ::launchPackage,
+                                cycle = cycle,
+                                // A standing bedtime lock is the curfew. Read from
+                                // BedtimeWindow rather than a second copy of the
+                                // hour, so a real setting behind that constant is
+                                // picked up here for free.
+                                curfewEndMinuteOfDay = remember(locks) {
+                                    val active = locks.active(settingsRepository.nowStamped())
+                                    if (active.any { it.reason == LockReason.BEDTIME }) {
+                                        BedtimeWindow.WAKE_MINUTE_OF_DAY
+                                    } else {
+                                        null
+                                    }
                                 },
-                                onOpenUsageAccess = {
-                                    openSetupSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                nowStamped = settingsRepository::nowStamped,
+                                console = console,
+                                onDeliverConsoleLine = { line, budget ->
+                                    scope.launch {
+                                        settingsRepository.deliverConsoleLine(line, budget)
+                                    }
                                 },
-                                onEditTargets = {
-                                    startActivity(
-                                        Intent(this@LauncherActivity, SettingsActivity::class.java)
-                                            .putExtra(SettingsActivity.EXTRA_OPEN_SECTION, CfgAccordion.Section.TARGETS.name),
-                                    )
+                                onAnswerConsolePrompt = {
+                                    scope.launch { settingsRepository.clearConsolePrompt() }
                                 },
-                                onTargetsSeen = { targetsSeen = true },
-                                onDone = {
-                                    limitsSeen = true
-                                    onboardingClosed = true
-                                    onboardingRequested = false
-                                    scope.launch { settingsRepository.setOnboardingComplete() }
+                                onEnqueueConsoleLine = { line ->
+                                    scope.launch { settingsRepository.enqueueConsoleLine(line) }
                                 },
-                                onLater = { onboardingClosed = true },
-                            )
-                            false -> {
-                                MainLauncherWorkspace(
-                                    appList = badgedApps,
-                                    pagerState = pagerState,
-                                    onOpenDrawer = { showDrawer = true },
-                                    onOpenSettings = {
-                                        startActivity(Intent(this@LauncherActivity, SettingsActivity::class.java))
-                                    },
-                                    onLaunchPackage = ::launchPackage,
-                                    cycle = cycle,
-                                    // A standing bedtime lock is the curfew. Read from
-                                    // BedtimeWindow rather than a second copy of the
-                                    // hour, so a real setting behind that constant is
-                                    // picked up here for free.
-                                    curfewEndMinuteOfDay = remember(locks) {
-                                        val active = locks.active(settingsRepository.nowStamped())
-                                        if (active.any { it.reason == LockReason.BEDTIME }) {
-                                            BedtimeWindow.WAKE_MINUTE_OF_DAY
-                                        } else {
-                                            null
-                                        }
-                                    },
-                                    nowStamped = settingsRepository::nowStamped,
-                                    console = console,
-                                    onDeliverConsoleLine = { line, budget ->
-                                        scope.launch {
-                                            settingsRepository.deliverConsoleLine(line, budget)
-                                        }
-                                    },
-                                    onAnswerConsolePrompt = {
-                                        scope.launch { settingsRepository.clearConsolePrompt() }
-                                    },
-                                    onEnqueueConsoleLine = { line ->
-                                        scope.launch { settingsRepository.enqueueConsoleLine(line) }
-                                    },
-                                    onRecordCommand = { line ->
-                                        scope.launch {
-                                            settingsRepository.recordCommand(line)
-                                        }
-                                    },
-                                    onRequestLockConfirm = { lockConfirm = it },
-                                    quickLaunch = quickLaunch,
-                                    reminders = reminders,
-                                    onDismissReminder = { id ->
-                                        scope.launch { settingsRepository.dismissReminder(id) }
-                                    },
-                                    onKillReminder = { id ->
-                                        scope.launch {
-                                            // Store first, then the alarm: an alarm that
-                                            // fires in between finds nothing unfired.
-                                            val removed = settingsRepository.killReminder(id)
-                                            val cancelled = removed && ReminderAlarms.cancel(this@LauncherActivity, id)
-                                            Log.i(REMINDER_TAG, "kill: reminder $id removed=$removed alarmCancelled=$cancelled")
-                                        }
-                                    },
-                                    // Remembered so the prompt can build its
-                                    // dispatcher once rather than on every keystroke.
-                                    actions = remember(pagerState) {
-                                        LauncherActions(
-                                            showLedger = {
-                                                scope.launch { pagerState.animateScrollToPage(PAGE_LEDGER) }
-                                            },
-                                            startIntent = ::startIfHandled,
-                                            canResolve = ::canResolve,
-                                            lockRemainingMs = { pkg ->
-                                                locks.remainingMs(pkg, settingsRepository.nowStamped())
-                                            },
-                                            anyLockArmed = {
-                                                locks.active(settingsRepository.nowStamped()).isNotEmpty()
-                                            },
-                                            targets = { tracked.toList() },
-                                            installedPackages = {
-                                                TargetScope.installedOrUnknown(installedApps.map { it.packageName })
-                                            },
-                                            resolveApp = { token ->
-                                                AppTokenResolver.resolve(
-                                                    token = token,
-                                                    candidates = installedApps.map {
-                                                        AppTokenResolver.Candidate(it.packageName, it.label)
-                                                    },
-                                                    preferred = tracked,
-                                                )
-                                            },
-                                            armLock = { packages, durationMs, reason ->
-                                                scope.launch {
-                                                    settingsRepository.armLocks(packages, durationMs, reason)
-                                                }
-                                            },
-                                            minuteOfDay = {
-                                                val c = Calendar.getInstance()
-                                                c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
-                                            },
-                                            remind = remind@{ whenSpec, text, done ->
-                                                val now = settingsRepository.nowStamped()
-                                                val c = Calendar.getInstance()
-                                                val minute = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
-                                                val due = ReminderBook.dueAt(whenSpec, now, minute, ReminderAlarms::wallOn)
-                                                // A dated reminder in the past is refused
-                                                // before anything is written.
-                                                if (due == null) {
-                                                    done(RemindOutcome.Past)
-                                                    return@remind
-                                                }
-                                                scope.launch {
-                                                    // The cap is the store's call, made in its own
-                                                    // transaction, not a check on the list this
-                                                    // screen last saw. Only what it took is armed,
-                                                    // and the prompt reports the precision the
-                                                    // alarm was actually set with.
-                                                    when (val verdict = settingsRepository.addReminder(text, due)) {
-                                                        ReminderBook.Added.Full -> done(RemindOutcome.Full)
-                                                        is ReminderBook.Added.Ok -> {
-                                                            val added = verdict.reminder
-                                                            val armed = ReminderAlarms.schedule(
-                                                                this@LauncherActivity, added.id, added.due.wallMs,
-                                                            )
-                                                            done(RemindOutcome.Saved(dueWallMs = added.due.wallMs, armed = armed))
-                                                        }
+                                onRecordCommand = { line ->
+                                    scope.launch {
+                                        settingsRepository.recordCommand(line)
+                                    }
+                                },
+                                onRequestLockConfirm = { lockConfirm = it },
+                                quickLaunch = quickLaunch,
+                                reminders = reminders,
+                                onDismissReminder = { id ->
+                                    scope.launch { settingsRepository.dismissReminder(id) }
+                                },
+                                onKillReminder = { id ->
+                                    scope.launch {
+                                        // Store first, then the alarm: an alarm that
+                                        // fires in between finds nothing unfired.
+                                        val removed = settingsRepository.killReminder(id)
+                                        val cancelled = removed && ReminderAlarms.cancel(this@LauncherActivity, id)
+                                        Log.i(REMINDER_TAG, "kill: reminder $id removed=$removed alarmCancelled=$cancelled")
+                                    }
+                                },
+                                // Remembered so the prompt can build its
+                                // dispatcher once rather than on every keystroke.
+                                actions = remember(pagerState) {
+                                    LauncherActions(
+                                        showLedger = {
+                                            scope.launch { pagerState.animateScrollToPage(PAGE_LEDGER) }
+                                        },
+                                        startIntent = ::startIfHandled,
+                                        canResolve = ::canResolve,
+                                        lockRemainingMs = { pkg ->
+                                            locks.remainingMs(pkg, settingsRepository.nowStamped())
+                                        },
+                                        anyLockArmed = {
+                                            locks.active(settingsRepository.nowStamped()).isNotEmpty()
+                                        },
+                                        targets = { tracked.toList() },
+                                        installedPackages = {
+                                            TargetScope.installedOrUnknown(installedApps.map { it.packageName })
+                                        },
+                                        resolveApp = { token ->
+                                            AppTokenResolver.resolve(
+                                                token = token,
+                                                candidates = installedApps.map {
+                                                    AppTokenResolver.Candidate(it.packageName, it.label)
+                                                },
+                                                preferred = tracked,
+                                            )
+                                        },
+                                        armLock = { packages, durationMs, reason ->
+                                            scope.launch {
+                                                settingsRepository.armLocks(packages, durationMs, reason)
+                                            }
+                                        },
+                                        minuteOfDay = {
+                                            val c = Calendar.getInstance()
+                                            c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
+                                        },
+                                        remind = remind@{ whenSpec, text, done ->
+                                            val now = settingsRepository.nowStamped()
+                                            val c = Calendar.getInstance()
+                                            val minute = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
+                                            val due = ReminderBook.dueAt(whenSpec, now, minute, ReminderAlarms::wallOn)
+                                            // A dated reminder in the past is refused
+                                            // before anything is written.
+                                            if (due == null) {
+                                                done(RemindOutcome.Past)
+                                                return@remind
+                                            }
+                                            scope.launch {
+                                                // The cap is the store's call, made in its own
+                                                // transaction, not a check on the list this
+                                                // screen last saw. Only what it took is armed,
+                                                // and the prompt reports the precision the
+                                                // alarm was actually set with.
+                                                when (val verdict = settingsRepository.addReminder(text, due)) {
+                                                    ReminderBook.Added.Full -> done(RemindOutcome.Full)
+                                                    is ReminderBook.Added.Ok -> {
+                                                        val added = verdict.reminder
+                                                        val armed = ReminderAlarms.schedule(
+                                                            this@LauncherActivity, added.id, added.due.wallMs,
+                                                        )
+                                                        done(RemindOutcome.Saved(dueWallMs = added.due.wallMs, armed = armed))
                                                     }
                                                 }
-                                            },
-                                            // Reads the collected State when called, not
-                                            // a value captured when this was remembered.
-                                            pendingReminders = { reminders },
-                                        )
+                                            }
+                                        },
+                                        // Reads the collected State when called, not
+                                        // a value captured when this was remembered.
+                                        pendingReminders = { reminders },
+                                    )
+                                },
+                                onDialer = {
+                                    startActivity(Intent(Intent.ACTION_DIAL))
+                                },
+                                messagingApps = ::messagingApps,
+                                onLaunchLadder = ::launchLadder,
+                                onOpenWellbeingSettings = ::openWellbeing,
+                            )
+
+                            AnimatedVisibility(
+                                visible = showDrawer,
+                                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                            ) {
+                                AppDrawerOverlay(
+                                    apps = badgedApps,
+                                    onLaunchPackage = { pkg ->
+                                        showDrawer = false
+                                        launchPackage(pkg)
                                     },
-                                    onDialer = {
-                                        startActivity(Intent(Intent.ACTION_DIAL))
-                                    },
-                                    messagingApps = ::messagingApps,
-                                    onLaunchLadder = ::launchLadder,
-                                    onOpenWellbeingSettings = ::openWellbeing,
+                                    onClose = { showDrawer = false },
                                 )
+                            }
 
-                                AnimatedVisibility(
-                                    visible = showDrawer,
-                                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                                ) {
-                                    AppDrawerOverlay(
-                                        apps = badgedApps,
-                                        onLaunchPackage = { pkg ->
-                                            showDrawer = false
-                                            launchPackage(pkg)
-                                        },
-                                        onClose = { showDrawer = false },
-                                    )
-                                }
-
-                                // Last, so it draws over the pager and the drawer.
-                                // A composable in this activity, not a service
-                                // overlay: it asks about the user's own command.
-                                lockConfirm?.let { request ->
-                                    LockConfirmPanel(
-                                        panel = request.panel,
-                                        onCommit = {
-                                            lockConfirm = null
-                                            request.commit()
-                                        },
-                                    )
-                                }
+                            // Last, so it draws over the pager and the drawer.
+                            // A composable in this activity, not a service
+                            // overlay: it asks about the user's own command.
+                            lockConfirm?.let { request ->
+                                LockConfirmPanel(
+                                    panel = request.panel,
+                                    onCommit = {
+                                        lockConfirm = null
+                                        request.commit()
+                                    },
+                                )
                             }
                         }
                     }
@@ -577,49 +490,7 @@ class LauncherActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (awayInSettings) {
-            awayInSettings = false
-            returnedFromSettings = true
-        }
-        refreshSetupGrants()
-    }
-
-    /**
-     * singleTask, so CFG SETUP's request arrives here rather than in onCreate
-     * whenever the launcher is already running, which is nearly always.
-     */
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_ONBOARDING, false)) requestOnboarding()
-    }
-
-    /** Show the flow again from the top of what is still open. */
-    private fun requestOnboarding() {
-        onboardingRequested = true
-        onboardingClosed = false
-        targetsSeen = false
-        limitsSeen = false
-    }
-
-    /**
-     * The facts that can be detected. Ready is HEALTHY and nothing looser:
-     * CONNECTING is bound but not yet accepting events, and STALE is a
-     * service whose heartbeat stopped. Enabled comes from the Settings
-     * string, because the diagnostics outlive an unbind. See Onboarding.
-     */
-    private fun refreshSetupGrants() {
-        val permissions = settingsRepository.permissionState()
-        setupGrants = setupGrants.copy(
-            serviceReady = ServiceDiagnostics.health() == ServiceHealth.HEALTHY,
-            accessibilityEnabled = permissions.accessibility,
-            usageAccess = permissions.usageAccess,
-        )
-    }
-
-    /** Open a Settings screen from the flow, and remember that we did. */
-    private fun openSetupSettings(intent: Intent) {
-        if (startIfHandled(intent)) awayInSettings = true
+        setup.onResume()
     }
 
     // ------------------------------------------------------------- actions
@@ -934,9 +805,6 @@ class LauncherActivity : ComponentActivity() {
          * question without a second build.
          */
         const val TAG_IMMERSIVE = "Molasses.Immersive"
-
-        /** How often the first-run flow re-reads a grant it is waiting on. */
-        const val SETUP_POLL_MS = 1_000L
     }
 }
 
