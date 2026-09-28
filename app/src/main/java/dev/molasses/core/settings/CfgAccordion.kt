@@ -99,6 +99,14 @@ object CfgAccordion {
     }
 
     /**
+     * Open [section] whatever it was, for a deep link such as the first-run
+     * flow's route to TARGETS. [toggle] would close it if it were already
+     * open. The pinned section is left as it was, as [toggle] leaves it.
+     */
+    fun open(state: State, section: Section): State =
+        if (section == PINNED) state.copy(setupOpen = true) else state.copy(open = section)
+
+    /**
      * The chevron for a header, as text.
      *
      * Text rather than an icon asset: the whole screen is a character grid,

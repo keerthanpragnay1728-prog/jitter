@@ -247,6 +247,11 @@ class SettingsRepository(
     /** True when a pending reminder [id] was removed. See [CycleStateStore.killReminder]. */
     suspend fun killReminder(id: Long): Boolean = store.killReminder(id)
 
+    /** Whether the first-run flow has been completed once. */
+    val onboardingComplete: Flow<Boolean> = store.onboardingComplete
+
+    suspend fun setOnboardingComplete() = store.setOnboardingComplete()
+
     /** The console's quick-launch rows, as stored. See [QuickLaunch]. */
     val quickLaunch: Flow<QuickLaunch.Selection> = store.quickLaunch
 

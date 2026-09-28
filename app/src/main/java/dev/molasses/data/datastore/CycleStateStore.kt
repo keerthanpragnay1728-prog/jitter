@@ -524,6 +524,13 @@ class CycleStateStore(context: Context) {
         }
     }
 
+    /** Whether the first-run flow has been completed once. See Onboarding. */
+    val onboardingComplete: Flow<Boolean> = store.data.map { it.onboardingComplete }
+
+    suspend fun setOnboardingComplete() {
+        store.updateData { it.toBuilder().setOnboardingComplete(true).build() }
+    }
+
     /** The quick-launch rows as stored. Resolve through [QuickLaunch]. */
     val quickLaunch: Flow<QuickLaunch.Selection> = store.data.map {
         QuickLaunch.Selection(stored = it.quickLaunchPackagesList.toList(), chosen = it.quickLaunchChosen)
