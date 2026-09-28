@@ -44,6 +44,12 @@ sealed interface DispatchResult {
          * Only the reminder acknowledgement sets it.
          */
         val readingWindow: Boolean = false,
+        /**
+         * Pending reminders to draw under the answer as rows that can be
+         * killed, in this order. Only the bare `$ rem` list sets it. The host
+         * draws them from its live list, so a killed or fired one drops out.
+         */
+        val reminderIds: List<Long> = emptyList(),
     ) : DispatchResult
 
     /** Bad input. The user can fix this by typing something else. */

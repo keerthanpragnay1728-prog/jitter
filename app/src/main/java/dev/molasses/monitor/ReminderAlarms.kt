@@ -127,6 +127,20 @@ object ReminderAlarms {
         return true
     }
 
+    /**
+     * Cancel [id]'s alarm. The PendingIntent is rebuilt with the same request
+     * code, action and target, which is what AlarmManager matches on.
+     * @return false when AlarmManager is unavailable or refused.
+     */
+    fun cancel(context: Context, id: Long): Boolean {
+        val am = context.getSystemService(AlarmManager::class.java) ?: return false
+        val intent = pendingIntent(context, id)
+        return runCatching {
+            am.cancel(intent)
+            intent.cancel()
+        }.onFailure { Log.w(TAG, "could not cancel reminder $id's alarm", it) }.isSuccess
+    }
+
     private fun pendingIntent(context: Context, id: Long): PendingIntent = PendingIntent.getBroadcast(
         context,
         // The request code keys the PendingIntent, so each reminder has its

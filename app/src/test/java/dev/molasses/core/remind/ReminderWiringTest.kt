@@ -177,7 +177,7 @@ class ReminderWiringTest {
         assertTrue(branch.contains("val all = actions.pendingReminders()") && branch.contains("ReminderBook.pending(all)"))
         assertTrue(branch.contains("DispatchResult.Answered(R.string.cmd_ans_rem_none)"))
         assertTrue(branch.contains("ackKey = R.string.cmd_ans_rem_list"))
-        assertTrue(branch.contains("R.string.cmd_ans_rem_row, lockOpensAtText(context, it.due.wallMs), it.text"))
+        assertTrue("rows, not text", branch.contains("reminderIds = pending.map { it.id }"))
         assertFalse("held, not a fading reaction", branch.contains("DispatchResult.Confirmed("))
         assertFalse("pending only", branch.contains("toShow("))
         val strings = repoFile("app/src/main/res/values/strings.xml").readText()
@@ -203,5 +203,40 @@ class ReminderWiringTest {
         assertTrue(branch.contains("rem list: read \${all.size} reminders"))
         val answered = launcher.substring(launcher.indexOf("is DispatchResult.Answered -> {")).substringBefore("is DispatchResult.Unavailable")
         assertTrue(answered.contains("answer shown:"))
+    }
+
+    // ------------------------------------------------------------ kill
+
+    private val launcherSrc by lazy { repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText() }
+
+    @Test
+    fun `the list is drawn as live rows, and a tap reveals kill`() {
+        val rows = launcherSrc.substring(launcherSrc.indexOf("if (spoken is BitDisplay.Answer && answerReminderIds.isNotEmpty()) {"))
+            .substringBefore("Spacer(Modifier.height(8.dp))")
+        assertTrue("from the live list", rows.contains("ReminderBook.pending(reminders).filter { it.id in answerReminderIds }"))
+        assertTrue(rows.contains("onTap = { killArmedId = if (killArmedId == pending.id) null else pending.id }"))
+        assertTrue(rows.contains("onKillReminder(pending.id)"))
+        val row = functionBody(launcherSrc, "private fun PendingReminderRow(")
+        val armed = row.indexOf("if (armed) {")
+        assertTrue("kill only once revealed", armed >= 0 && row.indexOf("R.string.console_reminder_kill") > armed)
+        assertTrue(row.contains(".clickable(onClick = onKill)"))
+    }
+
+    @Test
+    fun `a kill removes in one transaction, then cancels the alarm, and logs no text`() {
+        val store = repoFile("app/src/main/java/dev/molasses/data/datastore/CycleStateStore.kt").readText()
+        val kill = functionBody(store, "suspend fun killReminder(")
+        assertEquals(1, Regex("""store\.updateData""").findAll(kill).count())
+        assertTrue(kill.contains("ReminderBook.killed("))
+        val host = launcherSrc.substring(launcherSrc.indexOf("onKillReminder = { id ->")).substringBefore("// Remembered so")
+        val removed = host.indexOf("settingsRepository.killReminder(id)")
+        val cancel = host.indexOf("ReminderAlarms.cancel(this@LauncherActivity, id)")
+        assertTrue("store first, then the alarm", removed in 0 until cancel)
+        assertTrue("only a removed one is cancelled", host.contains("removed && ReminderAlarms.cancel("))
+        assertTrue(host.contains("kill: reminder \$id removed=\$removed alarmCancelled=\$cancelled"))
+        assertFalse("never the text", host.contains(".text"))
+        val alarms = repoFile("app/src/main/java/dev/molasses/monitor/ReminderAlarms.kt").readText()
+        val cancelBody = functionBody(alarms, "fun cancel(context: Context, id: Long)")
+        assertTrue(cancelBody.contains("am.cancel(intent)") && cancelBody.contains("pendingIntent(context, id)"))
     }
 }
