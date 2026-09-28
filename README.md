@@ -1071,17 +1071,15 @@ Every `uses-permission` in `AndroidManifest.xml`, and nothing else.
 - `ACTIVITY_RECOGNITION`: the step sensor for the movement gate. Without it the
   gate falls back to motion analysis.
 - `RECEIVE_BOOT_COMPLETED`: re-arms pending `$ rem` alarms after a reboot.
-- `POST_NOTIFICATIONS`: declared and asked for in CFG, but nothing in the code
-  posts a notification.
-- `HIGH_SAMPLING_RATE_SENSORS`: declared, but every sensor is registered at
-  `SENSOR_DELAY_GAME` or slower, which does not need it.
 - `VIBRATE`: `$ rem` vibrates once when the ringer is on vibrate.
 - `USE_EXACT_ALARM`: `$ rem` fires on time on Android 13 and later.
 - `SCHEDULE_EXACT_ALARM`: the same on Android 12 and 12L, capped at
   `maxSdkVersion="32"`.
 
 Not requested: `READ_PHONE_STATE` (the call check uses `AudioManager`),
-`QUERY_ALL_PACKAGES`, `SYSTEM_ALERT_WINDOW`, and `INTERNET`.
+`QUERY_ALL_PACKAGES`, `SYSTEM_ALERT_WINDOW`, `INTERNET`, `POST_NOTIFICATIONS`
+(nothing posts a notification, `$ rem` included) and
+`HIGH_SAMPLING_RATE_SENSORS` (no sensor is sampled fast enough to need it).
 
 **Thresholds that differ from the brief, and why**
 - `minHz` entry is **1.20** with a **1.05** exit, replacing the 1.15 guard band.

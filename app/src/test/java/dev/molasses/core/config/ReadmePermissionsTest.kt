@@ -47,7 +47,10 @@ class ReadmePermissionsTest {
     @Test
     fun `the section does not list permissions the app does not request`() {
         val listed = readmePermissions()
-        for (gone in listOf("READ_PHONE_STATE", "QUERY_ALL_PACKAGES", "SYSTEM_ALERT_WINDOW", "INTERNET")) {
+        for (gone in listOf(
+            "READ_PHONE_STATE", "QUERY_ALL_PACKAGES", "SYSTEM_ALERT_WINDOW", "INTERNET",
+            "POST_NOTIFICATIONS", "HIGH_SAMPLING_RATE_SENSORS",
+        )) {
             assertFalse("$gone is listed but not requested", gone in listed)
         }
     }
