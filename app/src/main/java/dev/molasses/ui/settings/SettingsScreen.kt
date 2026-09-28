@@ -87,6 +87,9 @@ fun SettingsScreen(
     onRequestActivityRecognition: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenDebug: () -> Unit,
+    onOpenOnboarding: () -> Unit,
+    openSection: CfgAccordion.Section?,
+    onSectionOpened: () -> Unit,
     vm: SettingsViewModel = hiltViewModel(),
 ) {
     LifecycleRefresh { vm.refresh() }
@@ -129,6 +132,15 @@ fun SettingsScreen(
      * a later persistence has to disagree with a test.
      */
     var accordion by remember { mutableStateOf(CfgAccordion.initial()) }
+
+    // A deep link, from the first-run flow's route to TARGETS. Applied once
+    // and handed back, so it is not re-applied over the user's own taps.
+    LaunchedEffect(openSection) {
+        openSection?.let {
+            accordion = CfgAccordion.open(accordion, it)
+            onSectionOpened()
+        }
+    }
 
     // The scrubber. One app open at a time: eight steps and a confirm button
     // per row, across eighty apps, is a wall.
@@ -301,6 +313,17 @@ fun SettingsScreen(
                     subtitle = R.string.settings_perm_notifications_body,
                     satisfied = permissions.notifications,
                     onClick = onRequestNotifications,
+                )
+            }
+            // Re-enters the launcher's first-run flow. Never marked done, so
+            // it stays tappable: ChecklistRow disables a satisfied row.
+            item(CfgRowKey.body(Section.SETUP, "onboarding")) {
+                ChecklistRow(
+                    index = 6,
+                    title = R.string.settings_onboarding_title,
+                    subtitle = R.string.settings_onboarding_body,
+                    satisfied = false,
+                    onClick = onOpenOnboarding,
                 )
             }
         }

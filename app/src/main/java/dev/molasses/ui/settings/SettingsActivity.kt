@@ -17,8 +17,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import dagger.hilt.android.AndroidEntryPoint
+import dev.molasses.core.settings.CfgAccordion
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.repo.SettingsRepository
+import dev.molasses.ui.launcher.EXTRA_ONBOARDING
+import dev.molasses.ui.launcher.LauncherActivity
 import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.MolassesTheme
 import javax.inject.Inject
@@ -48,9 +51,17 @@ class SettingsActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { /* the checklist re-reads real state on resume; nothing to do here */ }
 
+    /**
+     * A section a caller asked to see open, from [EXTRA_OPEN_SECTION]. Held
+     * here because this activity is singleTask, so a second request arrives
+     * through onNewIntent. Cleared once the screen has applied it.
+     */
+    private var openSection by mutableStateOf<CfgAccordion.Section?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (savedInstanceState == null) openSection = sectionFrom(intent)
 
         setContent {
             // Read here, not defaulted. This screen carries the font size
@@ -79,11 +90,31 @@ class SettingsActivity : ComponentActivity() {
                         onRequestActivityRecognition = { requestActivityRecognition() },
                         onRequestNotifications = { requestNotifications() },
                         onOpenDebug = { showDebug = true },
+                        onOpenOnboarding = { openOnboarding() },
+                        openSection = openSection,
+                        onSectionOpened = { openSection = null },
                     )
                 }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sectionFrom(intent)?.let { openSection = it }
+    }
+
+    private fun sectionFrom(intent: Intent): CfgAccordion.Section? =
+        intent.getStringExtra(EXTRA_OPEN_SECTION)?.let { name ->
+            CfgAccordion.Section.entries.firstOrNull { it.name == name }
+        }
+
+    /** The first-run flow lives on the launcher. Hand over and get out of its way. */
+    private fun openOnboarding() {
+        startActivity(Intent(this, LauncherActivity::class.java).putExtra(EXTRA_ONBOARDING, true))
+        finish()
     }
 
     private fun open(action: String) {
@@ -98,5 +129,10 @@ class SettingsActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions.launch(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS))
         }
+    }
+
+    companion object {
+        /** A [CfgAccordion.Section] name to open on arrival. */
+        const val EXTRA_OPEN_SECTION = "dev.molasses.extra.OPEN_SECTION"
     }
 }

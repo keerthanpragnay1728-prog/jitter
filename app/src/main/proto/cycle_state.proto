@@ -201,6 +201,12 @@ message CycleState {
   // The last id issued, so an id is never reused while an alarm that named
   // an earlier holder of it could still be pending.
   int64 reminder_last_id = 40;
+
+  // The first-run flow has been completed once. Proto3 defaults it to false,
+  // so every existing install reads as not yet onboarded and sees the flow
+  // once, which is harmless: its steps read as already satisfied. See
+  // core/setup/Onboarding.
+  bool onboarding_complete = 41;
 }
 
 // One $ rem. The due instant is stamped on all three clocks when it is set,

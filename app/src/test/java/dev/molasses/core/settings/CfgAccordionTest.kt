@@ -116,4 +116,14 @@ class CfgAccordionTest {
         assertEquals(CfgAccordion.CHEVRON_OPEN, CfgAccordion.chevron(open = true))
         assertEquals(CfgAccordion.CHEVRON_CLOSED, CfgAccordion.chevron(open = false))
     }
+
+    @Test
+    fun `open is idempotent where toggle is not, and leaves setup alone`() {
+        val opened = CfgAccordion.open(CfgAccordion.initial(), Section.TARGETS)
+        assertEquals(Section.TARGETS, opened.open)
+        assertEquals(opened, CfgAccordion.open(opened, Section.TARGETS))
+        assertTrue(opened.setupOpen)
+        val setupClosed = CfgAccordion.toggle(CfgAccordion.initial(), CfgAccordion.PINNED)
+        assertFalse(CfgAccordion.open(setupClosed, Section.TARGETS).setupOpen)
+    }
 }

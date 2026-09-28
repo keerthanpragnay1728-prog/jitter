@@ -644,6 +644,41 @@
     <string name="console_reminder_kill" translatable="false">[kill]</string>
     <string name="console_do_it">[DO IT]</string>
     <string name="console_nah">[NAH]</string>
+    <!--
+      First-run flow, on the launcher. See core/setup/Onboarding. Commands in
+      brackets and the step markers are not reworded.
+    -->
+    <string name="onboarding_title">SETUP</string>
+    <string name="onboarding_step_fmt">STEP %1$s OF %2$s</string>
+    <string name="onboarding_mark_done_fmt" translatable="false">[x] %1$s</string>
+    <string name="onboarding_mark_open_fmt" translatable="false">[ ] %1$s</string>
+    <string name="onboarding_a11y_name">ACCESSIBILITY</string>
+    <string name="onboarding_usage_name">USAGE ACCESS</string>
+    <string name="onboarding_targets_name">TARGETS</string>
+    <string name="onboarding_limits_name">KNOWN LIMITS</string>
+    <string name="onboarding_a11y_body">Jitter needs its accessibility service to see which app is in front and when you scroll. Nothing is gated without it.</string>
+    <string name="onboarding_a11y_sideload">On Android 13 and later, an app installed outside a store may show \"Restricted setting\" when you first try to enable it.</string>
+    <string name="onboarding_a11y_waiting">Enabled. Waiting for the service to start.</string>
+    <string name="onboarding_unlock_title">IF IT SAID RESTRICTED SETTING</string>
+    <string name="onboarding_unlock_1">1. Open App info below.</string>
+    <string name="onboarding_unlock_2">2. Tap the three-dot menu, top right.</string>
+    <string name="onboarding_unlock_3">3. Choose Allow restricted settings.</string>
+    <string name="onboarding_unlock_4">4. Come back here and enable accessibility again.</string>
+    <string name="onboarding_unlock_note">Android does not tell apps whether this is the block, so these steps show whenever the service is still off.</string>
+    <string name="onboarding_open_settings" translatable="false">[ OPEN SETTINGS ]</string>
+    <string name="onboarding_open_app_info" translatable="false">[ OPEN APP INFO ]</string>
+    <string name="onboarding_usage_body">Usage access lets Jitter rebuild your time if it is killed mid-session.</string>
+    <string name="onboarding_targets_body">These apps are tracked. The defaults are fine, and CFG can change them any time.</string>
+    <string name="onboarding_targets_none">Nothing is tracked, so nothing will be gated.</string>
+    <string name="onboarding_targets_edit" translatable="false">[ EDIT IN CFG ]</string>
+    <string name="onboarding_next" translatable="false">[ NEXT ]</string>
+    <string name="onboarding_limit_paytm">Paytm blocks payments while Jitter is enabled. Use Disable for payments in CFG, Safety.</string>
+    <string name="onboarding_limit_youtube">YouTube sends no scroll events. It is gated by the lease timer only.</string>
+    <string name="onboarding_limit_locks">A lock has no unlock. It runs until it ends.</string>
+    <string name="onboarding_done" translatable="false">[ DONE ]</string>
+    <string name="onboarding_later" translatable="false">[ LATER ]</string>
+    <string name="settings_onboarding_title">First-run guide</string>
+    <string name="settings_onboarding_body">Walk through setup and the known limits again.</string>
     <!-- App drawer -->
     <string name="drawer_title">ALL APPS</string>
     <string name="drawer_search_placeholder">filter...</string>
