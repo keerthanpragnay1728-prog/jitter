@@ -1,4 +1,4 @@
-package dev.molasses.ui.launcher
+package dev.molasses.ui.setup
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -31,33 +31,27 @@ import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.PhosphorDim
 import dev.molasses.ui.theme.PhosphorGreen
 
-/**
- * Set on an Intent to [LauncherActivity] to show the first-run flow again.
- * CFG SETUP sends it. See [Onboarding.shouldShow].
- */
-const val EXTRA_ONBOARDING = "dev.molasses.extra.ONBOARDING"
-
 /** A step's name on the progress list. Pure mapping, resolved at the call site. */
 @StringRes
 fun onboardingStepName(step: Step): Int = when (step) {
     Step.ACCESSIBILITY -> R.string.onboarding_a11y_name
     Step.USAGE_ACCESS -> R.string.onboarding_usage_name
+    Step.HOME -> R.string.onboarding_home_name
     Step.TARGETS -> R.string.onboarding_targets_name
     Step.LIMITS -> R.string.onboarding_limits_name
 }
 
 /**
- * The first-run flow. Stateless: [LauncherActivity] owns the facts, re-reads
- * them on resume and while a grant is outstanding, and decides when this is
- * shown. See [Onboarding] for what each step can and cannot detect.
+ * The first-run flow. Stateless: [SetupFlowGate] owns the facts and the
+ * session, and decides when this is shown. See [Onboarding] for what each
+ * step can and cannot detect.
  *
- * Opaque and it swallows taps on its background, like [LockConfirmPanel], so
- * nothing behind it is reachable. Back is handled at the activity root and
- * does what LATER does.
+ * Opaque and it swallows taps on its background, so nothing behind it is
+ * reachable. Back is handled by the gate and does what LATER does.
  *
  * The padding is the house constant, and it carries the inset fault CLAUDE.md
- * describes. Not fixed here: this screen is shown on the console, where the
- * status bar is hidden.
+ * describes. On the console the status bar is hidden; on CFG it is not, and
+ * 44dp clears it on the hardware this was built on and nothing more is known.
  */
 @Composable
 fun OnboardingScreen(
@@ -67,6 +61,9 @@ fun OnboardingScreen(
     onOpenAccessibility: () -> Unit,
     onOpenAppInfo: () -> Unit,
     onOpenUsageAccess: () -> Unit,
+    showHomeSettings: Boolean,
+    onOpenHome: () -> Unit,
+    onOpenHomeSettings: () -> Unit,
     onEditTargets: () -> Unit,
     onTargetsSeen: () -> Unit,
     onDone: () -> Unit,
@@ -140,6 +137,14 @@ fun OnboardingScreen(
                 Step.USAGE_ACCESS -> {
                     Line(stringResource(R.string.onboarding_usage_body), PhosphorGreen)
                     Command(R.string.onboarding_open_settings, onOpenUsageAccess)
+                }
+                Step.HOME -> {
+                    Line(stringResource(R.string.onboarding_home_body), PhosphorGreen)
+                    Command(R.string.onboarding_home_open, onOpenHome)
+                    if (showHomeSettings) {
+                        Line(stringResource(R.string.onboarding_home_fallback), PhosphorDim)
+                        Command(R.string.onboarding_home_settings, onOpenHomeSettings)
+                    }
                 }
                 Step.TARGETS -> {
                     Line(stringResource(R.string.onboarding_targets_body), PhosphorGreen)
