@@ -1,6 +1,7 @@
 package dev.molasses.ui.settings
 
 import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -28,6 +29,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -49,6 +51,7 @@ import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.command.CommandRegistry
+import dev.molasses.core.session.TargetScope
 import dev.molasses.core.settings.CfgAccordion
 import dev.molasses.core.settings.CfgAccordion.Section
 import dev.molasses.core.settings.CfgRowKey
@@ -186,10 +189,16 @@ fun SettingsScreen(
     // said otherwise" and "none tracked because I said so", and a collapsed
     // section that says neither makes the second one invisible. Resolved here
     // because the row builder below runs outside composition.
-    val targetsSuffix = if (trackingNothing) {
+    //
+    // Counted through TargetScope.gateable, like every other count or
+    // empty check on the tracked set: a stored package that is not installed
+    // has no row here and gates nothing, so it is not in the number.
+    val installedPkgs = remember(installed) { TargetScope.installedOrUnknown(installed.map { it.pkg }) }
+    val gateableCount = TargetScope.gateable(targets, installedPkgs).size
+    val targetsSuffix = if (trackingNothing || gateableCount == 0) {
         stringResource(R.string.settings_targets_none)
     } else {
-        targets.size.toString()
+        gateableCount.toString()
     }
 
     // The running order: every row in CFG, whichever section it belongs to,
@@ -717,14 +726,23 @@ fun SettingsScreen(
 
         // Last, so it covers the list and the rail.
         coolingOff?.let { state ->
+            val lastTarget = TargetScope.isLastGateable(state.pkg, targets, installedPkgs)
+            // Once per panel, and again only if the verdict changes, so the
+            // log shows what the panel was drawn from.
+            LaunchedEffect(state, lastTarget) {
+                Log.i(
+                    TARGETS_TAG,
+                    "untrack panel for ${state.pkg}: tracked=$targets " +
+                        "installedLoaded=${installedPkgs != null} " +
+                        "installedTracked=${TargetScope.gateable(targets, installedPkgs).size} " +
+                        "isLast=$lastTarget",
+                )
+            }
             UntrackCoolingOffPanel(
                 state = state,
                 // From the live sets, so it stays true to the store if they
-                // change while the countdown runs. Installed only: the stored
-                // set keeps packages CFG draws no row for. See isLastTarget.
-                lastTarget = UntrackCoolingOff.isLastTarget(state.pkg, targets) { pkg ->
-                    installed.any { it.pkg == pkg }
-                },
+                // change while the countdown runs. See TargetScope.gateable.
+                lastTarget = lastTarget,
                 onConfirmRemove = {
                     coolingOff = null
                     vm.untrackTarget(state.pkg)
@@ -1360,6 +1378,9 @@ private fun QuickLaunchEditor(
 
 /** One screen of search matches. More than this is a list to scroll, not a search. */
 private const val QUICK_LAUNCH_MATCHES = 12
+
+/** `adb logcat -s Molasses.Targets`: every count and last check on the tracked set. */
+private const val TARGETS_TAG = "Molasses.Targets"
 
 /**
  * The bracketed lowercase label a built-in row has on the console, reused

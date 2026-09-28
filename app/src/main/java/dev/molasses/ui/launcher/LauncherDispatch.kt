@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.provider.AlarmClock
 import android.provider.Settings
+import android.util.Log
 import androidx.annotation.StringRes
 import dev.molasses.R
 import dev.molasses.core.command.Availability
@@ -27,6 +28,7 @@ import dev.molasses.core.lock.LockRequest
 import dev.molasses.core.remind.Reminder
 import dev.molasses.core.remind.ReminderArming
 import dev.molasses.core.remind.ReminderBook
+import dev.molasses.core.session.TargetScope
 import dev.molasses.core.util.Calc
 import dev.molasses.core.util.Convert
 import dev.molasses.core.util.DateMath
@@ -107,6 +109,11 @@ class LauncherActions(
      * tracked set".
      */
     val targets: () -> List<String>,
+    /**
+     * The installed packages, or null before they are known. Counts and
+     * empty checks on [targets] go through `TargetScope.gateable` with this.
+     */
+    val installedPackages: () -> Set<String>?,
     /** An app token to a package. See [AppTokenResolver]. */
     val resolveApp: (String) -> AppTokenResolver.Result,
     /**
@@ -392,23 +399,31 @@ private fun execute(
             )
     }
 
+    // Counted and empty-checked through TargetScope.gateable, like CFG's
+    // TARGETS header: a stored package that is not installed gates nothing
+    // and is not in the number. The lock still covers the whole tracked set,
+    // so reinstalling an app mid-focus is not a way out.
     is Command.Focus -> {
         val targets = actions.targets()
-        if (targets.isEmpty()) {
+        val gateable = TargetScope.gateable(targets, actions.installedPackages())
+        Log.i(TARGETS_TAG, "focus: tracked=${targets.size} gateable=${gateable.size}")
+        if (gateable.isEmpty()) {
             DispatchResult.Failed(R.string.cmd_err_no_targets)
         } else {
             actions.armLock(targets, command.durationMs, LockReason.FOCUS)
             DispatchResult.Confirmed(
                 R.string.cmd_ack_focus,
-                listOf(CommandRender.duration(command.durationMs), targets.size.toString()),
+                listOf(CommandRender.duration(command.durationMs), gateable.size.toString()),
             )
         }
     }
 
     Command.Bedtime -> {
         val targets = actions.targets()
+        val gateable = TargetScope.gateable(targets, actions.installedPackages())
+        Log.i(TARGETS_TAG, "bedtime: tracked=${targets.size} gateable=${gateable.size}")
         val durationMs = BedtimeWindow.durationMs(actions.minuteOfDay())
-        if (targets.isEmpty()) {
+        if (gateable.isEmpty()) {
             DispatchResult.Failed(R.string.cmd_err_no_targets)
         } else {
             actions.armLock(targets, durationMs, LockReason.BEDTIME)
@@ -708,3 +723,6 @@ fun DispatchResult.message(context: Context): String = when (this) {
 }
 
 private fun formatArgs(args: List<String>): Array<Any> = (args + "").toTypedArray()
+
+/** `adb logcat -s Molasses.Targets`. Shared with CFG. */
+private const val TARGETS_TAG = "Molasses.Targets"

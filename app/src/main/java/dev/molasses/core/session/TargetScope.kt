@@ -96,4 +96,37 @@ object TargetScope {
      */
     fun trackingNothing(selection: Selection): Boolean =
         selection.chosen && selection.stored.none { it.trim().isNotEmpty() }
+
+    /**
+     * The tracked packages that can be gated now: tracked and installed.
+     * Every count, empty check and last check on the tracked set reads this,
+     * and nothing else does its own filtering.
+     *
+     * ## Why installed, and why it is not [resolve]
+     * [resolve] answers what is stored, and the stored list keeps packages
+     * that are not installed: a default such as `com.twitter.android` on a
+     * device without it, or an app removed after it was tracked. CFG draws a
+     * row only for an installed app and a package that is not installed
+     * cannot be opened, so it gates nothing. A count or a "last" check that
+     * includes it disagrees with the screen. The service still matches
+     * against the full resolved set, so a reinstalled app is gated at once.
+     *
+     * @param installed the installed packages, or null while that list has
+     *   not loaded. Null counts every tracked package, so a screen opening
+     *   before the load reports the stored set rather than NONE.
+     */
+    fun gateable(tracked: Collection<String>, installed: Set<String>?): List<String> =
+        tracked.distinct().filter { installed == null || it in installed }
+
+    /**
+     * Whether [pkg] is the last gateable target, so removing it leaves
+     * nothing gated. [pkg] itself counts whatever [installed] says of it: it
+     * is the row the user just tapped.
+     */
+    fun isLastGateable(pkg: String, tracked: Collection<String>, installed: Set<String>?): Boolean =
+        pkg in tracked && gateable(tracked, installed).all { it == pkg }
+
+    /** [installed] as the argument [gateable] takes: an empty list is one that has not loaded. */
+    fun installedOrUnknown(installed: Collection<String>): Set<String>? =
+        installed.toSet().takeIf { it.isNotEmpty() }
 }

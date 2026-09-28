@@ -352,6 +352,9 @@ class LauncherActivity : ComponentActivity() {
                                         locks.active(settingsRepository.nowStamped()).isNotEmpty()
                                     },
                                     targets = { tracked.toList() },
+                                    installedPackages = {
+                                        TargetScope.installedOrUnknown(installedApps.map { it.packageName })
+                                    },
                                     resolveApp = { token ->
                                         AppTokenResolver.resolve(
                                             token = token,

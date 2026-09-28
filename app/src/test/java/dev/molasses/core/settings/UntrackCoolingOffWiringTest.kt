@@ -41,13 +41,30 @@ class UntrackCoolingOffWiringTest {
     }
 
     @Test
-    fun `the last target is judged against installed apps, from the live sets`() {
-        assertTrue(screen.contains("lastTarget = UntrackCoolingOff.isLastTarget(state.pkg, targets) { pkg ->"))
-        val call = screen.substring(screen.indexOf("lastTarget = UntrackCoolingOff.isLastTarget("))
-            .substringBefore("onConfirmRemove")
-        assertTrue(call.contains("installed.any { it.pkg == pkg }"))
+    fun `the last target is judged by the shared gateable function, from the live sets, and logged`() {
+        val panelSite = screen.substring(screen.indexOf("coolingOff?.let { state ->"))
+        assertTrue(panelSite.contains("val lastTarget = TargetScope.isLastGateable(state.pkg, targets, installedPkgs)"))
+        assertTrue(panelSite.contains("lastTarget = lastTarget,"))
+        val log = panelSite.substring(panelSite.indexOf("LaunchedEffect(state, lastTarget)"))
+        assertTrue(log.contains("installedTracked=") && log.contains("isLast=\$lastTarget") && log.contains("tracked=\$targets"))
+        assertTrue(screen.contains("val installedPkgs = remember(installed) { TargetScope.installedOrUnknown(installed.map { it.pkg }) }"))
         assertTrue(screen.contains("val installed by vm.installed.collectAsStateWithLifecycle()"))
         assertTrue(screen.contains("val targets by vm.targets.collectAsStateWithLifecycle()"))
+    }
+
+    @Test
+    fun `every count or empty check on the tracked set goes through TargetScope gateable`() {
+        assertTrue(screen.contains("val gateableCount = TargetScope.gateable(targets, installedPkgs).size"))
+        assertTrue(screen.contains("gateableCount.toString()"))
+        assertFalse("the header no longer counts the raw set", screen.contains("targets.size.toString()"))
+        val dispatch = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherDispatch.kt").readText()
+        for (verb in listOf("is Command.Focus -> {", "Command.Bedtime -> {")) {
+            val branch = dispatch.substring(dispatch.indexOf(verb)).substringBefore("Command.Reboot")
+            assertTrue(verb, branch.contains("TargetScope.gateable(targets, actions.installedPackages())"))
+            assertTrue(verb, branch.contains("if (gateable.isEmpty()) {"))
+            assertFalse(verb, branch.contains("if (targets.isEmpty())"))
+        }
+        assertTrue(dispatch.contains("listOf(CommandRender.duration(command.durationMs), gateable.size.toString())"))
     }
 
     @Test
