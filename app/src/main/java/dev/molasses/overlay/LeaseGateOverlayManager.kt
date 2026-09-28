@@ -226,7 +226,7 @@ class LeaseGateOverlayManager(
             "lease gate for $pkg",
             // LEASE EXPIRED only. At entry neither focus nor the key: the
             // audio is usually the user's own. See OverlayAudio.
-            silence = OverlayAudio.silences(OverlayAudio.leaseGate(expired)),
+            overlay = OverlayAudio.leaseGate(expired),
         )
 
         onWindowsChanged()
