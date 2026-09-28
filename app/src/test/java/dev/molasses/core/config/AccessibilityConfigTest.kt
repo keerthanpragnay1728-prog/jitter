@@ -205,8 +205,6 @@ class AccessibilityConfigTest {
                 "android.permission.PACKAGE_USAGE_STATS",
                 "android.permission.ACTIVITY_RECOGNITION",
                 "android.permission.RECEIVE_BOOT_COMPLETED",
-                "android.permission.POST_NOTIFICATIONS",
-                "android.permission.HIGH_SAMPLING_RATE_SENSORS",
                 "android.permission.VIBRATE",
                 "android.permission.USE_EXACT_ALARM",
                 "android.permission.SCHEDULE_EXACT_ALARM",

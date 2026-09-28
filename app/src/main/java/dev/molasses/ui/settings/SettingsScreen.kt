@@ -86,7 +86,6 @@ fun SettingsScreen(
     onOpenAccessibility: () -> Unit,
     onOpenUsageAccess: () -> Unit,
     onRequestActivityRecognition: () -> Unit,
-    onRequestNotifications: () -> Unit,
     onOpenDebug: () -> Unit,
     onOpenOnboarding: () -> Unit,
     openSection: CfgAccordion.Section?,
@@ -309,20 +308,11 @@ fun SettingsScreen(
                     onClick = onRequestActivityRecognition,
                 )
             }
-            item(CfgRowKey.body(Section.SETUP, "perm-notifications")) {
-                ChecklistRow(
-                    index = 5,
-                    title = R.string.settings_perm_notifications_title,
-                    subtitle = R.string.settings_perm_notifications_body,
-                    satisfied = permissions.notifications,
-                    onClick = onRequestNotifications,
-                )
-            }
             // Re-opens the first-run flow on this screen. Never marked done, so
             // it stays tappable: ChecklistRow disables a satisfied row.
             item(CfgRowKey.body(Section.SETUP, "onboarding")) {
                 ChecklistRow(
-                    index = 6,
+                    index = 5,
                     title = R.string.settings_onboarding_title,
                     subtitle = R.string.settings_onboarding_body,
                     satisfied = false,

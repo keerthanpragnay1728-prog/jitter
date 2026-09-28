@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Process
 import android.os.SystemClock
 import android.provider.Settings
@@ -102,12 +101,9 @@ data class PermissionState(
     val accessibility: Boolean,
     val usageAccess: Boolean,
     val activityRecognition: Boolean,
-    val notifications: Boolean,
 ) {
-    /** The gate and the stall both work without notifications or overlay. */
+    /** The gate and the stall both work without the step sensor. */
     val essentialsGranted: Boolean get() = accessibility && usageAccess
-    val allGranted: Boolean
-        get() = accessibility && usageAccess && activityRecognition && notifications
 }
 
 class SettingsRepository(
@@ -327,14 +323,6 @@ class SettingsRepository(
             appContext,
             android.Manifest.permission.ACTIVITY_RECOGNITION,
         ) == PackageManager.PERMISSION_GRANTED,
-        notifications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(
-                appContext,
-                android.Manifest.permission.POST_NOTIFICATIONS,
-            ) == PackageManager.PERMISSION_GRANTED
-        } else {
-            true
-        },
     )
 
     /**
