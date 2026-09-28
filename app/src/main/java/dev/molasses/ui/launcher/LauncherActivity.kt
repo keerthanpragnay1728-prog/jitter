@@ -118,6 +118,7 @@ import dev.molasses.core.bit.BitHud
 import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.BitTap
+import dev.molasses.core.command.CommandRegistry
 import dev.molasses.core.command.ReadingWindow
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.launch.QuickLaunch
@@ -1319,8 +1320,17 @@ fun TerminalHomeView(
         val text = query.trim()
         if (text.isEmpty()) return DispatchResult.NotACommand
 
-        return when (val parsed = CommandParser.parse(text)) {
+        val parsed = CommandParser.parse(text)
+        if (parsed !is ParseResult.Ok) Log.i(CONSOLE_TAG, "submit: not parsed as a command")
+        return when (parsed) {
             is ParseResult.Ok -> {
+                // The verb and whether it was the bare-rem list, never the
+                // text: a reminder's text is the user's.
+                Log.i(
+                    CONSOLE_TAG,
+                    "submit: parsed verb=${CommandRegistry.verbOf(parsed.command)}" +
+                        if (parsed.command == Command.RemList) " (pending list)" else "",
+                )
                 // What the user typed, not the canonical form. It comes back
                 // out of history the way they wrote it.
                 onRecordCommand(text)

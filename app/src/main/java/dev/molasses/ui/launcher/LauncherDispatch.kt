@@ -499,7 +499,9 @@ private fun execute(
     // A bare rem. Held like the set acknowledgement, and pending only: a
     // fired reminder is already on the console until dismissed.
     Command.RemList -> {
-        val pending = ReminderBook.pending(actions.pendingReminders())
+        val all = actions.pendingReminders()
+        val pending = ReminderBook.pending(all)
+        Log.i(REMINDER_TAG, "rem list: read ${all.size} reminders, ${all.count { !it.fired }} unfired, showing ${pending.size}")
         if (pending.isEmpty()) {
             DispatchResult.Answered(R.string.cmd_ans_rem_none)
         } else {
@@ -729,3 +731,6 @@ private fun formatArgs(args: List<String>): Array<Any> = (args + "").toTypedArra
 
 /** `adb logcat -s Molasses.Targets`. Shared with CFG. */
 private const val TARGETS_TAG = "Molasses.Targets"
+
+/** `adb logcat -s Molasses.Reminder`. Shared with the scheduler and the chime. */
+private const val REMINDER_TAG = "Molasses.Reminder"
