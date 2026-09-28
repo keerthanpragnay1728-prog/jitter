@@ -9,20 +9,44 @@ The package id is `dev.molasses` and the class names still say Molasses. That
 was the working name and renaming the package would orphan every existing
 install for no user-visible gain, so it stays.
 
-| Cumulative foreground time | Behaviour |
-|---|---|
-| 0-5 min | Normal |
-| **at 5 min** | Full-screen movement gate (physical movement required) |
-| 5-10 min | Phantom Stall: 1000 ms touch blackout on every scroll |
-| **at 10 min** | Movement gate |
-| 10-15 min | Phantom Stall: 3000 ms |
-| **at 15 min** | Movement gate |
-| 15-20 min | Phantom Stall: 5000 ms |
-| **at 20 min** | Terminal tier. 5000 ms stall, gate re-arms every 5 min indefinitely |
+Two systems do this, and they share no state.
 
-**The invariant:** clearing a movement gate unlocks the *next* tier of usage.
-It never resets accumulated time, never lowers the stall duration, and never
-rewinds `tierIndex`. Gates are a toll, not a refund.
+**Scroll friction** is measured on each app's accumulated foreground time
+inside the cycle. Every tracked app has a horizon, the length of session it is
+for:
+
+- The horizon defaults to 25 min and can be set from 10 to 60 min per app
+  (`FrictionCurve.DEFAULT_HORIZON_MS`, `MIN_HORIZON_MS`, `MAX_HORIZON_MS`).
+- Friction starts at 40% of the horizon (`ONSET_FRACTION`). Before that,
+  scrolling is untouched.
+- From there to the horizon, both the stall length and the chance that a given
+  scroll stalls rise along one fixed shape to a ceiling, and stay at the
+  ceiling past the horizon. No stall shorter than 450 ms is commanded
+  (`DEFAULT_FLOOR_MS`), a floor set from latency measured on one device.
+- The ceiling tapers for horizons above the default, linearly from 25 to
+  60 min, and the whole curve is scaled with it so it never steps down.
+
+| Horizon | Friction starts | Ceiling stall | Ceiling probability |
+|---|---|---|---|
+| 10 min (minimum) | 4 min | 5000 ms | 100% |
+| 25 min (default) | 10 min | 5000 ms | 100% |
+| 60 min (maximum) | 24 min | 3000 ms | 70% |
+
+The curve reads accumulated time plus a penalty that accrues while you stay
+past a lease you took, and the penalty never decreases.
+
+**The lease gate** decides whether you may be in the app at all. Opening a
+tracked app shows a countdown, then a choice of 5, 10 or 15 minutes
+(`LeaseLadder.OFFERED_MS`). A lease runs on real elapsed time
+(`elapsedRealtime`), not on foreground time, and it is checked at its deadline
+whether or not you are scrolling. Changing the
+system clock does not move it, and a reboot ends every lease. The countdown
+is 8 s the first time and 4 s longer for each lease taken this cycle, up to
+30 s (`GateCountdown`).
+
+**The invariant:** a lease buys time in the app and nothing else. It never
+resets accumulated time, never lowers the stall duration, and never rewinds
+`tierIndex`. Gates are a toll, not a refund.
 
 ---
 
@@ -1198,9 +1222,11 @@ screen. `canRetrieveWindowContent` is `false` in the service config, so the
 text, images, messages and accounts in those apps are not visible to it. It has
 no network permission and sends nothing anywhere.
 
-**It will make your phone ignore your finger.** After five minutes in a target
-app, every scroll causes a blackout (one second at first, up to five later)
-during which touches in that app do nothing. It looks and feels like the phone
+**It will make your phone ignore your finger.** Once you are 40% of the way
+into an app's horizon (ten minutes at the default of twenty five), a scroll
+can cause a blackout during which touches in that app do nothing. Blackouts
+get longer and more likely the further in you are, up to five seconds on
+every scroll at the default horizon. It looks and feels like the phone
 has frozen. That is the intended effect.
 
 **So you can always tell it is us.** While a blackout is active, a thin grey bar
