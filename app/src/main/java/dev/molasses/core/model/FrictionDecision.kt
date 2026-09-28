@@ -32,6 +32,14 @@ data class FrictionDecision(
      * minute forty.
      */
     val terminal: Boolean = false,
+    /**
+     * What the curve commanded before the probability roll: the stall it
+     * would arm, and the chance it arms at all. For the log only, so a scroll
+     * that did not stall can say whether the curve had nothing to give or
+     * the roll missed. [stallMs] is still the only thing that arms.
+     */
+    val curveStallMs: Int = 0,
+    val probability: Float = 0f,
 ) {
     val stalls: Boolean get() = stallMs > 0
 
