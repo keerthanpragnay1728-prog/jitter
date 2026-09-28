@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
+import dev.molasses.core.safety.OverlayAudio
 
 /**
  * Silence whatever is playing while one of our full-screen windows is up,
@@ -88,15 +89,23 @@ import android.view.KeyEvent
  * stays paused.
  *
  * ## On a device
- * `adb logcat -s Molasses.AudioFocus`. A window at entry logs "audio focus
- * not taken and media pause not sent for ..." and nothing else. Any other
- * window that goes up logs "audio focus taken for ..." or "audio focus
- * refused for ... (result=N)", then "media pause dispatched for ...". Each
- * that held focus logs "audio focus released for ..." as it comes down. Audio
- * that stops at entry after this change is not ours: no line at all is
- * logged for it. Audio still playing after "taken" and
- * "media pause dispatched" is a player ignoring both focus and its media
- * session, which is the case only muting reaches.
+ * `adb logcat -s Molasses.AudioFocus`. Every window that goes up logs one
+ * line: "<reason>: overlay=<kind> silence=<true|false> focus=<granted
+ * (result=1) | refused (result=N) | already held | not requested>
+ * pause=<dispatched | threw | not sent | not re-sent>". Each that held focus
+ * logs "audio focus released for ..." as it comes down.
+ *
+ * ## What neither half can force
+ * An overlay does not pause the Activity under it, so the target app keeps
+ * running and decides for itself what focus and the key mean. The pause key
+ * goes to whichever app holds the media-button session, and a feed player
+ * that never registers one does not receive it. A transient focus loss is a
+ * request the player may ignore. Android 12 added a forced fade-out of a
+ * player that keeps going after losing focus, but as documented it applies
+ * only when the new request is a full `AUDIOFOCUS_GAIN` from a media or game
+ * usage. This request is `AUDIOFOCUS_GAIN_TRANSIENT` with a sonification
+ * usage, so it does not qualify. Changing that is proposed, not built.
+ */
  */
 class AudioFocusHold(context: Context) {
 
@@ -114,21 +123,29 @@ class AudioFocusHold(context: Context) {
     private var held: AudioFocusRequest? = null
 
     /**
-     * Take focus. Idempotent: a second call while held does nothing.
+     * Take focus and send the pause key for [overlay], or neither, as
+     * `OverlayAudio.silences` decides. Idempotent: a second call while held
+     * does nothing, and says so.
      *
-     * @param silence take focus and send the media pause key, both or
-     *   neither. No default: every caller names its overlay kind through
-     *   `OverlayAudio.silences`.
+     * Every call logs one line with the overlay kind, whether it silences,
+     * the focus result, and whether the key was sent. That line is what tells
+     * a misclassified overlay (silence=false on an expired gate) apart from a
+     * player that ignores both (focus=granted, pause=dispatched, still
+     * playing).
      */
-    fun take(reason: String, silence: Boolean) {
+    fun take(reason: String, overlay: OverlayAudio.Overlay) {
         val am = audio ?: return
+        val silence = OverlayAudio.silences(overlay)
         if (!silence) {
             // At entry. Audio from the target app playing behind the window
             // is not silenced; see OverlayAudio for why that is accepted.
-            Log.i(TAG, "audio focus not taken and media pause not sent for $reason")
+            Log.i(TAG, "$reason: overlay=$overlay silence=false focus=not requested pause=not sent")
             return
         }
-        if (held != null) return
+        if (held != null) {
+            Log.i(TAG, "$reason: overlay=$overlay silence=true focus=already held pause=not re-sent")
+            return
+        }
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -138,38 +155,36 @@ class AudioFocusHold(context: Context) {
             )
             .build()
         val result = runCatching { am.requestAudioFocus(request) }.getOrNull()
-        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+        val focus = if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             held = request
-            // Logged on the success path too, not only on refusal.
-            //
-            // A window that goes up and comes down faster than a person can
-            // see leaves no trace anywhere else: nothing in this path writes
-            // to the ledger, and a clean-looking run is then indistinguishable
-            // from one that happened and recovered. These two lines are the
-            // only thing that would tell those apart in logcat.
-            Log.i(TAG, "audio focus taken for $reason")
+            "granted (result=$result)"
         } else {
             // Not a failure of the window. See the class doc.
-            Log.w(TAG, "audio focus refused for $reason (result=$result)")
+            "refused (result=$result)"
         }
         // Whatever focus answered. A refusal usually means something else
         // holds focus and may still be playing, which is exactly when the
         // pause is needed.
-        pausePlayback(am, reason)
+        val pause = pausePlayback(am, reason)
+        Log.i(TAG, "$reason: overlay=$overlay silence=true focus=$focus pause=$pause")
     }
 
     /**
      * Pause whatever has the active media session. PAUSE and not the toggle,
      * and never paired with a play later. See the class doc.
      */
-    private fun pausePlayback(am: AudioManager, reason: String) {
+    private fun pausePlayback(am: AudioManager, reason: String): String {
         val now = SystemClock.uptimeMillis()
-        runCatching {
+        return runCatching {
             am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE, 0))
             am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE, 0))
-        }
-            .onSuccess { Log.i(TAG, "media pause dispatched for $reason") }
-            .onFailure { Log.w(TAG, "media pause dispatch threw for $reason", it) }
+        }.fold(
+            onSuccess = { "dispatched" },
+            onFailure = {
+                Log.w(TAG, "media pause dispatch threw for $reason", it)
+                "threw"
+            },
+        )
     }
 
     /** Give it back. Idempotent, and safe when it was never taken. */

@@ -163,7 +163,7 @@ class LockOverlayManager(
         // out, over an app they are not allowed to use at all, so a locked app
         // playing audio behind a full-screen refusal is the same defect with
         // no upper bound on it.
-        focus.take("lock overlay for $pkg", silence = OverlayAudio.silences(OverlayAudio.lock(atEntry)))
+        focus.take("lock overlay for $pkg", overlay = OverlayAudio.lock(atEntry))
 
         onWindowsChanged()
         ledger.log(pkg, EventType.LOCK_ENFORCED, "remaining=${remainingText} reason=${reason.name}")

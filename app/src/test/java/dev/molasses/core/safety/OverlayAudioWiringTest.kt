@@ -18,9 +18,11 @@ class OverlayAudioWiringTest {
 
     @Test
     fun `each overlay decides through OverlayAudio`() {
-        assertTrue(src("LeaseGateOverlayManager").contains("silence = OverlayAudio.silences(OverlayAudio.leaseGate(expired))"))
-        assertTrue(src("GateOverlayManager").contains("silence = OverlayAudio.silences(OverlayAudio.Overlay.WALK_GATE)"))
-        assertTrue(src("LockOverlayManager").contains("silence = OverlayAudio.silences(OverlayAudio.lock(atEntry))"))
+        assertTrue(src("LeaseGateOverlayManager").contains("overlay = OverlayAudio.leaseGate(expired),"))
+        assertTrue(src("GateOverlayManager").contains("overlay = OverlayAudio.Overlay.WALK_GATE"))
+        assertTrue(src("LockOverlayManager").contains("overlay = OverlayAudio.lock(atEntry)"))
+        // The kind is decided once, in AudioFocusHold, from the kind.
+        assertTrue(functionBody(src("AudioFocusHold"), "fun take(").contains("val silence = OverlayAudio.silences(overlay)"))
     }
 
     @Test
@@ -31,8 +33,26 @@ class OverlayAudioWiringTest {
         val request = take.indexOf("am.requestAudioFocus(request)")
         val pause = take.indexOf("pausePlayback(am, reason)")
         assertTrue(gate >= 0 && early > gate && request > early && pause > request)
-        assertTrue(take.contains("audio focus not taken and media pause not sent for"))
         assertFalse("no second decision for the key alone", take.contains("sendPause"))
+    }
+
+    @Test
+    fun `every take logs the kind, the classification, the focus result and the key`() {
+        val take = functionBody(src("AudioFocusHold"), "fun take(")
+        assertTrue(take.contains("overlay=\$overlay silence=false focus=not requested pause=not sent"))
+        assertTrue(take.contains("overlay=\$overlay silence=true focus=already held pause=not re-sent"))
+        assertTrue(take.contains("overlay=\$overlay silence=true focus=\$focus pause=\$pause"))
+        assertTrue(take.contains("\"granted (result=\$result)\"") && take.contains("\"refused (result=\$result)\""))
+    }
+
+    @Test
+    fun `the expired gate is classified from the same flag that titles it`() {
+        // The screen reads LEASE EXPIRED from `expired`, and the audio kind
+        // comes from the same parameter in the same function. A gate that
+        // says LEASE EXPIRED cannot be classified as the entry gate.
+        val show = functionBody(src("LeaseGateOverlayManager"), "fun show(")
+        assertTrue(show.contains("expired = expired,"))
+        assertTrue(show.contains("overlay = OverlayAudio.leaseGate(expired),"))
     }
 
     @Test

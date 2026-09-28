@@ -128,7 +128,7 @@ class GateOverlayManager(
         // window that never appeared must not hold the device's audio. This
         // gate is full screen and runs for up to ninety seconds, and it never
         // took focus at all, so whatever was playing played on under it.
-        focus.take("walk gate for $pkg", silence = OverlayAudio.silences(OverlayAudio.Overlay.WALK_GATE))
+        focus.take("walk gate for $pkg", overlay = OverlayAudio.Overlay.WALK_GATE)
 
         // first() rather than collect{}: it completes the collection before
         // the handler runs, so teardown is not executing inside the very
