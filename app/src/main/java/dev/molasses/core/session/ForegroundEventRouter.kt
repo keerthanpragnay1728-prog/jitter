@@ -73,6 +73,7 @@ class ForegroundEventRouter(
                 WindowEvent.Kind.VIEW_SCROLLED -> EventRoute.Scroll(event.packageName)
                 WindowEvent.Kind.WINDOW_STATE_CHANGED -> EventRoute.EnterTarget(event.packageName)
                 WindowEvent.Kind.WINDOWS_CHANGED -> EventRoute.ProbeForeground
+                WindowEvent.Kind.CONTENT_CHANGED -> EventRoute.ContentChanged(event.packageName)
             }
         }
 

@@ -18,7 +18,8 @@ data class WindowEvent(
     val windowId: Int,
     val kind: Kind,
 ) {
-    enum class Kind { WINDOW_STATE_CHANGED, WINDOWS_CHANGED, VIEW_SCROLLED }
+    /** CONTENT_CHANGED feeds only the scroll proxy. See [ScrollProxy]. */
+    enum class Kind { WINDOW_STATE_CHANGED, WINDOWS_CHANGED, VIEW_SCROLLED, CONTENT_CHANGED }
 }
 
 /**
@@ -72,6 +73,9 @@ sealed interface EventRoute {
     data object ExitToHome : EventRoute
 
     data class Scroll(val pkg: String) : EventRoute
+
+    /** A content change in a target: a candidate for the scroll proxy, nothing more. See [ScrollProxy]. */
+    data class ContentChanged(val pkg: String) : EventRoute
 
     /**
      * A hint that the window stack moved without saying who owns it. Ask
