@@ -118,6 +118,7 @@ import dev.molasses.core.bit.BitHud
 import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.BitTap
+import dev.molasses.core.command.AnswerTimer
 import dev.molasses.core.command.CommandRegistry
 import dev.molasses.core.command.DeferredWait
 import dev.molasses.core.command.ReadingWindow
@@ -1114,12 +1115,12 @@ fun TerminalHomeView(
     // rather than the wrong number for content.
     //
     // The one exception is an acknowledgement marked readingWindow (the
-    // reminder's), which also goes by itself after ReadingWindow.holdMs. The
-    // serial restarts that clock for each new answer, so an old clock can
-    // never clear a newer answer.
+    // reminder's), which also goes by itself after ReadingWindow.holdMs. Its
+    // clock is tied to that answer by AnswerTimer: every show and every clear
+    // moves the serial on, so a clock can only dismiss the answer it was
+    // started for, and a cleared answer's clock does nothing at all.
     var answer by remember { mutableStateOf<String?>(null) }
-    var answerHoldMs by remember { mutableStateOf<Long?>(null) }
-    var answerSerial by remember { mutableIntStateOf(0) }
+    var answerTimer by remember { mutableStateOf(AnswerTimer()) }
     var answerShownAtMs by remember { mutableLongStateOf(0L) }
     // The pending reminders a bare `rem` listed, drawn under its answer as
     // rows, and the one whose [kill] is showing. See PendingReminderRow.
@@ -1129,11 +1130,20 @@ fun TerminalHomeView(
     var awaitingDeferred by remember { mutableStateOf(false) }
     // Runs the deferred answer's deadline. Cancelled with the console.
     val deferredScope = rememberCoroutineScope()
-    LaunchedEffect(answerSerial) {
-        val hold = answerHoldMs ?: return@LaunchedEffect
-        delay(hold)
-        Log.i(CONSOLE_TAG, "answer expired after its reading window of ${hold}ms")
+    // Every clear goes through here, so every clear retires the clock.
+    fun clearAnswer() {
         answer = null
+        answerTimer = AnswerTimer.cleared(answerTimer)
+    }
+    // Restarted, and so cancelled, on every show and every clear.
+    LaunchedEffect(answerTimer.serial) {
+        val started = answerTimer
+        val hold = started.holdMs ?: return@LaunchedEffect
+        delay(hold)
+        if (AnswerTimer.mayExpire(answerTimer, started.serial)) {
+            Log.i(CONSOLE_TAG, "answer expired after its reading window of ${hold}ms")
+            clearAnswer()
+        }
     }
 
     // The dim remainder of a unique verb prefix, drawn under the caret.
@@ -1223,7 +1233,7 @@ fun TerminalHomeView(
         // answer stops being one. A conversion still sitting there from
         // before you left is stale content on a surface whose whole argument
         // is that nothing sits on it without earning the space.
-        answer = null
+        clearAnswer()
     }
 
     /** Launch, and leave the prompt empty behind it. */
@@ -1391,16 +1401,18 @@ fun TerminalHomeView(
                 val text = outcome.message(context)
                 // The answer and the cleared prompt land in the same frame.
                 answer = text
-                answerHoldMs = if (outcome.readingWindow) ReadingWindow.holdMs(text) else null
+                answerTimer = AnswerTimer.shown(
+                    answerTimer,
+                    holdMs = if (outcome.readingWindow) ReadingWindow.holdMs(text) else null,
+                )
                 answerReminderIds = outcome.reminderIds
                 killArmedId = null
                 answerShownAtMs = SystemClock.elapsedRealtime()
-                answerSerial += 1
                 query = ""
                 Log.i(
                     CONSOLE_TAG,
                     "answer shown: ${ReadingWindow.words(text)} words, " +
-                        "hold=${answerHoldMs?.let { "${it}ms" } ?: "until the user moves on"}",
+                        "hold=${answerTimer.holdMs?.let { "${it}ms" } ?: "until the user moves on"}",
                 )
             }
             // A third face, not the dry one. "Locks are not enforced yet" and
@@ -1785,7 +1797,7 @@ fun TerminalHomeView(
                     // One dismissal for the one row. An answer is the only
                     // thing here the user asked for, so it is also the only
                     // thing they might dismiss on purpose.
-                    answer = null
+                    clearAnswer()
                     liveNotice = null
                     deliveringId = null
                 },
@@ -1927,7 +1939,7 @@ fun TerminalHomeView(
                                     "after it was shown (field now ${next.length} chars)",
                             )
                         }
-                        answer = null
+                        clearAnswer()
                         lastKeystrokeMs = SystemClock.elapsedRealtime()
                     },
                     textStyle = TextStyle(
@@ -1957,7 +1969,7 @@ fun TerminalHomeView(
                             // back. Clearing inside each other branch would
                             // be seven places to remember instead of one.
                             if (awaitingDeferred) return@go
-                            answer = null
+                            clearAnswer()
                             val outcome = submit()
                             keyboard?.hide()
                             handleOutcome(outcome)

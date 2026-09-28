@@ -142,18 +142,18 @@ class BitWiringTest {
         // that outlives its moment on a surface whose argument is that nothing
         // sits on it without earning the space.
         val edit = host.substring(host.indexOf("onValueChange = edit@{ edited ->")).substringBefore("textStyle =")
-        assertTrue("the next keystroke clears it", edit.contains("answer = null\n                        lastKeystrokeMs ="))
+        assertTrue("the next keystroke clears it", edit.contains("clearAnswer()\n                        lastKeystrokeMs ="))
         assertTrue(
             "a selection or composing change is not a keystroke",
-            edit.indexOf("if (next == query) return@edit") in 0 until edit.indexOf("answer = null"),
+            edit.indexOf("if (next == query) return@edit") in 0 until edit.indexOf("clearAnswer()"),
         )
         assertTrue(
             "a new dispatch clears it, before the branch that may set one",
-            host.contains("answer = null\n                            val outcome = submit()"),
+            host.contains("clearAnswer()\n                            val outcome = submit()"),
         )
         assertTrue(
             "leaving the launcher clears it",
-            host.substringAfter("fun clearPrompt() {").substringBefore("}").contains("answer = null"),
+            host.substringAfter("fun clearPrompt() {").substringBefore("}").contains("clearAnswer()"),
         )
     }
 
@@ -164,16 +164,27 @@ class BitWiringTest {
         val declaration = host.indexOf("var answer by remember")
         assertTrue("the host must hold the answer as state", declaration >= 0)
         assertTrue("an answer must not be handed to the reaction ladder", !host.contains("Reaction.Answer("))
-        val clock = host.substring(host.indexOf("LaunchedEffect(answerSerial) {")).substringBefore("\n    }\n")
-        assertTrue(clock.contains("val hold = answerHoldMs ?: return@LaunchedEffect"))
-        assertTrue(clock.contains("delay(hold)") && clock.contains("answer = null"))
+        val clock = host.substring(host.indexOf("LaunchedEffect(answerTimer.serial) {")).substringBefore("\n    }\n")
+        assertTrue(clock.contains("val hold = started.holdMs ?: return@LaunchedEffect"))
+        assertTrue(clock.contains("delay(hold)"))
+        val gate = clock.indexOf("if (AnswerTimer.mayExpire(answerTimer, started.serial)) {")
+        assertTrue("only its own answer, and only then the expired line", gate in 0 until clock.indexOf("answer expired after"))
+        assertTrue(gate < clock.indexOf("clearAnswer()"))
         val answered = host.substring(host.indexOf("is DispatchResult.Answered -> {")).substringBefore("is DispatchResult.Unavailable")
-        assertTrue(answered.contains("answerHoldMs = if (outcome.readingWindow) ReadingWindow.holdMs(text) else null"))
-        assertTrue("a new answer restarts the clock", answered.contains("answerSerial += 1"))
+        assertTrue(answered.contains("answerTimer = AnswerTimer.shown("))
+        assertTrue(answered.contains("holdMs = if (outcome.readingWindow) ReadingWindow.holdMs(text) else null,"))
         val dispatch = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherDispatch.kt").readText()
         assertEquals(1, Regex("""readingWindow = true""").findAll(dispatch).count())
         val rem = dispatch.substring(dispatch.indexOf("is Command.Rem -> DispatchResult.Deferred"))
         assertTrue(rem.substringBefore("Command.RemList ->").contains("readingWindow = true"))
+    }
+
+    @Test
+    fun `every clear retires the clock, because every clear is clearAnswer`() {
+        assertEquals("answer = null is written in one place", 1, Regex("""\banswer = null\b""").findAll(host).count())
+        val clear = host.substring(host.indexOf("fun clearAnswer() {")).substringBefore("\n    }\n")
+        assertTrue(clear.contains("answer = null") && clear.contains("answerTimer = AnswerTimer.cleared(answerTimer)"))
+        assertTrue("declared before the clock that calls it", host.indexOf("fun clearAnswer() {") < host.indexOf("LaunchedEffect(answerTimer.serial) {"))
     }
 
     @Test
