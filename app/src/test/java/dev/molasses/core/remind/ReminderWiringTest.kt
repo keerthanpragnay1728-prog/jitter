@@ -84,34 +84,37 @@ class ReminderWiringTest {
         val chime = functionBody(repoFile("app/src/main/java/dev/molasses/monitor/ReminderChime.kt").readText(), "fun play(")
         assertTrue(chime.contains("AudioManager.RINGER_MODE_SILENT -> Unit"))
         assertTrue(chime.contains("AudioManager.RINGER_MODE_VIBRATE -> vibrate(context)"))
-        assertTrue(chime.contains("else -> tone(context, am)"))
+        assertTrue(chime.contains("else -> sound(context, am)"))
     }
 
     @Test
-    fun `one generated chime on the notification event usage, awaited, well inside the receiver window`() {
+    fun `the default notification sound, awaited through isPlaying, capped, and stopped on every path`() {
         val src = repoFile("app/src/main/java/dev/molasses/monitor/ReminderChime.kt").readText()
         assertTrue(src.contains("suspend fun play(context: Context)"))
-        assertFalse("ToneGenerator produced no sound on hardware", src.contains("ToneGenerator("))
-        val tone = functionBody(src, "private suspend fun tone(")
-        assertTrue(tone.contains("AudioAttributes.USAGE_NOTIFICATION_EVENT"))
-        assertTrue(tone.contains("ChimeWave.samples()"))
-        assertTrue(tone.contains(".setTransferMode(AudioTrack.MODE_STATIC)"))
-        assertEquals(1, Regex("""track\.play\(\)""").findAll(tone).count())
-        val play = tone.indexOf("track.play()")
-        val wait = tone.indexOf("delay(TOTAL_MS)")
-        val release = tone.indexOf("track.release()")
-        assertTrue("released after the wait", play in 0 until wait && wait < release)
-        assertTrue(tone.substring(wait, release).contains("} finally {"))
-        // The diagnosis the next run needs.
-        assertTrue(tone.contains("am.isStreamMute(stream)") && tone.contains("currentInterruptionFilter"))
-        assertTrue(functionBody(src, "suspend fun play(").contains("chime: play reached"))
+        // Imports, not text: the class doc names both to say why they went.
+        assertFalse("silent on hardware", src.contains("import android.media.ToneGenerator"))
+        assertFalse("silent on hardware", src.contains("import android.media.AudioTrack"))
+        val sound = functionBody(src, "private suspend fun sound(")
+        assertTrue(sound.contains("RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)"))
+        assertTrue(sound.contains(".setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)"))
+        val attrs = sound.indexOf("ringtone.audioAttributes =")
+        val play = sound.indexOf("ringtone.play()")
+        val poll = sound.indexOf("ChimeWait.keepWaiting(elapsed, playing, everPlayed)")
+        val stop = sound.indexOf("runCatching { ringtone.stop() }")
+        assertTrue("attributes before play, poll after, stop last", attrs in 0 until play && play < poll && poll < stop)
+        assertTrue(sound.substring(poll, stop).contains("} finally {"))
+        assertTrue(sound.contains("chime: ringtone uri=") && sound.contains("chime: play() called, isPlaying="))
+        assertTrue(functionBody(src, "suspend fun play(").contains("else -> sound(context, am)"))
         val vibrate = functionBody(src, "private suspend fun vibrate(")
         assertTrue(vibrate.contains("VibrationEffect.createOneShot(VIBRATE_MS"))
         assertFalse("once, not a waveform", vibrate.contains("createWaveform"))
-        assertTrue(vibrate.contains("delay(TOTAL_MS)"))
-        // 400 ms of buffer plus 100 ms. The shortest goAsync window is 10 s.
-        assertTrue(src.contains("const val TOTAL_MS = ChimeWave.TOTAL_MS + TAIL_MS"))
-        assertEquals(400, dev.molasses.core.remind.ChimeWave.TOTAL_MS)
+    }
+
+    @Test
+    fun `nothing references the deleted PCM generator`() {
+        val main = java.io.File(dev.molasses.core.repoRoot(), "app/src/main/java")
+        val hits = main.walkTopDown().filter { it.isFile && it.extension == "kt" && it.readText().contains("ChimeWave") }.toList()
+        assertTrue("$hits", hits.isEmpty())
     }
 
     @Test
