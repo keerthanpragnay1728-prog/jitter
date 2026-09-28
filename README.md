@@ -327,26 +327,9 @@ adb shell dumpsys activity service \
 **The central feasibility question remains open until someone runs that on
 hardware.**
 
-## The two ambiguities, resolved (§0.1)
+## The ambiguities, resolved (§0.1)
 
-### 1. What happens after 20 minutes?
-
-`TIER_TERMINAL`: the stall stays at 5000 ms and the movement gate re-arms every
-five minutes, indefinitely. Nothing is silently capped.
-
-Implemented by letting the tier index keep climbing rather than saturating:
-
-```kotlin
-fun indexFor(accumulatedMs: Long) = (accumulatedMs / TIER_WIDTH_MS).toInt()  // unbounded
-fun stallMsFor(index: Int) = if (index >= TERMINAL_INDEX) 5_000L else STALL_MS[index]
-```
-
-So 25 min is tier 5, 60 min is tier 12, each with a gate on entry and a 5000 ms
-stall. The index stays a faithful description of usage instead of a saturated
-counter, which matters because it is what the ledger and the debug screen
-report.
-
-### 2. What does "resets only after 6 continuous hours" mean?
+### 1. What does "resets only after 6 continuous hours" mean?
 
 The phrase is ambiguous between an abstinence window and a wall-clock window.
 The app runs **`FIXED_WINDOW_6H`**: the cycle is anchored on the first target
@@ -377,7 +360,7 @@ settings and moving the system clock forward six hours, which is the cheapest
 bypass in the app and needs nothing but the date and time screen. See the
 clamp section below.
 
-### 3. A third ambiguity I hit (`tierIndex` monotonicity vs. cycle reset)
+### 2. A second ambiguity I hit (`tierIndex` monotonicity vs. cycle reset)
 
 Not in the brief, but unavoidable: "`tierIndex` … monotonic, never decremented"
 and "the cycle resets" are in direct tension, because a reset must return the
@@ -1078,14 +1061,27 @@ produced it, which is the behaviour the shield was asked for anyway.
   Without it, a mid-session process death loses that session's tail. The
   checkpoint cadence bounds that loss to 15 s.
 
-**Permissions beyond the brief's list**
-- `READ_PHONE_STATE`, required by `TelephonyCallback.CallStateListener` on API
-  31+. Without it that panic path is unavailable; the 8 s hard ceiling and the
-  four-tap escape still bound the worst case. Also: `TelephonyCallback` is API
-  31+ while `minSdk` is 30, so API 30 uses the deprecated `PhoneStateListener`.
-- `QUERY_ALL_PACKAGES`, without which the target picker shows only this app on
-  API 30+. It is a Play review question; the picker is the "user selects an app"
-  case the policy allows.
+**Permissions in the manifest**
+
+Every `uses-permission` in `AndroidManifest.xml`, and nothing else.
+`ReadmePermissionsTest` fails if this list and the manifest differ.
+
+- `PACKAGE_USAGE_STATS`: usage access. Replays `ACTIVITY_RESUMED` and
+  `ACTIVITY_PAUSED` after a process death, so a session's time is not lost.
+- `ACTIVITY_RECOGNITION`: the step sensor for the movement gate. Without it the
+  gate falls back to motion analysis.
+- `RECEIVE_BOOT_COMPLETED`: re-arms pending `$ rem` alarms after a reboot.
+- `POST_NOTIFICATIONS`: declared and asked for in CFG, but nothing in the code
+  posts a notification.
+- `HIGH_SAMPLING_RATE_SENSORS`: declared, but every sensor is registered at
+  `SENSOR_DELAY_GAME` or slower, which does not need it.
+- `VIBRATE`: `$ rem` vibrates once when the ringer is on vibrate.
+- `USE_EXACT_ALARM`: `$ rem` fires on time on Android 13 and later.
+- `SCHEDULE_EXACT_ALARM`: the same on Android 12 and 12L, capped at
+  `maxSdkVersion="32"`.
+
+Not requested: `READ_PHONE_STATE` (the call check uses `AudioManager`),
+`QUERY_ALL_PACKAGES`, `SYSTEM_ALERT_WINDOW`, and `INTERNET`.
 
 **Thresholds that differ from the brief, and why**
 - `minHz` entry is **1.20** with a **1.05** exit, replacing the 1.15 guard band.
@@ -1292,3 +1288,25 @@ Nothing samples in the background. No wake locks are ever held.
 **Uninstalling works normally.** So does turning the accessibility service off
 in Android's own Settings. Nothing here tries to stop you, and anything that
 did would be malware.
+
+---
+
+## DESIGN HISTORY
+
+**Nothing under this heading describes the app as it is.** It records
+decisions that were made for a design that has since been replaced, kept only
+where the reasoning still explains something in the code.
+
+### What happened after 20 minutes, under the fixed tier ladder
+
+The first design was a fixed ladder: a movement gate at 5, 10, 15 and 20
+minutes, stalls of 1000, 3000 and 5000 ms between them, and past 20 minutes a
+5000 ms stall with a gate re-arming every five minutes, indefinitely. Stalls
+now follow the per-app horizon curve and the gate is the lease gate (see the
+top of this file), so none of that is how the app behaves.
+
+One piece of the reasoning survives in code. `TierPolicy.indexFor` still
+computes `floor(accumulated / 5 min)` without a ceiling, rather than
+saturating at the last tier, so the index stays a faithful count of how much
+has been used. `FrictionEngine` still records it and the debug screen still
+shows it.
