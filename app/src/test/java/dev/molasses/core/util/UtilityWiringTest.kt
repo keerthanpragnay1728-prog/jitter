@@ -106,10 +106,10 @@ class UtilityWiringTest {
     fun `an answer is held, not reacted to`() {
         val start = activity.indexOf("is DispatchResult.Answered ->")
         assertTrue("the prompt must handle Answered", start >= 0)
-        val body = activity.substring(start, start + 400)
+        val body = activity.substring(start, start + 700)
         assertTrue(
             "an answer must be held as console state, already rendered",
-            body.contains("answer = outcome.message(context)"),
+            body.contains("val text = outcome.message(context)") && body.contains("answer = text"),
         )
         assertTrue(
             "an answer must not go through the reaction ladder, which expires on a clock",

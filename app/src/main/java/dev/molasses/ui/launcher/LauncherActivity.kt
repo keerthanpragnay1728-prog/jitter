@@ -90,11 +90,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -115,6 +118,7 @@ import dev.molasses.core.bit.BitHud
 import dev.molasses.core.bit.BitStateMachine
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.bit.BitTap
+import dev.molasses.core.command.ReadingWindow
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.remind.Reminder
@@ -1082,11 +1086,27 @@ fun TerminalHomeView(
 
     // The answer to the last utility command, already rendered.
     //
-    // Not a reaction and therefore not on a clock. It is cleared by the three
-    // things that mean the user has moved on: the next keystroke, the next
-    // command, and leaving the launcher. See BitDisplay.Answer for why a
-    // duration was the wrong shape rather than the wrong number.
+    // Not a reaction. It is cleared by the three things that mean the user
+    // has moved on: the next keystroke, the next command, and leaving the
+    // launcher. See BitDisplay.Answer for why a duration was the wrong shape
+    // rather than the wrong number for content.
+    //
+    // The one exception is an acknowledgement marked readingWindow (the
+    // reminder's), which also goes by itself after ReadingWindow.holdMs. The
+    // serial restarts that clock for each new answer, so an old clock can
+    // never clear a newer answer.
     var answer by remember { mutableStateOf<String?>(null) }
+    var answerHoldMs by remember { mutableStateOf<Long?>(null) }
+    var answerSerial by remember { mutableIntStateOf(0) }
+    var answerShownAtMs by remember { mutableLongStateOf(0L) }
+    // A deferred command is in flight. See the Deferred branch of handleOutcome.
+    var awaitingDeferred by remember { mutableStateOf(false) }
+    LaunchedEffect(answerSerial) {
+        val hold = answerHoldMs ?: return@LaunchedEffect
+        delay(hold)
+        Log.i(CONSOLE_TAG, "answer expired after its reading window of ${hold}ms")
+        answer = null
+    }
 
     // The dim remainder of a unique verb prefix, drawn under the caret.
     val ghost = remember(query) { CommandParser.ghostFor(query) }
@@ -1331,8 +1351,18 @@ fun TerminalHomeView(
             // which is the honest lifetime for content they asked for and may
             // be copying somewhere.
             is DispatchResult.Answered -> {
-                answer = outcome.message(context)
+                val text = outcome.message(context)
+                // The answer and the cleared prompt land in the same frame.
+                answer = text
+                answerHoldMs = if (outcome.readingWindow) ReadingWindow.holdMs(text) else null
+                answerShownAtMs = SystemClock.elapsedRealtime()
+                answerSerial += 1
                 query = ""
+                Log.i(
+                    CONSOLE_TAG,
+                    "answer shown: ${ReadingWindow.words(text)} words, " +
+                        "hold=${answerHoldMs?.let { "${it}ms" } ?: "until the user moves on"}",
+                )
             }
             // A third face, not the dry one. "Locks are not enforced yet" and
             // "block what?" are different information, and showing the same
@@ -1371,9 +1401,23 @@ fun TerminalHomeView(
                 }
             // The answer comes later, through this same function, once the
             // command knows it. See DispatchResult.Deferred.
+            //
+            // The prompt keeps what was typed until then. Clearing it here
+            // drew one frame with the prompt empty and the list collapsed,
+            // then a second with the answer: two layout passes a few
+            // milliseconds apart, which read as a flicker. The delivered
+            // outcome clears the prompt in the same frame it shows the
+            // answer, and a refusal leaves the line to be corrected, like any
+            // other failure.
+            // With the line still in the prompt, a second Enter would run it
+            // twice, so Enter is ignored until the answer lands.
             is DispatchResult.Deferred -> {
-                query = ""
-                outcome.await { handleOutcome(it) }
+                Log.i(CONSOLE_TAG, "deferred: awaiting the command's answer")
+                awaitingDeferred = true
+                outcome.await {
+                    awaitingDeferred = false
+                    handleOutcome(it)
+                }
             }
         }
     }
@@ -1749,13 +1793,35 @@ fun TerminalHomeView(
                     )
                 }
 
+                // The field's own value, with its selection and the keyboard's
+                // composing region, kept beside `query`.
+                //
+                // The String overload kept the composing region across a
+                // programmatic clear, so the keyboard could go on composing a
+                // word the prompt no longer held, and its next commit arrived
+                // as an edit after Enter had already put an answer up. Any
+                // edit clears the answer, so the answer vanished. A letter
+                // word such as a bare `rem` is composed; digits, as in calc,
+                // are not, which fits calc's answers staying and rem's not.
+                // That is inference from the code, not a confirmed trace; the
+                // log line below is what confirms it.
+                //
+                // When `query` is changed from outside, the field is replaced
+                // with no composing region, which makes the keyboard drop the
+                // word it was composing.
+                var field by remember { mutableStateOf(TextFieldValue("")) }
+                val shown = if (field.text == query) field else TextFieldValue(query, TextRange(query.length))
                 BasicTextField(
-                    value = query,
-                    onValueChange = { raw ->
+                    value = shown,
+                    onValueChange = edit@{ edited ->
                         // Space completes a unique verb prefix. A soft
                         // keyboard has no Tab, and Space is the key a
                         // terminal user reaches for anyway.
-                        val next = CommandParser.completeOnSpace(query, raw)
+                        val next = CommandParser.completeOnSpace(query, edited.text)
+                        field = if (next == edited.text) edited else TextFieldValue(next, TextRange(next.length))
+                        // A selection or composing change alone is not an
+                        // edit, and must not clear anything.
+                        if (next == query) return@edit
                         query = next
                         // Typing dismisses the manual. It is a reference, not
                         // a mode, and leaving it up while the user works
@@ -1764,6 +1830,13 @@ fun TerminalHomeView(
                         // And any edit clears the last answer. Starting to
                         // type is the user moving on, which is the whole of
                         // what an answer waits for.
+                        if (answer != null) {
+                            Log.i(
+                                CONSOLE_TAG,
+                                "answer cleared by an edit ${SystemClock.elapsedRealtime() - answerShownAtMs}ms " +
+                                    "after it was shown (field now ${next.length} chars)",
+                            )
+                        }
                         answer = null
                         lastKeystrokeMs = SystemClock.elapsedRealtime()
                     },
@@ -1774,9 +1847,16 @@ fun TerminalHomeView(
                     ),
                     singleLine = true,
                     cursorBrush = SolidColor(PhosphorGreen),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    // A command line, not prose. Autocorrect and capitals can
+                    // rewrite a verb on Enter ("rem" is not a dictionary
+                    // word), and the correction lands after the action.
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.None,
+                        autoCorrectEnabled = false,
+                        imeAction = ImeAction.Go,
+                    ),
                     keyboardActions = KeyboardActions(
-                        onGo = {
+                        onGo = go@{
                             // Every outcome is a finished command or a
                             // full-screen panel, and neither has any use for
                             // the keyboard. It was staying up, which halved
@@ -1786,6 +1866,7 @@ fun TerminalHomeView(
                             // branch below is the only thing that can put one
                             // back. Clearing inside each other branch would
                             // be seven places to remember instead of one.
+                            if (awaitingDeferred) return@go
                             answer = null
                             val outcome = submit()
                             keyboard?.hide()
@@ -3011,3 +3092,6 @@ private fun runConsoleAction(line: ConsoleLine) {
     if (line !is ConsoleLine.Prompt) return
     // No actions defined yet. Answering still clears the prompt.
 }
+
+/** `adb logcat -s Molasses.Console`: answers shown, cleared and expired. */
+private const val CONSOLE_TAG = "Molasses.Console"
