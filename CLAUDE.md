@@ -496,6 +496,8 @@ bearing and are not to be changed casually:
 - `android:canRetrieveWindowContent` stays `false`.
 - `android:accessibilityFlags` does not include `flagRetrieveInteractiveWindows`.
 
+Do not add `typeWindowContentChanged` as a scroll proxy again without new evidence: 2952f14 reverted one that could not tell scrolling from video playback and ate taps on YouTube's player controls (README, Known limitations).
+
 Removing the last one means `getWindows()` returns an empty list. If a feature
 needs to know about another window, route it through `UsageStatsManager` or
 drop the feature. Do not add the flag back.
