@@ -60,6 +60,12 @@ SKIP = (".png", ".jpg", ".jpeg", ".webp", ".ttf", ".otf", ".jar", ".keystore",
         ".zip", ".so", ".ico", ".pb", ".bin", ".gz")
 
 
+# Binary by path, not by extension: raw Android resources hold audio. The
+# same single directory tools/check-encoding.sh allows, and ScanAllowanceTest
+# pins both.
+RAW_BINARY_DIR = "app/src/main/res/raw/"
+
+
 def scan(data):
     out = []
     try:
@@ -107,7 +113,7 @@ def main():
         print("\n===== %s =====" % ref)
         hits = 0
         for path in files_in(ref):
-            if path.lower().endswith(SKIP):
+            if path.lower().endswith(SKIP) or path.startswith(RAW_BINARY_DIR):
                 continue
             data = blob(ref, path)
             if data is None:

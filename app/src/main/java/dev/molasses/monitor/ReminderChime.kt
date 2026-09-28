@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.os.Build
 import android.os.SystemClock
@@ -11,8 +12,12 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
+import dev.molasses.R
 import dev.molasses.core.remind.ChimeWait
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The sound a reminder makes, and the whole of how it announces itself.
@@ -23,26 +28,26 @@ import kotlinx.coroutines.delay
  * sound. A chime the user did not hear means the text is seen only on the
  * next visit to the launcher, and the README says so.
  *
- * ## The system's notification sound, not a sound of our own
- * Two sounds of our own were silent on hardware. A ToneGenerator beep, and
- * then a generated AudioTrack buffer that logged playState=3 at notification
- * volume 7/7, unmuted, with the interruption filter at ALL, and still made no
- * sound. Why is not known. The default notification sound, played through
- * `Ringtone` with `USAGE_NOTIFICATION_EVENT`, is the path every notification
- * on the device already takes, so it is the one most likely to be heard.
- * It is also the user's own choice of sound, which is right for something
- * they asked to be told.
+ * ## A bundled chime, with the system sound behind it
+ * The chime is `res/raw/jitter_chime.wav`, made by `tools/gen-chime.py`
+ * (mono, 16-bit, 44.1 kHz, 280 ms, E5 with a soft octave, peak -12 dBFS),
+ * played through MediaPlayer with `USAGE_NOTIFICATION_EVENT`: a file the
+ * media stack decodes like any other notification sound, rather than a
+ * ToneGenerator beep or a raw AudioTrack buffer, both of which were silent
+ * on hardware for reasons never pinned down. If MediaPlayer fails at any
+ * step, the default notification sound through `Ringtone` plays instead.
  *
  * ## Awaited, and capped
- * The receiver holds its PendingResult until [play] returns, and [play]
- * returns when the sound has ended, polled through `isPlaying`, or at
- * [ChimeWait.CAP_MS], whichever is first. A sound still playing at the cap is
- * stopped. The sound is stopped in a `finally`, so every error path ends it.
+ * The receiver holds its PendingResult until [play] returns. The raw path
+ * returns on onCompletion or at [ChimeWait.CAP_MS]; the fallback polls
+ * `isPlaying` under the same cap. Each player is stopped and released in a
+ * `finally`, so every error path ends it.
  *
  * ## On a device
  * `adb logcat -s Molasses.Reminder`. Every play logs the ringer mode; the
  * sound path then logs the notification volume, mute flag and interruption
- * filter, the ringtone URI, whether play() started, and how long it waited.
+ * filter, then "chime: path=raw prepared in Nms" and "completed" or "cap
+ * reached", or why it fell back and the fallback's own lines.
  */
 object ReminderChime {
 
@@ -73,6 +78,63 @@ object ReminderChime {
             "chime: notification volume=${am.getStreamVolume(stream)}/${am.getStreamMaxVolume(stream)} " +
                 "muted=${am.isStreamMute(stream)} interruptionFilter=$filter",
         )
+        if (playRaw(context)) return
+        Log.i(TAG, "chime: path=fallback (ringtone)")
+        playRingtone(context)
+    }
+
+    /** The bundled chime. False when MediaPlayer failed anywhere, so the caller falls back. */
+    private suspend fun playRaw(context: Context): Boolean {
+        val player = MediaPlayer()
+        val started = SystemClock.elapsedRealtime()
+        try {
+            player.setAudioAttributes(notificationEvent())
+            context.resources.openRawResourceFd(R.raw.jitter_chime).use { afd ->
+                player.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            }
+            player.prepare()
+            val prepareMs = SystemClock.elapsedRealtime() - started
+            // True on completion, false on a playback error.
+            val finished = CompletableDeferred<Boolean>()
+            player.setOnCompletionListener { finished.complete(true) }
+            player.setOnErrorListener { _, what, extra ->
+                Log.w(TAG, "chime: raw playback error what=$what extra=$extra")
+                finished.complete(false)
+                true
+            }
+            player.start()
+            Log.i(TAG, "chime: path=raw prepared in ${prepareMs}ms, started")
+            val outcome = withTimeoutOrNull(ChimeWait.CAP_MS) { finished.await() }
+            val elapsed = SystemClock.elapsedRealtime() - started
+            return when (outcome) {
+                true -> {
+                    Log.i(TAG, "chime: path=raw completed after ${elapsed}ms")
+                    true
+                }
+                null -> {
+                    Log.i(TAG, "chime: path=raw cap reached after ${elapsed}ms, stopped")
+                    true
+                }
+                false -> false
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "chime: raw path failed", e)
+            return false
+        } finally {
+            runCatching { player.stop() }
+            player.release()
+        }
+    }
+
+    private fun notificationEvent(): AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
+
+    /** The fallback: the device's default notification sound. */
+    private suspend fun playRingtone(context: Context) {
         val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         Log.i(TAG, "chime: ringtone uri=$uri")
         if (uri == null) {
@@ -88,10 +150,7 @@ object ReminderChime {
         }
         val started = SystemClock.elapsedRealtime()
         try {
-            ringtone.audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
+            ringtone.audioAttributes = notificationEvent()
             ringtone.play()
             Log.i(TAG, "chime: play() called, isPlaying=${ringtone.isPlaying}")
             var everPlayed = false

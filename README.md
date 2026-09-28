@@ -1058,8 +1058,10 @@ produced it, which is the behaviour the shield was asked for anyway.
   command or leaving the launcher clears it sooner.
 - **A missed tone means the text is seen only on the next visit to the
   launcher.** There is no notification, so no notification grant. The tone
-  is the device's default notification sound, played like a notification
-  (notification volume, silenced by Do Not Disturb, cut off at 3 seconds),
+  is Jitter's own soft 280 ms chime (`res/raw/jitter_chime.wav`, made by
+  `tools/gen-chime.py`), with the device's default notification sound as the
+  fallback, played like a notification (notification volume, silenced by Do
+  Not Disturb, cut off at 3 seconds),
   and follows the ringer: silent plays nothing, vibrate vibrates once. Several reminders missed while the phone
   was off sound it once, not once each. The text waits on the console, in
   order, until each is dismissed.

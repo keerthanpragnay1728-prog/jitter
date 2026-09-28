@@ -48,9 +48,17 @@ is_binary() {
 # respects .gitignore, so Gradle's build and cache directories under
 # tools/pure-verify are not scanned, and it checks exactly the set that
 # actually reaches another machine, which is the set the sync path can damage.
+#
+# One directory is binary by path rather than by extension: raw Android
+# resources, which hold audio (jitter_chime.wav, made by tools/gen-chime.py).
+# By path so the allowance cannot grow by accident: a .wav anywhere else is
+# still read as text and still fails. ScanAllowanceTest pins this line.
+RAW_BINARY_DIR="app/src/main/res/raw/"
+
 text_files() {
     git ls-files -- app/src tools | sort | while read -r f; do
         [ -f "$f" ] || continue
+        case "$f" in "$RAW_BINARY_DIR"*) continue ;; esac
         is_binary "$f" || printf '%s\n' "$f"
     done
 }
