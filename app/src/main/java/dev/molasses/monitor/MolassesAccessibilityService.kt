@@ -28,6 +28,7 @@ import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
+import dev.molasses.core.safety.HomeFirst
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.session.EventRoute
@@ -60,7 +61,6 @@ import dev.molasses.overlay.GateStats
 import dev.molasses.overlay.LeaseGateOverlayManager
 import dev.molasses.overlay.LockOverlayManager
 import dev.molasses.overlay.ShutterOverlayManager
-import dev.molasses.overlay.StreamMute
 import dev.molasses.sensing.MovementDetector
 import java.io.FileDescriptor
 import java.io.PrintWriter
@@ -257,9 +257,10 @@ class MolassesAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         ServiceDiagnostics.onConnected()
-        // Before any overlay exists. A process that died with our music mute
-        // in force left a flag on disk; this gives the stream back.
-        StreamMute.restoreOnConnect(this)
+        // Before any overlay exists. The music-stream mute is gone, but a
+        // tester on the build that had it may have a stream still muted by
+        // us. Expiring: see LegacyMuteRestore.
+        LegacyMuteRestore.restoreOnConnect(this)
 
         val wm = getSystemService(WindowManager::class.java)
         if (wm == null) {
@@ -295,11 +296,16 @@ class MolassesAccessibilityService : AccessibilityService() {
             // chosen. Granting a fixed lease here instead would have made
             // the walking mode the only path with a second rule for how long
             // a lease lasts.
-            onCleared = { pkg -> if (ready) showLeaseGate(pkg, countdownMs = 0, expired = false) },
+            //
+            // The walking gate sent the app home, so this panel runs over the
+            // launcher too, and a lease taken on it relaunches the app:
+            // homeFirst = true.
+            onCleared = { pkg -> if (ready) showLeaseGate(pkg, countdownMs = 0, expired = false, homeFirst = true) },
             // Nothing. No lease was taken, so the next scroll in this package
             // gates again, which is the whole reason the launch check also
             // runs on scroll.
             onAbandoned = { },
+            goHome = ::goHomeQuietly,
             fontScale = { fontScaleMultiplier },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
@@ -334,6 +340,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             onLeaseTaken = ::grantLease,
             onDeclined = { _, _ -> },
             onBlock = ::blockFromGate,
+            relaunch = ::relaunchTarget,
             fontScale = { fontScaleMultiplier },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
@@ -837,7 +844,12 @@ class MolassesAccessibilityService : AccessibilityService() {
      * took. A gate that is late is a gate that does not work; a number that
      * is late is a number that says so while it waits.
      */
-    private fun showLeaseGate(pkg: String, countdownMs: Long, expired: Boolean): Boolean {
+    private fun showLeaseGate(
+        pkg: String,
+        countdownMs: Long,
+        expired: Boolean,
+        homeFirst: Boolean = HomeFirst.sendsHome(HomeFirst.leaseGate(expired)),
+    ): Boolean {
         // Nothing of ours behind a full-screen window. An armed sink under a
         // gate absorbs nothing and would still be armed when the gate came
         // down.
@@ -865,6 +877,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                 opensToday = null,
             ),
             nextScroll = nextScroll,
+            homeFirst = homeFirst,
         )
         if (!attached) {
             // The app is uncovered. Put the sink back, or the fall-through to
@@ -1005,6 +1018,23 @@ class MolassesAccessibilityService : AccessibilityService() {
             is LockRequest.Verdict.Confirm, LockRequest.Verdict.Invalid -> goHomeQuietly()
         }
     }
+
+    private fun logSurvived(overlay: String, pkg: String, reason: String) {
+        Log.i(HOME_FIRST_TAG, "$overlay survived the launcher exit of $pkg ($reason)")
+    }
+
+    /**
+     * After a lease is taken on a home-first gate: bring the app back.
+     * getLaunchIntentForPackage restores its existing task rather than
+     * starting a new one. An accessibility service may start an activity from
+     * the background.
+     */
+    private fun relaunchTarget(pkg: String): Boolean = runCatching {
+        val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return@runCatching false
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+        true
+    }.onFailure { Log.w(HOME_FIRST_TAG, "relaunch of $pkg failed", it) }.getOrDefault(false)
 
     private fun goHomeQuietly() {
         runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
@@ -1277,15 +1307,21 @@ class MolassesAccessibilityService : AccessibilityService() {
         shutter.release("left target ($reason)")
         shutter.detach()
         shutter.setCurrentPackage(null)
-        if (gate.isShowing) gate.abandon("left target")
-        leaseGate.dismiss("left target")
+        // A home-first overlay sent this app home itself, so this exit is
+        // its own doing and it stays up over the launcher. Everything above
+        // (the session, accumulation, the ledger row) has still happened.
+        // See HomeFirst.
+        if (gate.isShowing) {
+            if (gate.homeFirst) logSurvived("walk gate", pkg, reason) else gate.abandon("left target")
+        }
+        if (leaseGate.homeFirst) logSurvived("lease gate", pkg, reason) else leaseGate.dismiss("left target")
         // The lock message goes too, and it did not have to before. It used
         // to take itself down 1.8 s after it appeared, so by the time any of
         // this ran it was already gone. It now stays until the user acts, and
         // a user who presses home themselves, or switches to another app,
         // would otherwise arrive at the launcher with a full-screen lock
-        // notice still over it.
-        lockOverlay.dismiss("left target")
+        // notice still over it. Unless it sent the app home itself.
+        if (lockOverlay.homeFirst) logSurvived("lock overlay", pkg, reason) else lockOverlay.dismiss("left target")
         // A new visit gets a fresh set of attempts. See gateAttachFailures.
         gateAttachFailures = 0
     }
@@ -1376,6 +1412,41 @@ class MolassesAccessibilityService : AccessibilityService() {
     private fun onOverlayWindowsChanged() {
         ServiceDiagnostics.gateShowing = gate.isShowing || leaseGate.isShowing
         repaceWatchdog()
+        repaceHomeFirstWatch()
+    }
+
+    /**
+     * The one job the session watchdog did that a home-first overlay still
+     * needs after the session has closed: nothing of ours is ever drawn over
+     * a sensitive app. The overlay outlives its session by design, and from
+     * the launcher Recents can bring a banking app up under it, so while one
+     * is showing the foreground is still watched, and a sensitive app takes
+     * every overlay down. Stops as soon as no home-first overlay is up.
+     */
+    private var homeFirstWatchJob: Job? = null
+
+    private fun repaceHomeFirstWatch() {
+        val anyHomeFirst = gate.homeFirst || leaseGate.homeFirst || lockOverlay.homeFirst
+        if (!anyHomeFirst) {
+            homeFirstWatchJob?.cancel()
+            homeFirstWatchJob = null
+            return
+        }
+        if (homeFirstWatchJob?.isActive == true) return
+        homeFirstWatchJob = scope.launch(Dispatchers.IO) {
+            while (true) {
+                delay(OVERLAY_WATCHDOG_INTERVAL_MS)
+                val active = probe.currentForegroundPackage() ?: continue
+                if (SensitivePackages.isSensitive(active, sensitivePrefixes)) {
+                    withContext(Dispatchers.Main.immediate) {
+                        foregroundPkg = active
+                        tearDownOverlays("financial app foreground under a home-first overlay")
+                        Log.i(TAG, "overlays suppressed: $active")
+                    }
+                    return@launch
+                }
+            }
+        }
     }
 
     /**
@@ -1429,6 +1500,7 @@ class MolassesAccessibilityService : AccessibilityService() {
     private fun teardown() {
         ready = false
         cancelLeaseExpiry("teardown")
+        homeFirstWatchJob?.cancel()
         ServiceDiagnostics.onDestroyed()
         sessions.closeCurrent()
         watchdogJob?.cancel()
@@ -1445,6 +1517,9 @@ class MolassesAccessibilityService : AccessibilityService() {
     companion object {
         /** `adb logcat -s Molasses.LeaseExpiry`: each check scheduled, fired and cancelled. */
         const val LEASE_EXPIRY_TAG = "Molasses.LeaseExpiry"
+
+        /** `adb logcat -s Molasses.HomeFirst`: overlays that sent their app home, and what followed. */
+        const val HOME_FIRST_TAG = "Molasses.HomeFirst"
 
         private const val TAG = "Molasses.Service"
         const val CHECKPOINT_INTERVAL_MS = 15_000L

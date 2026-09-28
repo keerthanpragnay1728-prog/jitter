@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import dev.molasses.R
 import dev.molasses.core.friction.NextScroll
+import dev.molasses.core.lease.GateControls
 import dev.molasses.core.lease.GateReadout
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lease.LeaseLadder
@@ -71,11 +72,13 @@ fun LeaseGateScreen(
     expired: Boolean,
     fields: GateReadout.Fields,
     nextScroll: NextScroll.Reading,
-    panelUp: Boolean,
+    /** What is on screen at this point of the countdown. See `GateControls`. */
+    controls: GateControls.Visible,
     onTakeLease: (durationMs: Long) -> Unit,
+    /** [ TAKE ME OUT ], the entry gate's way out, in the panel at zero. */
     onTakeMeOut: () -> Unit,
-    /** The LEASE EXPIRED gate only. See `GateBlock`. */
-    blockOffered: Boolean,
+    /** [ ARCHITECT'S SPACE ], the expired gate's way out, from the first frame. */
+    onExit: () -> Unit,
     blockPickerOpen: Boolean,
     onOpenBlock: () -> Unit,
     onBlock: (durationMs: Long) -> Unit,
@@ -126,8 +129,11 @@ fun LeaseGateScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            if (panelUp) {
-                DecisionPanel(onTakeLease = onTakeLease, onTakeMeOut = onTakeMeOut)
+            if (controls.leases) {
+                DecisionPanel(
+                    onTakeLease = onTakeLease,
+                    onTakeMeOut = if (controls.exit == GateControls.Exit.TAKE_ME_OUT) onTakeMeOut else null,
+                )
             } else {
                 Text(
                     text = fields.countdown,
@@ -138,11 +144,25 @@ fun LeaseGateScreen(
                 )
             }
 
-            // Outside the panelUp branch on purpose: it is there from the
-            // first frame. Choosing more friction never waits on the clock.
-            if (blockOffered) {
+            // Outside the leases branch on purpose: both are there from the
+            // first frame. Choosing more friction never waits on the clock,
+            // and neither does leaving.
+            if (controls.block) {
                 Spacer(Modifier.height(24.dp))
                 BlockControl(open = blockPickerOpen, onOpen = onOpenBlock, onBlock = onBlock)
+            }
+            if (controls.exit == GateControls.Exit.ARCHITECTS_SPACE) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = stringResource(R.string.lock_exit),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = PhosphorGreen,
+                    modifier = Modifier
+                        .clickable { onExit() }
+                        .padding(vertical = 10.dp, horizontal = 6.dp),
+                )
             }
         }
     }
@@ -278,17 +298,20 @@ private fun StatRow(label: String, value: String) {
 }
 
 /**
- * Three durations and the way out.
+ * Three durations and, on the entry gate, the way out.
  *
  * `[ TAKE ME OUT ]` is a peer of the lease buttons, not a dismissal tucked in
  * a corner, because leaving is one of the four answers and the only one that
  * costs nothing. Making it smaller or dimmer than the others would be the
  * screen arguing for a lease, which is the one thing it must not do.
+ *
+ * Null [onTakeMeOut] on the expired gate, whose way out is
+ * [ ARCHITECT'S SPACE ] outside the panel: one exit, not two.
  */
 @Composable
 private fun DecisionPanel(
     onTakeLease: (durationMs: Long) -> Unit,
-    onTakeMeOut: () -> Unit,
+    onTakeMeOut: (() -> Unit)?,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
@@ -315,16 +338,18 @@ private fun DecisionPanel(
                 )
             }
         }
-        Spacer(Modifier.height(24.dp))
-        Text(
-            text = stringResource(R.string.lease_gate_out),
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            color = PhosphorGreen,
-            modifier = Modifier
-                .clickable { onTakeMeOut() }
-                .padding(vertical = 10.dp, horizontal = 6.dp),
-        )
+        if (onTakeMeOut != null) {
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text = stringResource(R.string.lease_gate_out),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = PhosphorGreen,
+                modifier = Modifier
+                    .clickable { onTakeMeOut() }
+                    .padding(vertical = 10.dp, horizontal = 6.dp),
+            )
+        }
     }
 }
