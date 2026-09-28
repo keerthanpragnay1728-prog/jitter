@@ -119,6 +119,8 @@ class GateOverlayManager(
             } else {
                 null
             },
+            // Back is the exit, the same handler as [ ARCHITECT'S SPACE ].
+            onBackPressed = { exit() },
         ) {
             MolassesTheme(fontScale = fontScale()) {
                 GateScreen(
@@ -128,6 +130,7 @@ class GateOverlayManager(
                     alternativeChallenge = alternativeChallenge,
                     challengePhrase = detector.challengePhrase,
                     onChallengeAnswer = { detector.submitChallenge(it) },
+                    onExit = { exit() },
                     onDebugBypass = { detector.bypassForDebug() },
                 )
             }
@@ -213,6 +216,24 @@ class GateOverlayManager(
         ledger.log(pkg, EventType.GATE_ABANDONED, "reason=$reason tier=$currentTier")
         dismissInternal()
         onAbandoned(pkg)
+    }
+
+    /**
+     * [ ARCHITECT'S SPACE ], and back: one handler, with the expired gate's
+     * meaning. The gate comes down and the user stays on the launcher. It
+     * grants nothing and clears nothing, and it is not an abandon: the ledger
+     * row is LEASE_DECLINED reason=exit, the same row the expired gate
+     * writes. Home is sent again on the way out, which is harmless if the
+     * first one landed and covers the case where it had not.
+     */
+    private fun exit() {
+        val pkg = currentPkg ?: return
+        if (resolved) return
+        resolved = true
+        ledger.log(pkg, EventType.LEASE_DECLINED, "reason=exit")
+        goHome()
+        Log.i(TAG, "overlay=${HomeFirst.Overlay.WALK_GATE} exit taken for $pkg")
+        dismissInternal()
     }
 
     fun dismiss() {
