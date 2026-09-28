@@ -148,7 +148,18 @@ class BitDisplayTest {
         val faces = (0L..2_000L step 37L)
             .map { BitStateMachine.frame(d, 0, it).face }
             .toSet()
-        assertEquals(setOf(BitStateMachine.WARDEN, BitStateMachine.NEUTRAL), faces)
+        // Still: the alternation is the crossing burst's, not the mood's.
+        assertEquals(setOf(BitStateMachine.WARDEN), faces)
+    }
+
+    @Test
+    fun `an answer at the terminal tier sits beside a still face`() {
+        // The device case: the answer row borrowed the resting face, and
+        // the resting face alternated every 83 ms.
+        val d = resolve(mood = Mood.GLITCHED, answer = "4")
+        assertTrue(d is BitDisplay.Answer)
+        val faces = (0L..2_000L step 13L).map { BitStateMachine.frame(d, 0, it).face }.toSet()
+        assertEquals(setOf(BitStateMachine.WARDEN), faces)
     }
 
     @Test

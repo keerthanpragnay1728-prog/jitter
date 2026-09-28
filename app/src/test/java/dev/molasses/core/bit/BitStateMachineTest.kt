@@ -311,17 +311,29 @@ class BitStateMachineTest {
     // ------------------------------------------------------------ the glitch
 
     @Test
-    fun `glitch frames never run faster than twelve fps`() {
+    fun `the glitch burst never runs faster than twelve fps`() {
         var changes = 0
-        var previous = frame(mood = Mood.GLITCHED, tickMs = 0).face
-        val spanMs = 10_000L
-        for (t in 1..spanMs) {
-            val face = frame(mood = Mood.GLITCHED, tickMs = t).face
+        var previous = frame(mood = Mood.GLITCHED, reaction = Reaction.Glitching, ageMs = 0).face
+        for (age in 1 until BitStateMachine.GLITCH_BURST_MS) {
+            val face = frame(mood = Mood.GLITCHED, reaction = Reaction.Glitching, ageMs = age).face
             if (face != previous) changes += 1
             previous = face
         }
-        val maxChanges = spanMs / BitStateMachine.MIN_GLITCH_FRAME_MS
-        assertTrue("$changes changes in ${spanMs}ms, cap $maxChanges", changes <= maxChanges)
+        val maxChanges = BitStateMachine.GLITCH_BURST_MS / BitStateMachine.MIN_GLITCH_FRAME_MS
+        assertTrue("$changes changes, cap $maxChanges", changes in 1..maxChanges)
+    }
+
+    @Test
+    fun `the terminal resting face is a still warden, with no alternation and no blink`() {
+        val faces = (0L until 10_000L).map { frame(mood = Mood.GLITCHED, tickMs = it).face }.toSet()
+        assertEquals(setOf(BitStateMachine.WARDEN), faces)
+    }
+
+    @Test
+    fun `the burst is the only alternating face`() {
+        val burst = (0L until BitStateMachine.GLITCH_BURST_MS step 20L)
+            .map { frame(mood = Mood.GLITCHED, reaction = Reaction.Glitching, ageMs = it).face }.toSet()
+        assertEquals(setOf(BitStateMachine.WARDEN, BitStateMachine.NEUTRAL), burst)
     }
 
     @Test

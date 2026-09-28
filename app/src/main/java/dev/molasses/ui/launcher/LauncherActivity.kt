@@ -1529,9 +1529,18 @@ fun TerminalHomeView(
 
         // Resolved once, here, through the one precedence table:
         // glitch > HUD > reaction > mood.
+        // The deepest app, never the sum. The curve is per package.
+        val mood = BitStateMachine.moodFor(cycle.deepestAppMs, cycle.deepestHorizonMs)
+        // On a change only, never per frame: the log that says which resting
+        // face the console is drawing, and why.
+        LaunchedEffect(mood) {
+            Log.i(
+                BIT_TAG,
+                "mood=$mood deepestMs=${cycle.deepestAppMs} horizonMs=${cycle.deepestHorizonMs}",
+            )
+        }
         val display = BitDisplay.resolve(
-            // The deepest app, never the sum. The curve is per package.
-            mood = BitStateMachine.moodFor(cycle.deepestAppMs, cycle.deepestHorizonMs),
+            mood = mood,
             reaction = reaction,
             hud = if (hudVisibleStep == HudStep.NONE) {
                 null
@@ -3105,3 +3114,6 @@ private fun runConsoleAction(line: ConsoleLine) {
 
 /** `adb logcat -s Molasses.Console`: answers shown, cleared and expired. */
 private const val CONSOLE_TAG = "Molasses.Console"
+
+/** `adb logcat -s Molasses.Bit`: each change of Bit's resting mood. */
+private const val BIT_TAG = "Molasses.Bit"
