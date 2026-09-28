@@ -29,6 +29,7 @@ import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.safety.HomeFirst
+import dev.molasses.core.safety.HomeFirstWatch
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.session.EventRoute
@@ -1437,16 +1438,52 @@ class MolassesAccessibilityService : AccessibilityService() {
             while (true) {
                 delay(OVERLAY_WATCHDOG_INTERVAL_MS)
                 val active = probe.currentForegroundPackage() ?: continue
-                if (SensitivePackages.isSensitive(active, sensitivePrefixes)) {
-                    withContext(Dispatchers.Main.immediate) {
-                        foregroundPkg = active
-                        tearDownOverlays("financial app foreground under a home-first overlay")
-                        Log.i(TAG, "overlays suppressed: $active")
+                // Decided and acted on main, where the overlays live.
+                val stop = withContext(Dispatchers.Main.immediate) {
+                    val gated = homeFirstGatedPkg()
+                    val nowMs = now()
+                    when (
+                        HomeFirstWatch.onForeground(
+                            active = active,
+                            gatedPkg = gated,
+                            sensitive = SensitivePackages.isSensitive(active, sensitivePrefixes),
+                            nowMs = nowMs,
+                            lastRehomeMs = lastRehomeMs,
+                        )
+                    ) {
+                        HomeFirstWatch.Action.TearDown -> {
+                            foregroundPkg = active
+                            tearDownOverlays("financial app foreground under a home-first overlay")
+                            Log.i(TAG, "overlays suppressed: $active")
+                            true
+                        }
+                        HomeFirstWatch.Action.Rehome -> {
+                            lastRehomeMs = nowMs
+                            goHomeQuietly()
+                            Log.i(HOME_FIRST_TAG, "re-home for $gated: it came back to the front under the overlay")
+                            false
+                        }
+                        HomeFirstWatch.Action.Debounced -> {
+                            Log.i(HOME_FIRST_TAG, "re-home for $gated skipped: debounced")
+                            false
+                        }
+                        HomeFirstWatch.Action.Nothing -> false
                     }
-                    return@launch
                 }
+                if (stop) return@launch
             }
         }
+    }
+
+    /** When the watch last sent a gated app home again. Main thread only. See HomeFirstWatch. */
+    private var lastRehomeMs: Long? = null
+
+    /** The package the home-first overlay now up is for, or null. Main thread only. */
+    private fun homeFirstGatedPkg(): String? = when {
+        leaseGate.homeFirst -> leaseGate.showingFor
+        gate.homeFirst -> gate.showingFor
+        lockOverlay.homeFirst -> lockOverlay.showingFor
+        else -> null
     }
 
     /**

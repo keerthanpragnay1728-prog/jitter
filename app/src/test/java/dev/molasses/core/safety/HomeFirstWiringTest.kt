@@ -130,4 +130,17 @@ class HomeFirstWiringTest {
         val between = body.substring(branch, exitControl)
         assertEquals("the exit sits outside both challenge branches", between.count { it == '{' }, between.count { it == '}' })
     }
+
+    @Test
+    fun `the foreground watch re-homes the gated app through the pure decision, on main`() {
+        val watch = functionBody(service, "private fun repaceHomeFirstWatch()")
+        assertTrue(watch.contains("HomeFirstWatch.onForeground("))
+        assertTrue(watch.contains("gatedPkg = gated,") && watch.contains("lastRehomeMs = lastRehomeMs,"))
+        val rehome = watch.substring(watch.indexOf("HomeFirstWatch.Action.Rehome -> {"))
+        assertTrue("stamped before home is sent", rehome.indexOf("lastRehomeMs = nowMs") in 0 until rehome.indexOf("goHomeQuietly()"))
+        assertTrue(watch.contains("re-home for \$gated skipped: debounced"))
+        assertTrue(watch.contains("withContext(Dispatchers.Main.immediate)"))
+        val gated = functionBody(service, "private fun homeFirstGatedPkg()")
+        for (m in listOf("leaseGate", "gate", "lockOverlay")) assertTrue(m, gated.contains("$m.homeFirst -> $m.showingFor"))
+    }
 }
