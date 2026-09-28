@@ -1043,8 +1043,9 @@ produced it, which is the behaviour the shield was asked for anyway.
   reminder is scheduled with `setExactAndAllowWhileIdle` whenever
   `canScheduleExactAlarms()` is true: always below Android 12, through
   `USE_EXACT_ALARM` on 13 and later (granted at install), and through
-  `SCHEDULE_EXACT_ALARM` on 12 and 12L unless revoked under Settings, Apps,
-  Special app access, Alarms and reminders. Otherwise it falls back to
+  `SCHEDULE_EXACT_ALARM` on 12 and 12L (declared with
+  `maxSdkVersion="32"`, so it is not requested on 13 and later) unless
+  revoked under Settings, Apps, Special app access, Alarms and reminders. Otherwise it falls back to
   `setAndAllowWhileIdle`, which with the device idle can be late, by up to an
   hour on Android 12 and later, and the acknowledgement reads INEXACT. If
   neither call succeeds, the reminder is still saved, the acknowledgement

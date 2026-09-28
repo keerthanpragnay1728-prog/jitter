@@ -434,8 +434,12 @@ What keeps it an exception rather than a precedent: it is the only command
 that stores anything, its queue is separate from Bit's speech budget and
 from `console_queued`, and it has no view of its own beyond the one row. A
 second stateful command needs its own decision recorded here, not this one
-cited. Delivery is inexact by design (no exact-alarm permission), and the
-README says how late it can be.
+cited. Delivery is exact: the manifest declares `USE_EXACT_ALARM`, plus
+`SCHEDULE_EXACT_ALARM` capped at `maxSdkVersion="32"` for Android 12 and
+12L, and `setExactAndAllowWhileIdle` is used whenever
+`canScheduleExactAlarms()` allows it. Otherwise it falls back to an inexact
+alarm, and the acknowledgement states which was used (EXACT, INEXACT, or
+saved but not armed). `AccessibilityConfigTest` pins the permission list.
 
 ### The first clause is not decoration, and here is where it bit
 
