@@ -541,12 +541,14 @@ object BitStateMachine {
         if (mood == Mood.BATTERY_CRITICAL) return BitFrame(BATTERY_CRITICAL, BAT_CRIT)
         if (mood == Mood.DORMANT) return BitFrame(DORMANT)
 
-        if (mood == Mood.GLITCHED) {
-            // Quantised to the floor so a fast host cannot drive this above
-            // 12 fps, which is where it stops reading as a glitch and starts
-            // reading as a flicker.
-            return BitFrame(glitchFace(Math.floorDiv(tickMs, MIN_GLITCH_FRAME_MS)))
-        }
+        // Still, not alternating. The terminal mood used to rest on the
+        // glitch alternation, (>_<) and (o_o) every 83 ms, for as long as the
+        // deepest app stayed past its horizon, which is the rest of the
+        // cycle. On hardware that read as a face flickering beside every
+        // answer. The 1.5 s Reaction.Glitching burst on crossing the terminal
+        // is now the only alternating face; the mood that follows it holds
+        // the warden face and does not blink.
+        if (mood == Mood.GLITCHED) return BitFrame(WARDEN)
 
         return BitFrame(if (blinking) BLINK_HALF else NEUTRAL)
     }
