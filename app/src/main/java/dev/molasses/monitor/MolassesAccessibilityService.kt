@@ -58,6 +58,7 @@ import dev.molasses.overlay.GateStats
 import dev.molasses.overlay.LeaseGateOverlayManager
 import dev.molasses.overlay.LockOverlayManager
 import dev.molasses.overlay.ShutterOverlayManager
+import dev.molasses.overlay.StreamMute
 import dev.molasses.sensing.MovementDetector
 import java.io.FileDescriptor
 import java.io.PrintWriter
@@ -243,6 +244,9 @@ class MolassesAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         ServiceDiagnostics.onConnected()
+        // Before any overlay exists. A process that died with our music mute
+        // in force left a flag on disk; this gives the stream back.
+        StreamMute.restoreOnConnect(this)
 
         val wm = getSystemService(WindowManager::class.java)
         if (wm == null) {

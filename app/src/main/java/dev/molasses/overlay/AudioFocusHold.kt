@@ -105,8 +105,17 @@ import dev.molasses.core.safety.OverlayAudio
  * only when the new request is a full `AUDIOFOCUS_GAIN` from a media or game
  * usage. This request is `AUDIOFOCUS_GAIN_TRANSIENT` with a sonification
  * usage, so it does not qualify. Changing that is proposed, not built.
+ *
+ * On hardware, Instagram ignored both on the expired gate. So [take] also
+ * mutes the music stream, through [StreamMute], on the same overlays that
+ * silence; [release] gives it back. See `MuteGuard` for the rules.
  */
 class AudioFocusHold(context: Context) {
+
+    private val appContext: Context = context.applicationContext
+
+    /** This hold's key in [StreamMute]. One per overlay manager. */
+    private val holder = "hold-${nextHolder++}"
 
     private val audio: AudioManager? =
         context.applicationContext.getSystemService(AudioManager::class.java)
@@ -133,6 +142,9 @@ class AudioFocusHold(context: Context) {
      * playing).
      */
     fun take(reason: String, overlay: OverlayAudio.Overlay) {
+        // First, and whatever focus does next: the one lever the app under
+        // the overlay cannot decline. A no-op at entry. See MuteGuard.
+        StreamMute.take(appContext, holder, overlay)
         val am = audio ?: return
         val silence = OverlayAudio.silences(overlay)
         if (!silence) {
@@ -188,6 +200,10 @@ class AudioFocusHold(context: Context) {
 
     /** Give it back. Idempotent, and safe when it was never taken. */
     fun release(reason: String) {
+        // Before any early return: a mute is given back even when focus was
+        // refused and nothing is held. Every overlay's choke point reaches
+        // this, which is what makes it the single restore path on dismiss.
+        StreamMute.release(appContext, holder)
         val am = audio ?: return
         val request = held ?: return
         held = null
@@ -196,5 +212,10 @@ class AudioFocusHold(context: Context) {
             .onFailure { Log.w(TAG, "abandoning audio focus threw for $reason", it) }
     }
 
-    private companion object { const val TAG = "Molasses.AudioFocus" }
+    private companion object {
+        const val TAG = "Molasses.AudioFocus"
+
+        /** Main thread only, like every caller. */
+        var nextHolder = 0
+    }
 }
