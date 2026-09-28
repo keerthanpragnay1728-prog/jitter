@@ -52,8 +52,9 @@ object ReminderAlarms {
             return ReminderArming.Armed.NOT_ARMED
         }
         val intent = pendingIntent(context, id)
-        return ReminderArming.arm(
-            exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms(),
+        val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
+        val armed = ReminderArming.arm(
+            exactAllowed = exactAllowed,
             tryExact = {
                 runCatching { am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atWallMs, intent) }
                     // A revocation can land between the check and the call.
@@ -66,6 +67,9 @@ object ReminderAlarms {
                     .isSuccess
             },
         )
+        // The one line that says which acknowledgement the prompt showed.
+        Log.i(TAG, "reminder $id armed=$armed exactAllowed=$exactAllowed sdk=${Build.VERSION.SDK_INT}")
+        return armed
     }
 
     /**

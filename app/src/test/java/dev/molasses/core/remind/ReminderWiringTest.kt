@@ -19,11 +19,14 @@ class ReminderWiringTest {
         val schedule = functionBody(alarms, "fun schedule(")
         assertTrue(alarms.contains("fun schedule(context: Context, id: Long, atWallMs: Long): ReminderArming.Armed {"))
         assertTrue(schedule.contains("return ReminderArming.Armed.NOT_ARMED"))
+        val check = schedule.indexOf("am.canScheduleExactAlarms()")
         val arm = schedule.indexOf("ReminderArming.arm(")
-        val check = schedule.indexOf("am.canScheduleExactAlarms()", arm)
         val exact = schedule.indexOf("am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP", arm)
         val inexact = schedule.indexOf("am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP", arm)
-        assertTrue(arm >= 0 && check > arm && exact > check && inexact > exact)
+        assertTrue(check >= 0 && arm > check && exact > arm && inexact > exact)
+        assertTrue(schedule.contains("exactAllowed = exactAllowed,"))
+        val log = schedule.indexOf("Log.i(TAG, \"reminder \$id armed=\$armed")
+        assertTrue("the verdict is logged before it is returned", log > inexact && log < schedule.indexOf("return armed"))
         assertFalse("no second verdict beside the pure one", schedule.contains("Precision"))
     }
 
