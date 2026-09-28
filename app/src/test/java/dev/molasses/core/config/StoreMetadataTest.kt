@@ -1,6 +1,8 @@
 package dev.molasses.core.config
 
 import dev.molasses.core.repoFile
+import dev.molasses.core.repoRoot
+import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,7 +40,7 @@ class StoreMetadataTest {
 
     @Test
     fun `the metadata is plain ASCII, so no em or en dash can hide in it`() {
-        val files = repoFile(dir).walkTopDown().filter { it.isFile && it.extension == "txt" }.toList()
+        val files = File(repoRoot(), dir).walkTopDown().filter { it.isFile && it.extension == "txt" }.toList()
         assertTrue(files.isNotEmpty())
         for (file in files) {
             val bad = file.readText().filter { it.code > 127 }
