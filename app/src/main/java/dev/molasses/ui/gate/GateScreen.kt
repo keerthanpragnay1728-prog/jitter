@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.model.GateProgress
+import dev.molasses.core.safety.HomeFirst
+import dev.molasses.core.safety.OverlayExit
 import dev.molasses.debug.DebugSurface
 import dev.molasses.debug.DebugSurface.debugBypassGesture
 import dev.molasses.engine.TierPolicy
@@ -57,6 +60,13 @@ fun GateScreen(
     alternativeChallenge: Boolean,
     challengePhrase: String,
     onChallengeAnswer: (String) -> Unit,
+    /**
+     * [ ARCHITECT'S SPACE ]: leave the gate and stay on the launcher. Shown
+     * from the first frame, because this gate runs over the launcher after
+     * sending its app home and pressing home no longer leaves it. See
+     * `OverlayExit`.
+     */
+    onExit: () -> Unit,
     /**
      * Debug builds only. Wired to a long press on the progress ring, and a
      * no-op in release because [DebugSurface.debugBypassGesture] is a no-op
@@ -154,6 +164,22 @@ fun GateScreen(
                         color = MaterialTheme.colorScheme.secondary,
                     )
                 }
+            }
+
+            // Always there, whatever the progress or the challenge: a gate
+            // can always be left. Asked of OverlayExit so this screen and the
+            // invariant's test cannot disagree.
+            if (OverlayExit.shown(HomeFirst.Overlay.WALK_GATE, remainingMs = 0L) != null) {
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    text = stringResource(R.string.lock_exit),
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable { onExit() }
+                        .padding(vertical = 10.dp, horizontal = 6.dp),
+                )
             }
 
             if (DebugSurface.ENABLED) {

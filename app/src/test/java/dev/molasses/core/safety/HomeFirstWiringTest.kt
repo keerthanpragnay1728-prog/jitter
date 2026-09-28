@@ -109,4 +109,25 @@ class HomeFirstWiringTest {
         assertTrue(legacy.contains("delete in the release after this one"))
         assertTrue(legacy.contains("AudioManager.ADJUST_UNMUTE") && legacy.contains(".remove(KEY_OURS)"))
     }
+
+    @Test
+    fun `the walking gate has ARCHITECT'S SPACE from the first frame, sharing its handler with back`() {
+        val show = functionBody(overlay("GateOverlayManager"), "fun show(")
+        assertTrue(show.contains("onBackPressed = { exit() },"))
+        assertTrue(show.contains("onExit = { exit() },"))
+        val exit = functionBody(overlay("GateOverlayManager"), "private fun exit()")
+        assertTrue(exit.contains("EventType.LEASE_DECLINED, \"reason=exit\""))
+        assertFalse("an exit is not an abandon", exit.contains("GATE_ABANDONED") || exit.contains("onAbandoned("))
+        assertFalse("and grants nothing", exit.contains("onCleared("))
+        val gateScreen = repoFile("app/src/main/java/dev/molasses/ui/gate/GateScreen.kt").readText()
+        // Sliced by hand: functionBody would stop at the `= {}` default in
+        // the parameter list.
+        val body = gateScreen.substring(gateScreen.indexOf("fun GateScreen(")).substringBefore("\n}\n")
+        val exitControl = body.indexOf("OverlayExit.shown(HomeFirst.Overlay.WALK_GATE")
+        assertTrue(exitControl >= 0 && body.indexOf("R.string.lock_exit", exitControl) > exitControl)
+        // Not inside the alternative-challenge branch or the progress branch.
+        val branch = body.indexOf("if (alternativeChallenge) {")
+        val between = body.substring(branch, exitControl)
+        assertEquals("the exit sits outside both challenge branches", between.count { it == '{' }, between.count { it == '}' })
+    }
 }
