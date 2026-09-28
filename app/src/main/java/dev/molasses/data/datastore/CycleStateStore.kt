@@ -2,6 +2,7 @@ package dev.molasses.data.datastore
 
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
@@ -527,10 +528,19 @@ class CycleStateStore(context: Context) {
         edit: (List<QuickLaunch.Entry>) -> List<QuickLaunch.Entry>?,
     ) {
         store.updateData { state ->
-            val current = QuickLaunch.resolve(
+            val stored = QuickLaunch.resolve(
                 QuickLaunch.Selection(state.quickLaunchPackagesList.toList(), state.quickLaunchChosen),
             )
-            val next = edit(current) ?: return@updateData state
+            // Capacity on live slots only; see QuickLaunch.live. A dead slot
+            // leaves with this write.
+            val current = QuickLaunch.live(stored, isLaunchable)
+            val next = edit(current)
+            Log.i(
+                QUICK_TAG,
+                "edit: stored=${stored.size} live=${current.size} dead=${stored.size - current.size} " +
+                    if (next == null) "refused" else "wrote ${next.size}",
+            )
+            if (next == null) return@updateData state
             state.toBuilder()
                 .clearQuickLaunchPackages()
                 .addAllQuickLaunchPackages(QuickLaunch.pruned(next, isLaunchable))
@@ -743,3 +753,6 @@ fun CycleState.anchorInstant(): StampedInstant = StampedInstant(
     elapsedMs = cycleAnchorElapsedMs,
     bootId = cycleAnchorBootId,
 )
+
+/** `adb logcat -s Molasses.QuickLaunch`: each edit and its capacity verdict. */
+private const val QUICK_TAG = "Molasses.QuickLaunch"
