@@ -27,7 +27,11 @@ class QuickLaunchWiringTest {
         assertTrue(body.contains("QuickLaunch.resolve("))
         assertTrue(body.contains("QuickLaunch.pruned(next, isLaunchable)"))
         assertTrue(body.contains(".setQuickLaunchChosen(true)"))
-        assertTrue("a refusal must leave the state untouched", body.contains("?: return@updateData state"))
+        assertTrue("a refusal must leave the state untouched", body.contains("if (next == null) return@updateData state"))
+        // Capacity on live slots, inside the transaction, before the edit.
+        val live = body.indexOf("val current = QuickLaunch.live(stored, isLaunchable)")
+        assertTrue(live > body.indexOf("store.updateData") && live < body.indexOf("val next = edit(current)"))
+        assertTrue(body.contains("Log.i("))
     }
 
     @Test

@@ -82,7 +82,19 @@ object QuickLaunch {
 
     /** The rows to draw: [resolve] less any app that is not launchable now. */
     fun visible(selection: Selection, isLaunchable: (String) -> Boolean): List<Entry> =
-        resolve(selection).filter { it !is Entry.App || isLaunchable(it.pkg) }
+        live(resolve(selection), isLaunchable)
+
+    /**
+     * The slots that count: a built-in row, or an app that is launchable now.
+     *
+     * Capacity is judged on this, never on the stored list. A stored slot for
+     * an uninstalled app is drawn nowhere, so counting it made the section
+     * show four rows while the store refused an add as full. The store edits
+     * this list and writes it back, so the dead slot is pruned in the same
+     * transaction as the add that needed its room.
+     */
+    fun live(entries: List<Entry>, isLaunchable: (String) -> Boolean): List<Entry> =
+        entries.filter { it !is Entry.App || isLaunchable(it.pkg) }
 
     /** The list to store: the same filter, applied at a write. */
     fun pruned(entries: List<Entry>, isLaunchable: (String) -> Boolean): List<String> =

@@ -4,6 +4,7 @@ import dev.molasses.core.launch.QuickLaunch.BuiltIn
 import dev.molasses.core.launch.QuickLaunch.Entry
 import dev.molasses.core.launch.QuickLaunch.Selection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -122,5 +123,31 @@ class QuickLaunchTest {
     @Test
     fun `a swap of a row that is not there is refused`() {
         assertNull(QuickLaunch.swapped(QuickLaunch.DEFAULTS, Entry.App(maps), Entry.App(camera)))
+    }
+
+    @Test
+    fun `a dead slot does not count toward the cap`() {
+        val stored = QuickLaunch.DEFAULTS.take(4) + Entry.App(maps)
+        val installed = setOf(camera)
+        assertEquals(4, QuickLaunch.live(stored, installed::contains).size)
+        assertEquals(4, QuickLaunch.visible(Selection(stored.map { it.token }, chosen = true), installed::contains).size)
+    }
+
+    @Test
+    fun `an add into a dead slot's room succeeds and prunes it in the same write`() {
+        // What the store does in one transaction: live, then edit, then write.
+        val stored = QuickLaunch.DEFAULTS.take(4) + Entry.App(maps)
+        val installed = setOf(camera)
+        assertNull("the stored list alone would refuse", QuickLaunch.added(stored, Entry.App(camera)))
+        val next = QuickLaunch.added(QuickLaunch.live(stored, installed::contains), Entry.App(camera))
+            ?: error("refused")
+        val written = QuickLaunch.pruned(next, installed::contains)
+        assertEquals(QuickLaunch.DEFAULTS.take(4).map { it.token } + camera, written)
+        assertFalse("the dead slot is gone", maps in written)
+    }
+
+    @Test
+    fun `built-in rows are always live`() {
+        assertEquals(QuickLaunch.DEFAULTS, QuickLaunch.live(QuickLaunch.DEFAULTS) { false })
     }
 }
