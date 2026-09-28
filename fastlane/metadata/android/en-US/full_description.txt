@@ -10,10 +10,11 @@ Jitter is a progressive-friction focus tool. It never blocks the apps you pick. 
 </ul>
 
 <b>What it needs</b>
+Two permissions (accessibility, usage access) and your home app.
 <ul>
 <li><b>Accessibility service.</b> To see which app is in front and when you scroll, in the apps you track only. It cannot read your screen: window content retrieval is switched off in its configuration.</li>
 <li><b>Usage access.</b> To rebuild your time if Jitter is killed mid-session.</li>
-<li><b>Home app.</b> The console and the setup guide are the launcher, so they need Jitter set as the home app. Its settings open from the app drawer without that.</li>
+<li><b>Home app.</b> The console is a launcher, so it needs Jitter set as your home app. The setup guide asks for it, and opens from the app drawer before that is done.</li>
 </ul>
 On Android 13 and later, Android marks the accessibility service as a restricted setting for apps installed outside a store. The setup guide shows how to allow it from App info.
 

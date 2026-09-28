@@ -154,9 +154,9 @@ follows from accepting that:
   plain language, because a sideloading user has no store listing to read.
 - No update mechanism of its own, no telemetry, no account.
 
-To install, enable install from unknown sources, install the APK, then grant
-the accessibility service and usage access from the setup checklist in
-settings. Uninstalling removes everything; the app stores nothing outside its
+To install, enable install from unknown sources, install the APK, and open
+Jitter from the app drawer. The first-run guide asks for what it needs: two
+permissions (accessibility, usage access) and your home app. Uninstalling removes everything; the app stores nothing outside its
 own data directory.
 
 ### Building

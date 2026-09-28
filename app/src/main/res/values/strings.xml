@@ -650,6 +650,7 @@
       brackets and the step markers are not reworded.
     -->
     <string name="onboarding_title">SETUP</string>
+    <string name="onboarding_needs">Jitter needs two permissions (accessibility, usage access) and your home app.</string>
     <string name="onboarding_step_fmt">STEP %1$s OF %2$s</string>
     <string name="onboarding_mark_done_fmt" translatable="false">[x] %1$s</string>
     <string name="onboarding_mark_open_fmt" translatable="false">[ ] %1$s</string>

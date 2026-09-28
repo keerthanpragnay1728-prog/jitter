@@ -91,6 +91,9 @@ fun OnboardingScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Line(stringResource(R.string.onboarding_title), PhosphorGreen, bold = true, size = 18)
+            // On every step, the limits screen included, so what is being
+            // asked for is stated once in the same words everywhere.
+            Line(stringResource(R.string.onboarding_needs), PhosphorDim)
             Spacer(Modifier.height(4.dp))
             for (step in Step.entries) {
                 val name = stringResource(onboardingStepName(step))
