@@ -281,4 +281,15 @@ class AccessibilityConfigTest {
         }
     }
 
+
+    @Test
+    fun `the event types are exactly these four, and window content stays unreadable`() {
+        val xml = repoFile("app/src/main/res/xml/accessibility_service_config.xml").readText()
+        assertTrue(xml.contains("android:accessibilityEventTypes=\"typeViewScrolled|typeWindowStateChanged|typeWindowsChanged|typeWindowContentChanged\""))
+        assertTrue(xml.contains("android:canRetrieveWindowContent=\"false\""))
+        val service = repoFile("app/src/main/java/dev/molasses/monitor/MolassesAccessibilityService.kt").readText()
+        val types = service.substring(service.indexOf("info.eventTypes =")).substringBefore("info.notificationTimeout")
+        assertEquals(4, Regex("""AccessibilityEvent\.TYPE_""").findAll(types).count())
+        assertTrue(types.contains("AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED"))
+    }
 }

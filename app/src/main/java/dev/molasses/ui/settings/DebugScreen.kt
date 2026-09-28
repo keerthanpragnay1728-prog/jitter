@@ -212,6 +212,7 @@ fun DebugScreen(
                             R.string.debug_events_row,
                             t.scrolled.toString(),
                             (t.windowState + t.windowsChanged).toString(),
+                            t.contentChanged.toString(),
                             t.routed.toString(),
                             t.ignored.toString(),
                         ),

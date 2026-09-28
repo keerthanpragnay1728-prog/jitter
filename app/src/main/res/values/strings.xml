@@ -411,8 +411,8 @@
     <string name="debug_field_cycle_anchor" translatable="false">cycle anchor</string>
     <string name="debug_field_resets_in" translatable="false">resets in</string>
     <string name="debug_section_events">EVENTS BY PACKAGE</string>
-    <string name="debug_events_header" translatable="false">scroll / win / routed / ignored</string>
-    <string name="debug_events_row" translatable="false">%1$s / %2$s / %3$s / %4$s</string>
+    <string name="debug_events_header" translatable="false">scroll / win / content / routed / ignored</string>
+    <string name="debug_events_row" translatable="false">%1$s / %2$s / %3$s / %4$s / %5$s</string>
     <string name="debug_events_none">No accessibility events received. The service is not seeing anything.</string>
     <string name="debug_events_overflow" translatable="false">+%1$s more packages (capped)</string>
     <string name="debug_warn_stuck">SERVICE STUCK STARTING. It is bound but never became ready, so every accessibility event is being dropped. Reconciliation is most likely blocked awaiting DataStore.</string>

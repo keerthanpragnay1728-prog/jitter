@@ -44,4 +44,32 @@ class YouTubeRouteTest {
         }
         assertTrue(onScroll.contains("val armed = shutter.arm("))
     }
+
+    // ------------------------------------------------ the scroll proxy
+
+    @Test
+    fun `a content change in a target routes to the proxy, and ours is dropped`() {
+        val targets = setOf(ig, yt)
+        assertEquals(EventRoute.ContentChanged(yt), router.route(ev(yt, WindowEvent.Kind.CONTENT_CHANGED), targets))
+        assertEquals(EventRoute.Ignore(IgnoreReason.OWN_PACKAGE), router.route(ev("dev.molasses", WindowEvent.Kind.CONTENT_CHANGED), targets))
+        assertEquals(EventRoute.Ignore(IgnoreReason.NOT_A_TARGET), router.route(ev("com.x", WindowEvent.Kind.CONTENT_CHANGED), targets))
+    }
+
+    @Test
+    fun `the proxy goes through the one scroll path, rate-limited, and never reads a node`() {
+        val service = repoFile("app/src/main/java/dev/molasses/monitor/MolassesAccessibilityService.kt").readText()
+        val proxy = functionBody(service, "private fun onContentChanged(")
+        val qualifies = proxy.indexOf("ScrollProxy.qualifies(event.contentChangeTypes)")
+        val gate = proxy.indexOf("ScrollProxy.mayPass(state, nowMs)")
+        val scroll = proxy.indexOf("onScroll(pkg, event.eventTime, callbackEntryUptimeMs, viaProxy = true)")
+        val stamp = proxy.indexOf("ScrollProxy.onPassed(state, nowMs, armedMs)")
+        assertTrue(qualifies in 0 until gate && gate < scroll && scroll < stamp)
+        for (forbidden in listOf("getSource", ".source", "AccessibilityNodeInfo", "rootInActiveWindow", ".text")) {
+            assertTrue(forbidden, !proxy.contains(forbidden))
+        }
+        assertTrue(!service.contains("getSource(") && !service.contains("rootInActiveWindow"))
+        // A real scroll switches it off for the session; leaving resets it.
+        assertTrue(service.contains("scrollProxy[route.pkg] = ScrollProxy.onRealScroll("))
+        assertTrue(functionBody(service, "private fun leaveTarget(").contains("scrollProxy.remove(pkg)"))
+    }
 }
