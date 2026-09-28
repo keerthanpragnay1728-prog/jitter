@@ -19,7 +19,7 @@
   drops anything wearing our own package name before it looks at anything else.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeViewScrolled|typeWindowStateChanged|typeWindowsChanged|typeWindowContentChanged"
+    android:accessibilityEventTypes="typeViewScrolled|typeWindowStateChanged|typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault"
     android:canRetrieveWindowContent="false"

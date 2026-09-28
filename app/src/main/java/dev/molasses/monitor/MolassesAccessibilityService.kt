@@ -36,7 +36,6 @@ import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.session.EventRoute
 import dev.molasses.core.session.ForegroundEventRouter
 import dev.molasses.core.session.ForegroundSessionTracker
-import dev.molasses.core.session.ScrollProxy
 import dev.molasses.core.session.TargetScope
 import dev.molasses.core.session.WindowEvent
 import dev.molasses.core.friction.FrictionCurve
@@ -619,13 +618,9 @@ class MolassesAccessibilityService : AccessibilityService() {
         val names = TargetScope.packageNames(packages, packageName)
         info.packageNames = names
         ServiceDiagnostics.appliedPackageNames = names.toList()
-        // TYPE_WINDOW_CONTENT_CHANGED feeds the scroll proxy and nothing
-        // else. With canRetrieveWindowContent false no node or content comes
-        // with it; the proxy reads its package, time and change-type int.
         info.eventTypes = AccessibilityEvent.TYPE_VIEW_SCROLLED or
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED or
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED
         info.notificationTimeout = 0
         runCatching { serviceInfo = info }
             .onFailure { Log.w(TAG, "setServiceInfo failed", it) }
@@ -666,7 +661,6 @@ class MolassesAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> WindowEvent.Kind.WINDOW_STATE_CHANGED
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> WindowEvent.Kind.WINDOWS_CHANGED
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> WindowEvent.Kind.VIEW_SCROLLED
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> WindowEvent.Kind.CONTENT_CHANGED
             else -> return
         }
 
@@ -681,11 +675,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         // and "every event ignored" look identical from outside and have
         // completely different fixes.
         ServiceDiagnostics.recordEvent(windowEvent, route)
-        // Content changes are too many to log one by one; the proxy logs the
-        // ones that pass.
-        if (pkg == DIAG_PACKAGE && kind != WindowEvent.Kind.CONTENT_CHANGED) {
-            Log.i(SERVICE_TAG, "event pkg=$pkg type=$kind route=${routeLabel(route)}")
-        }
+        if (pkg == DIAG_PACKAGE) Log.i(SERVICE_TAG, "event pkg=$pkg type=$kind route=${routeLabel(route)}")
 
         when (route) {
             is EventRoute.Ignore -> Unit
@@ -702,23 +692,15 @@ class MolassesAccessibilityService : AccessibilityService() {
                 if (open != null) probeSoon(open, sessions.openId)
             }
 
-            is EventRoute.Scroll -> {
-                // A real scroll: the proxy is off for this package this session.
-                scrollProxy[route.pkg] = ScrollProxy.onRealScroll(scrollProxy[route.pkg] ?: ScrollProxy.State())
-                onScroll(route.pkg, event.eventTime, callbackEntryUptimeMs)
-            }
-
-            is EventRoute.ContentChanged -> onContentChanged(route.pkg, event, callbackEntryUptimeMs)
+            is EventRoute.Scroll -> onScroll(route.pkg, event, callbackEntryUptimeMs)
         }
     }
 
-    /** @return the stall the shutter armed, or 0 when nothing armed. */
     private fun onScroll(
         pkg: String,
-        eventTime: Long,
+        event: AccessibilityEvent,
         callbackEntryUptimeMs: Long,
-        viaProxy: Boolean = false,
-    ): Long {
+    ) {
         // Segment A: how long the platform took to deliver this event.
         // Nothing here can shorten it. It is the number that decides whether
         // the concept is viable at all, as distinct from whether this
@@ -727,7 +709,8 @@ class MolassesAccessibilityService : AccessibilityService() {
         // AccessibilityEvent.getEventTime() is on the uptimeMillis clock, the
         // same one MotionEvent.getEventTime() uses, so the two are directly
         // subtractable. currentTimeMillis is not comparable with either.
-        if (eventTime > 0 && !viaProxy) {
+        val eventTime = event.eventTime
+        if (eventTime > 0) {
             latency.forPackage(pkg).record(Segment.A, callbackEntryUptimeMs - eventTime)
         }
 
@@ -745,13 +728,13 @@ class MolassesAccessibilityService : AccessibilityService() {
         // locked.
         val diag = pkg == DIAG_PACKAGE
         if (enforceLockIfNeeded(pkg, atEntry = false)) {
-            if (diag) logScroll(pkg, decision, armed = false, why = "lock enforced", viaProxy)
-            return 0L
+            if (diag) logScroll(pkg, decision, armed = false, why = "lock enforced")
+            return
         }
 
         if (overlaysSuppressed()) {
-            if (diag) logScroll(pkg, decision, armed = false, why = "overlays suppressed (sensitive foreground or pause)", viaProxy)
-            return 0L
+            if (diag) logScroll(pkg, decision, armed = false, why = "overlays suppressed (sensitive foreground or pause)")
+            return
         }
 
         // The launch check runs here too, and this is not belt and braces.
@@ -762,61 +745,37 @@ class MolassesAccessibilityService : AccessibilityService() {
         // find within a week. It is a map lookup on a path that already does
         // arithmetic, and it returns immediately once a lease is live.
         if (maybeLaunchGate(pkg)) {
-            if (diag) logScroll(pkg, decision, armed = false, why = "the launch gate owns this scroll", viaProxy)
-            return 0L
+            if (diag) logScroll(pkg, decision, armed = false, why = "the launch gate owns this scroll")
+            return
         }
 
-        var armedMs = 0L
         if (decision.stalls) {
             val armed = shutter.arm(
                 ms = decision.stallMs,
-                // Zero for the proxy: a content change is not a scroll, and
-                // its time must not enter the scroll latency tables.
-                scrollEventTimeUptimeMs = if (viaProxy) 0L else eventTime,
+                scrollEventTimeUptimeMs = eventTime,
                 callbackEntryUptimeMs = callbackEntryUptimeMs,
                 terminal = decision.terminal,
             )
-            if (armed) armedMs = decision.stallMs
-            if (diag) logScroll(pkg, decision, armed, why = if (armed) "armed" else "shutter refused (not attached, or a call)", viaProxy)
+            if (diag) logScroll(pkg, decision, armed, why = if (armed) "armed" else "shutter refused (not attached, or a call)")
         } else if (diag) {
             logScroll(
                 pkg,
                 decision,
                 armed = false,
                 why = if (decision.curveStallMs == 0) "curve: no stall at this point" else "curve stalls, roll missed",
-                viaProxy,
             )
         }
         ServiceDiagnostics.gateShowing = gate.isShowing || leaseGate.isShowing
-        return armedMs
-    }
-
-    /**
-     * The scroll proxy. A qualifying content change from a package that has
-     * sent no real scroll this session goes through the scroll path, at most
-     * once a second and at most once per stall window. See [ScrollProxy].
-     * Reads the change-type int on the event and nothing else of it.
-     */
-    private val scrollProxy = HashMap<String, ScrollProxy.State>()
-
-    private fun onContentChanged(pkg: String, event: AccessibilityEvent, callbackEntryUptimeMs: Long) {
-        if (!ScrollProxy.qualifies(event.contentChangeTypes)) return
-        val state = scrollProxy[pkg] ?: ScrollProxy.State()
-        val nowMs = now()
-        if (!ScrollProxy.mayPass(state, nowMs)) return
-        val armedMs = onScroll(pkg, event.eventTime, callbackEntryUptimeMs, viaProxy = true)
-        scrollProxy[pkg] = ScrollProxy.onPassed(state, nowMs, armedMs)
-        Log.i(SERVICE_TAG, "proxy scroll pkg=$pkg armed=${armedMs}ms (content change, no real scroll this session)")
     }
 
     /**
      * One line per scroll from [DIAG_PACKAGE]: what the curve commanded, and
      * whether the shutter armed, and if not, which branch stopped it.
      */
-    private fun logScroll(pkg: String, decision: FrictionDecision, armed: Boolean, why: String, viaProxy: Boolean) {
+    private fun logScroll(pkg: String, decision: FrictionDecision, armed: Boolean, why: String) {
         Log.i(
             SERVICE_TAG,
-            "${if (viaProxy) "proxy " else ""}scroll pkg=$pkg curveStall=${decision.curveStallMs}ms p=${decision.probability} " +
+            "scroll pkg=$pkg curveStall=${decision.curveStallMs}ms p=${decision.probability} " +
                 "rolled=${decision.stallMs}ms terminal=${decision.terminal} armed=${if (armed) "yes" else "no"} ($why)",
         )
     }
@@ -827,7 +786,6 @@ class MolassesAccessibilityService : AccessibilityService() {
         EventRoute.ExitToHome -> "exitHome"
         EventRoute.ProbeForeground -> "probe"
         is EventRoute.Scroll -> "scroll"
-        is EventRoute.ContentChanged -> "content"
     }
 
     /**
@@ -1383,8 +1341,6 @@ class MolassesAccessibilityService : AccessibilityService() {
      */
     private fun leaveTarget(id: ForegroundSessionTracker.SessionId, reason: String) {
         val pkg = sessions.close(id) ?: return
-        // A new session starts without knowing whether this app scrolls.
-        scrollProxy.remove(pkg)
         cancelLeaseExpiry("left $pkg ($reason)")
         watchdogJob?.cancel()
         watchdogJob = null
