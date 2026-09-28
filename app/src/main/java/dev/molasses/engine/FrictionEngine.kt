@@ -289,7 +289,10 @@ class FrictionEngine(
         val effective = FrictionCurve.effectiveMs(live, app.penaltyMs)
         val friction = FrictionCurve.frictionAt(effective, app.horizonMs, floorMs)
 
-        if (!friction.stalls) return FrictionDecision.NONE
+        if (!friction.stalls) {
+            // Equal to NONE before the onset, where both are zero.
+            return FrictionDecision(curveStallMs = friction.stallMs, probability = friction.probability)
+        }
 
         // Ledgered from tier 1 on only. Scroll events arrive in bursts of
         // dozens per second and normal (tier 0) usage is the common case, so
@@ -309,6 +312,8 @@ class FrictionEngine(
         return FrictionDecision(
             stallMs = stallMs,
             terminal = effective >= FrictionCurve.terminalMs(app.horizonMs),
+            curveStallMs = friction.stallMs,
+            probability = friction.probability,
         )
     }
 

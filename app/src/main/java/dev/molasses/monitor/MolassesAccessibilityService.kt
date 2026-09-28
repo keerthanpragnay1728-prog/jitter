@@ -28,6 +28,7 @@ import dev.molasses.core.lock.LockReason
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
+import dev.molasses.core.model.FrictionDecision
 import dev.molasses.core.safety.HomeFirst
 import dev.molasses.core.safety.HomeFirstWatch
 import dev.molasses.core.safety.PauseWindow
@@ -650,7 +651,10 @@ class MolassesAccessibilityService : AccessibilityService() {
         // Taken first: segment B is measured from here, and anything done
         // before this read is silently excluded from "our code".
         val callbackEntryUptimeMs = SystemClock.uptimeMillis()
-        if (!ready) return
+        if (!ready) {
+            if (event.packageName == DIAG_PACKAGE) Log.i(SERVICE_TAG, "event pkg=$DIAG_PACKAGE dropped: service not ready")
+            return
+        }
         val pkg = event.packageName?.toString() ?: return
 
         val kind = when (event.eventType) {
@@ -671,6 +675,7 @@ class MolassesAccessibilityService : AccessibilityService() {
         // and "every event ignored" look identical from outside and have
         // completely different fixes.
         ServiceDiagnostics.recordEvent(windowEvent, route)
+        if (pkg == DIAG_PACKAGE) Log.i(SERVICE_TAG, "event pkg=$pkg type=$kind route=${routeLabel(route)}")
 
         when (route) {
             is EventRoute.Ignore -> Unit
@@ -721,9 +726,16 @@ class MolassesAccessibilityService : AccessibilityService() {
         // polls nothing: it is a map lookup on a path that already does
         // arithmetic, and it only does work when the package is actually
         // locked.
-        if (enforceLockIfNeeded(pkg, atEntry = false)) return
+        val diag = pkg == DIAG_PACKAGE
+        if (enforceLockIfNeeded(pkg, atEntry = false)) {
+            if (diag) logScroll(pkg, decision, armed = false, why = "lock enforced")
+            return
+        }
 
-        if (overlaysSuppressed()) return
+        if (overlaysSuppressed()) {
+            if (diag) logScroll(pkg, decision, armed = false, why = "overlays suppressed (sensitive foreground or pause)")
+            return
+        }
 
         // The launch check runs here too, and this is not belt and braces.
         // The gate can be left unresolved without leaving the app: the
@@ -732,17 +744,48 @@ class MolassesAccessibilityService : AccessibilityService() {
         // gate until they left and came back, which is a bypass anyone would
         // find within a week. It is a map lookup on a path that already does
         // arithmetic, and it returns immediately once a lease is live.
-        if (maybeLaunchGate(pkg)) return
+        if (maybeLaunchGate(pkg)) {
+            if (diag) logScroll(pkg, decision, armed = false, why = "the launch gate owns this scroll")
+            return
+        }
 
         if (decision.stalls) {
-            shutter.arm(
+            val armed = shutter.arm(
                 ms = decision.stallMs,
                 scrollEventTimeUptimeMs = eventTime,
                 callbackEntryUptimeMs = callbackEntryUptimeMs,
                 terminal = decision.terminal,
             )
+            if (diag) logScroll(pkg, decision, armed, why = if (armed) "armed" else "shutter refused (not attached, or a call)")
+        } else if (diag) {
+            logScroll(
+                pkg,
+                decision,
+                armed = false,
+                why = if (decision.curveStallMs == 0) "curve: no stall at this point" else "curve stalls, roll missed",
+            )
         }
         ServiceDiagnostics.gateShowing = gate.isShowing || leaseGate.isShowing
+    }
+
+    /**
+     * One line per scroll from [DIAG_PACKAGE]: what the curve commanded, and
+     * whether the shutter armed, and if not, which branch stopped it.
+     */
+    private fun logScroll(pkg: String, decision: FrictionDecision, armed: Boolean, why: String) {
+        Log.i(
+            SERVICE_TAG,
+            "scroll pkg=$pkg curveStall=${decision.curveStallMs}ms p=${decision.probability} " +
+                "rolled=${decision.stallMs}ms terminal=${decision.terminal} armed=${if (armed) "yes" else "no"} ($why)",
+        )
+    }
+
+    private fun routeLabel(route: EventRoute): String = when (route) {
+        is EventRoute.Ignore -> "ignore(${route.reason})"
+        is EventRoute.EnterTarget -> "enter"
+        EventRoute.ExitToHome -> "exitHome"
+        EventRoute.ProbeForeground -> "probe"
+        is EventRoute.Scroll -> "scroll"
     }
 
     /**
@@ -1557,6 +1600,18 @@ class MolassesAccessibilityService : AccessibilityService() {
 
         /** `adb logcat -s Molasses.HomeFirst`: overlays that sent their app home, and what followed. */
         const val HOME_FIRST_TAG = "Molasses.HomeFirst"
+
+        /**
+         * `adb logcat -s Molasses.Service`: every event from [DIAG_PACKAGE],
+         * its route, and for scrolls the curve's answer and the arm verdict.
+         *
+         * Diagnostics for one open question (why YouTube showed no stall past
+         * its horizon), named here rather than applied to every target
+         * because a line per scroll event for every app would bury itself.
+         * Remove with the question once the device has answered it.
+         */
+        const val SERVICE_TAG = "Molasses.Service"
+        const val DIAG_PACKAGE = "com.google.android.youtube"
 
         private const val TAG = "Molasses.Service"
         const val CHECKPOINT_INTERVAL_MS = 15_000L

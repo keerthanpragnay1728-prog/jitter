@@ -631,4 +631,39 @@ class FrictionEngineTest {
         r.scope.testScheduler.advanceUntilIdle()
         assertTrue("expected at least one persisted snapshot", r.store.writes.isNotEmpty())
     }
+
+    // ------------------------------------------------ YouTube, as Instagram
+
+    @Test
+    fun `a YouTube scroll stream reaches the arm decision with the same inputs as Instagram`() {
+        // The engine has no per-package branch: the same timeline gives the
+        // same decision, curve fields included, for either package.
+        val a = Rig()
+        val b = Rig()
+        a.enter(ig, 0)
+        b.enter(yt, 0)
+        for (ms in listOf(1 * min, 10 * min, 30 * min, 45 * min, 90 * min)) {
+            assertEquals("at ${ms / min} min", a.scroll(ig, ms), b.scroll(yt, ms))
+        }
+    }
+
+    @Test
+    fun `past the horizon a YouTube scroll still commands the ceiling stall`() {
+        val r = Rig()
+        r.enter(yt, 0)
+        val d = r.scroll(yt, 3 * hour)
+        assertTrue("stalls at the ceiling", d.stalls)
+        assertTrue(d.terminal)
+        assertEquals(d.stallMs.toInt(), d.curveStallMs)
+        assertTrue(d.probability > 0f)
+    }
+
+    @Test
+    fun `a missed roll still reports what the curve commanded`() {
+        val r = Rig(roll = { 1f })
+        r.enter(yt, 0)
+        val d = r.scroll(yt, 3 * hour)
+        assertEquals(0L, d.stallMs)
+        assertTrue(d.curveStallMs > 0 && d.probability > 0f)
+    }
 }

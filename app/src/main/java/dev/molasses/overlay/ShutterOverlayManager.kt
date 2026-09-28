@@ -244,14 +244,14 @@ class ShutterOverlayManager(
          * crossing rather than a state.
          */
         terminal: Boolean = false,
-    ) {
+    ): Boolean {
         if (!added) attach()
-        if (!added) return
+        if (!added) return false
 
         // Checked before every arm, not only on a call-state transition.
         if (callInProgress()) {
             Log.d(TAG, "refusing to arm: ${calls.describe()}")
-            return
+            return false
         }
 
         val now = SystemClock.elapsedRealtime()
@@ -321,6 +321,7 @@ class ShutterOverlayManager(
             }
             disarm("deadline")
         }
+        return true
     }
 
     /** Panic release: immediate, unconditional, logged. */
