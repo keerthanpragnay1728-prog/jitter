@@ -1,16 +1,17 @@
 package dev.molasses.core.ui
 
+import dev.molasses.core.friction.HorizonReading
 import dev.molasses.core.model.AppSnapshot
 
 /**
  * The one line of engine state the launcher shows.
  *
  * ```
- * CYCLE 38m +4m  TIER 02  RESETS 4h12m
+ * CYCLE 38m +4m  HORIZON 168%  RESETS 4h12m
  * ```
  *
  * ## Why this exists
- * Nothing in the launcher showed accumulated time, tier, penalty or cycle
+ * Nothing in the launcher showed accumulated time, horizon, penalty or cycle
  * remaining. The ledger page reads `UsageStatsManager` and nothing else, so
  * every number on it is the system's rather than Jitter's, and the engine's
  * own state lived in a debug screen and in one step of a readout behind a
@@ -18,9 +19,16 @@ import dev.molasses.core.model.AppSnapshot
  * without three taps into a developer page.
  *
  * ## Why the deepest app and not the sum
- * The same reason the mood reads it: the friction curve is per package, so a
- * tier is a property of one app. Summing would produce a figure with no tier
- * that describes it.
+ * The same reason the mood reads it: the friction curve is per package, and
+ * so is its horizon. Summing would produce a figure no horizon describes.
+ *
+ * ## Why the horizon replaced the tier
+ * The tier was a five minute rung of a fixed ladder the curve no longer
+ * follows, so TIER 04 said nothing true about the friction in force. HORIZON
+ * is the curve's own reading: accumulated time plus the penalty, as a
+ * percentage of the app's horizon, which is what friction is read against.
+ * 100% is exactly where `FrictionEngine.isTerminal` turns true, and it keeps
+ * counting past that rather than saturating, as the tier did.
  *
  * ## Why the penalty is shown at all
  * A user whose curve has been accelerated by an ignored checkpoint currently
@@ -47,7 +55,7 @@ object CycleLine {
     data class Fields(
         val cycle: String,
         val penalty: String?,
-        val tier: String,
+        val horizon: String,
         val resets: String,
     )
 
@@ -60,20 +68,13 @@ object CycleLine {
     fun fields(deepest: AppSnapshot?, cycleRemainingMs: Long?): Fields = Fields(
         cycle = if (deepest == null) UNKNOWN else duration(deepest.accumulatedMs),
         penalty = deepest?.penaltyMs?.takeIf { it > 0L }?.let { duration(it) },
-        tier = if (deepest == null) UNKNOWN else tier(deepest.tierIndex),
+        horizon = if (deepest == null) UNKNOWN else horizon(deepest),
         resets = if (cycleRemainingMs == null) UNKNOWN else duration(cycleRemainingMs),
     )
 
-    /**
-     * Two digits, so the line does not reflow between tier 9 and tier 10.
-     *
-     * The index is unbounded past the terminal by design, so it can exceed
-     * two digits on a long enough cycle. Padding rather than clamping keeps
-     * the number honest; the line reflowing at tier 100 is a price worth
-     * paying over a tier column that lies.
-     */
-    fun tier(index: Int): String =
-        if (index < 0) UNKNOWN else index.toString().padStart(2, '0')
+    /** Effective time as a percentage of [app]'s horizon. See [HorizonReading.percentOfHorizon]. */
+    fun horizon(app: AppSnapshot): String =
+        "${HorizonReading(app.accumulatedMs, app.penaltyMs, app.horizonMs).percentOfHorizon}%"
 
     /**
      * Largest two units, seconds dropped.

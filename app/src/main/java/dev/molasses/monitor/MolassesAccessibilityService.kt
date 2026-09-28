@@ -846,10 +846,13 @@ class MolassesAccessibilityService : AccessibilityService() {
                 showLeaseGate(pkg, decision.countdownMs, decision.expired)
             // The movement gate is the toll in these two, and the panel
             // follows it. Both paths end in showLeaseGate via onCleared.
+            // Read live from the engine, the same reading isTerminal
+            // answered the decision with, so the gate's label agrees with
+            // the reason it is showing.
             GatePolicy.GateMode.WALK ->
-                gate.show(pkg, engine.state.value.perApp[pkg]?.tierIndex ?: 0, false)
+                gate.show(pkg, engine.horizonReading(pkg, now()), false)
             GatePolicy.GateMode.TYPING_ONLY ->
-                gate.show(pkg, engine.state.value.perApp[pkg]?.tierIndex ?: 0, true)
+                gate.show(pkg, engine.horizonReading(pkg, now()), true)
         }
 
         val outcome = LaunchGate.outcome(decision, attached)

@@ -184,6 +184,15 @@ object FrictionCurve {
         (accumulatedMs + penaltyMs).coerceAtLeast(0L)
 
     /**
+     * Past the horizon: friction is at its ceiling. The one definition of
+     * "terminal". `FrictionEngine.isTerminal`, the walking gate's label and
+     * the ledger all read it through [HorizonReading], so none of them can
+     * disagree with the others.
+     */
+    fun isTerminal(accumulatedMs: Long, penaltyMs: Long, horizonMs: Long): Boolean =
+        effectiveMs(accumulatedMs, penaltyMs) >= terminalMs(horizonMs)
+
+    /**
      * The onset and terminal at the default horizon.
      *
      * Kept because several things want a boundary when no app is in hand, and

@@ -50,14 +50,17 @@
     <string name="lease_gate_header_fmt" translatable="false">%1$s</string>
     <string name="lease_gate_header_expired_fmt" translatable="false">%1$s // LEASE EXPIRED</string>
 
-    <string name="gate_tier">Tier %1$s</string>
-    <string name="gate_tier_terminal">Tier %1$s (terminal)</string>
-    <string name="gate_minutes_used">%1$s minutes used</string>
+    <!-- The walking gate reads the app's time against its horizon. Every
+         number is an argument from FrictionCurve through HorizonReading. -->
+    <string name="gate_within_horizon">WITHIN A %1$s MIN HORIZON</string>
+    <string name="gate_past_horizon">PAST THE %1$s MIN HORIZON</string>
+    <string name="gate_minutes_used">%1$s of %2$s minutes used</string>
+    <string name="gate_penalty">+%1$s min for staying past a lease</string>
     <string name="gate_progress_percent">%1$s%%</string>
     <string name="gate_why">Why am I seeing this?</string>
-    <string name="gate_why_intro">You have used this app for %1$s minutes in the current cycle. Clearing this gate unlocks the next five minutes. It does not reset your accumulated time, and it does not reduce the delay on scrolling. Within a cycle the delay only ever grows.</string>
-    <string name="gate_why_terminal">You are past twenty minutes, so this gate will return every five minutes until the cycle resets.</string>
-    <string name="gate_why_next">The next gate is at %1$s minutes.</string>
+    <string name="gate_why_intro">You have used this app for %1$s minutes in the current cycle, against a %2$s minute horizon. Clearing this gate opens the lease choice. It does not reset your accumulated time, and it does not reduce the delay on scrolling. Within a cycle the delay only ever grows.</string>
+    <string name="gate_why_terminal">You are past this app\'s horizon, so friction is at its ceiling and this gate replaces the countdown until the cycle resets.</string>
+    <string name="gate_why_within">Friction reaches its ceiling at the horizon.</string>
     <string name="gate_why_leaving">Pressing HOME or RECENTS will leave this screen. That pauses the gate rather than clearing it. The gate returns when you scroll again.</string>
 
     <string name="gate_debug_bypass_hint">Debug build. Hold the ring for 2 seconds to bypass.</string>
@@ -85,7 +88,7 @@
     <!-- Settings -->
     <string name="settings_tagline">Your chosen apps are never blocked. The longer you use them in a six-hour cycle, the more the phone feels like it is failing.</string>
     <string name="settings_section_setup">Setup</string>
-    <string name="settings_section_ladder">The ladder</string>
+    <string name="settings_section_ladder">How friction works</string>
     <string name="settings_section_suffix_fmt" translatable="false">// %1$s</string>
     <string name="settings_targets_none">None</string>
     <string name="settings_section_targets">Target apps</string>
@@ -166,7 +169,7 @@
     <string name="settings_gate_unavoidable_body">Opening a target app puts a countdown in front of it. When it reaches zero you choose how long you are staying, or you leave. Taking a lease buys time and nothing else: scroll delays run exactly as they would have, and staying past the lease you took makes them arrive sooner. There is no setting that turns friction off.</string>
     <string name="settings_section_gate">The gate</string>
     <string name="settings_gate_mode_title">What the gate asks for</string>
-    <string name="settings_gate_mode_body">Applies at the terminal tier only, which is twenty five minutes in one app in one cycle. Below that it is always the countdown, whatever is chosen here.</string>
+    <string name="settings_gate_mode_body">Applies only once an app is past its horizon (%1$s minutes unless you change it) in one cycle. Before that it is always the countdown, whatever is chosen here.</string>
     <string name="settings_gate_mode_countdown">Wait it out</string>
     <string name="settings_gate_mode_countdown_body">A countdown, eight seconds the first time and four seconds longer each time you take another lease in the same cycle, up to thirty. Nothing to do but read the numbers.</string>
     <string name="settings_gate_mode_walk">Walk</string>
@@ -221,10 +224,18 @@
     <string name="settings_targets_count_fmt">%1$s of %2$s apps</string>
     <string name="settings_targets_empty">No launchable apps listed yet.</string>
 
-    <string name="settings_ladder_normal">0-5 min, normal</string>
-    <string name="settings_ladder_terminal">%1$s min+ (terminal), gate every 5 min, %2$s ms stall</string>
-    <string name="settings_ladder_tier">%1$s min, gate then %2$s ms stall</string>
-    <string name="settings_ladder_note">Clearing a gate unlocks the next five minutes. It never resets your accumulated time and never shortens the stall.</string>
+    <!--
+      How friction works, in CFG. Every number is an argument computed from
+      FrictionCurve at the default horizon (FrictionSummary), never written
+      here, so this cannot drift from the curve the way the old fixed ladder
+      did.
+    -->
+    <string name="settings_friction_horizon">Each app has a horizon, the length of session it is for. A new app gets %1$s minutes. Change it per app under Target apps.</string>
+    <string name="settings_friction_onset">For the first %1$s minutes (%2$s%% of the horizon), scrolling is untouched.</string>
+    <string name="settings_friction_ramp">Then a scroll can stall. It starts at %1$s ms with a %2$s%% chance, and both rise until the horizon.</string>
+    <string name="settings_friction_ceiling">At %1$s minutes it reaches its ceiling, %2$s ms at %3$s%%, and stays there. Longer horizons have a lower ceiling.</string>
+    <string name="settings_friction_lease">The lease gate is separate. It asks how long you are staying each time you open a tracked app, and it runs on real time, not on time spent in the app.</string>
+    <string name="settings_friction_note">A lease never resets your time and never shortens a stall. Within a cycle, friction only ever grows.</string>
 
     <string name="settings_test_stall">Test Phantom Stall (1 second)</string>
     <string name="settings_debug">Debug and ledger</string>
@@ -247,7 +258,7 @@
     <string name="debug_latency_note">The rings live in the accessibility service process and are not persisted, so this screen cannot read them directly. D is the number that decides the product. A is the number that decides whether it is fixable.</string>
 
     <string name="debug_section_stall_duration">Stall duration (requested vs actual, from the ledger)</string>
-    <string name="debug_stall_empty">No STALL_ARMED rows yet. Scroll past five minutes in a target app, clear the gate, then come back.</string>
+    <string name="debug_stall_empty">No STALL_ARMED rows yet. Scroll in a target app past the start of its friction, then come back.</string>
     <string name="debug_overshoot_note">Overshoot is actual armed duration minus requested. It bundles the coroutine wake-up, the updateViewLayout round trip, and any panic release. Negative values are early releases.</string>
 
     <string name="debug_section_calibration">Sensing calibration</string>
@@ -258,7 +269,7 @@
     <string name="debug_none_recorded">(none recorded)</string>
 
     <string name="debug_section_state_editor">Set state (debug build only)</string>
-    <string name="debug_state_editor_note">Writes accumulated time and tier index straight into the store and rebuilds the engine, so a stall tier can be reached without clearing a gate first. Any open session is dropped.</string>
+    <string name="debug_state_editor_note">Writes accumulated time and tier index straight into the store and rebuilds the engine, so any point on the friction curve can be reached without waiting for it. Any open session is dropped.</string>
     <string name="debug_state_editor_pkg">Package</string>
     <string name="debug_state_editor_minutes">Accumulated minutes</string>
     <string name="debug_state_editor_tier">Tier index (blank to derive)</string>
@@ -301,7 +312,10 @@
     <string name="debug_field_lease_until" translatable="false">leaseUntil</string>
     <string name="debug_value_seconds" translatable="false">%1$s s</string>
     <string name="debug_value_ms" translatable="false">%1$s ms</string>
-    <string name="debug_tier_terminal" translatable="false">%1$s (terminal)</string>
+    <string name="debug_horizon_fmt" translatable="false">%1$s min, %2$s%%</string>
+    <string name="debug_horizon_terminal_fmt" translatable="false">%1$s min, %2$s%% (terminal)</string>
+    <string name="debug_field_horizon" translatable="false">horizon</string>
+    <string name="debug_value_stall" translatable="false">%1$s ms at %2$s%%</string>
     <!-- Phase 1: Launcher Shell -->
     <string name="launcher_title">Jitter Home</string>
     <string name="launcher_empty_apps">No apps installed</string>
@@ -376,10 +390,10 @@
       gaps and aapt would collapse them in an unquoted value, so the
       alignment is assembled in Kotlin and these carry only the shape.
     -->
-    <string name="ledger_cycle_fmt" translatable="false">CYCLE %1$s  TIER %2$s  RESETS %3$s</string>
+    <string name="ledger_cycle_fmt" translatable="false">CYCLE %1$s  HORIZON %2$s  RESETS %3$s</string>
     <!-- The ratchet, shown only when it has run. It modifies the cycle
          figure, so it sits against it rather than in a column of its own. -->
-    <string name="ledger_cycle_penalty_fmt" translatable="false">CYCLE %1$s +%2$s  TIER %3$s  RESETS %4$s</string>
+    <string name="ledger_cycle_penalty_fmt" translatable="false">CYCLE %1$s +%2$s  HORIZON %3$s  RESETS %4$s</string>
     <string name="ledger_distribution">DISTRIBUTION METRICS</string>
     <string name="ledger_app_minutes_fmt">%1$s min</string>
     <string name="filter_allowed_badge">[ALLOWED]</string>

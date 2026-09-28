@@ -6,7 +6,7 @@ import android.view.View
 import android.view.WindowManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.molasses.engine.TierPolicy
+import dev.molasses.core.friction.FrictionCurve
 import kotlin.math.roundToLong
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,9 +90,17 @@ class LatencyProbeTest {
             wm.addView(sink, params)
 
             // Arm and immediately synthesise a touch, ROUNDS times, across
-            // the three real stall durations.
+            // three durations the curve actually commands: the floor, the
+            // ceiling at the longest horizon, and the ceiling at the default.
+            // They used to come from the fixed tier ladder, which no longer
+            // decides any stall.
+            val durations = listOf(
+                FrictionCurve.DEFAULT_FLOOR_MS.toLong(),
+                FrictionCurve.terminalStallMs(FrictionCurve.MAX_HORIZON_MS).toLong(),
+                FrictionCurve.TERMINAL_STALL_MS.toLong(),
+            )
             repeat(ROUNDS) { i ->
-                val requested = TierPolicy.stallMsFor((i % 3) + 1)
+                val requested = durations[i % durations.size]
                 pendingRequest = requested
 
                 val armStart = SystemClock.elapsedRealtime()

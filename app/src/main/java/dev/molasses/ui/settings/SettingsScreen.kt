@@ -48,6 +48,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.friction.FrictionSummary
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.command.CommandRegistry
@@ -69,7 +70,6 @@ import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.ui.AlphaIndex
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.repo.InstalledApp
-import dev.molasses.engine.TierPolicy
 import kotlinx.coroutines.launch
 
 /**
@@ -587,7 +587,10 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Text(
-                        stringResource(R.string.settings_gate_mode_body),
+                        stringResource(
+                            R.string.settings_gate_mode_body,
+                            (FrictionCurve.DEFAULT_HORIZON_MS / 60_000L).toString(),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary,
                     )
@@ -828,27 +831,41 @@ private fun AlphaRail(
 
 @Composable
 private fun LadderRows() {
+    // The real model, not a ladder. Every figure is computed from
+    // FrictionCurve at the default horizon, so this text moves when the
+    // curve does. The fixed 5/10/15/20 ladder it replaces had stopped
+    // describing the app long before it was taken down.
+    val summary = remember { FrictionSummary.of(FrictionCurve.DEFAULT_HORIZON_MS) }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Column {
-            TierPolicy.ladder.forEach { tier ->
-                val minutes = tier.entryAtMs / 60_000
-                val label = when {
-                    tier.index == 0 -> stringResource(R.string.settings_ladder_normal)
-                    TierPolicy.isTerminal(tier.index) -> stringResource(
-                        R.string.settings_ladder_terminal, minutes, tier.stallMs,
-                    )
-                    else -> stringResource(R.string.settings_ladder_tier, minutes, tier.stallMs)
-                }
-                Text(label, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(4.dp))
-            }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Text(
-                stringResource(R.string.settings_ladder_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary,
-            )
+        for (line in listOf(
+            stringResource(R.string.settings_friction_horizon, summary.horizonMinutes.toString()),
+            stringResource(
+                R.string.settings_friction_onset,
+                summary.onsetMinutes.toString(),
+                summary.onsetPercent.toString(),
+            ),
+            stringResource(
+                R.string.settings_friction_ramp,
+                summary.firstStallMs.toString(),
+                summary.firstProbabilityPercent.toString(),
+            ),
+            stringResource(
+                R.string.settings_friction_ceiling,
+                summary.horizonMinutes.toString(),
+                summary.ceilingStallMs.toString(),
+                summary.ceilingProbabilityPercent.toString(),
+            ),
+            stringResource(R.string.settings_friction_lease),
+        )) {
+            Text(line, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(6.dp))
         }
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        Text(
+            stringResource(R.string.settings_friction_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
     }
 }
 

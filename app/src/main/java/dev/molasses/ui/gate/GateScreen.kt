@@ -39,7 +39,7 @@ import dev.molasses.core.safety.HomeFirst
 import dev.molasses.core.safety.OverlayExit
 import dev.molasses.debug.DebugSurface
 import dev.molasses.debug.DebugSurface.debugBypassGesture
-import dev.molasses.engine.TierPolicy
+import dev.molasses.core.friction.HorizonReading
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -54,7 +54,8 @@ import kotlinx.coroutines.flow.StateFlow
  */
 @Composable
 fun GateScreen(
-    tier: Int,
+    /** This app's time against its horizon, read live from the engine. */
+    reading: HorizonReading,
     pkg: String,
     progressFlow: StateFlow<GateProgress>,
     alternativeChallenge: Boolean,
@@ -81,8 +82,6 @@ fun GateScreen(
         label = "gateProgress",
     )
 
-    val minutes = (TierPolicy.entryAtMs(tier) / 60_000).toInt()
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -99,21 +98,30 @@ fun GateScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = stringResource(
-                    if (TierPolicy.isTerminal(tier)) R.string.gate_tier_terminal
-                    else R.string.gate_tier,
-                    tier,
-                ),
+                text = stringResource(horizonLabel(reading.terminal), reading.horizonMinutes.toString()),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.secondary,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = stringResource(R.string.gate_minutes_used, minutes),
+                text = stringResource(
+                    R.string.gate_minutes_used,
+                    reading.usedMinutes.toString(),
+                    reading.horizonMinutes.toString(),
+                ),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center,
             )
+            // True time and the penalty stay two numbers, as on the ledger.
+            if (reading.penaltyMinutes > 0L) {
+                Text(
+                    text = stringResource(R.string.gate_penalty, reading.penaltyMinutes.toString()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    textAlign = TextAlign.Center,
+                )
+            }
             Spacer(Modifier.height(32.dp))
 
             if (alternativeChallenge) {
@@ -197,7 +205,7 @@ fun GateScreen(
             }
             AnimatedVisibility(visible = whyExpanded) {
                 Text(
-                    text = whyBody(minutes, tier),
+                    text = whyBody(reading),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
                     textAlign = TextAlign.Start,
@@ -270,20 +278,26 @@ private fun pathRes(path: GateProgress.Path): Int? = when (path) {
     GateProgress.Path.NONE -> null
 }
 
+/** Past the horizon or not. The same [HorizonReading.terminal] the engine gates on. */
+@StringRes
+private fun horizonLabel(terminal: Boolean): Int =
+    if (terminal) R.string.gate_past_horizon else R.string.gate_within_horizon
+
+@StringRes
+private fun whyStanding(terminal: Boolean): Int =
+    if (terminal) R.string.gate_why_terminal else R.string.gate_why_within
+
 @Composable
-private fun whyBody(minutes: Int, tier: Int): String = buildString {
-    append(stringResource(R.string.gate_why_intro, minutes))
+private fun whyBody(reading: HorizonReading): String = buildString {
+    append(
+        stringResource(
+            R.string.gate_why_intro,
+            reading.usedMinutes.toString(),
+            reading.horizonMinutes.toString(),
+        ),
+    )
     append(" ")
-    if (TierPolicy.isTerminal(tier)) {
-        append(stringResource(R.string.gate_why_terminal))
-    } else {
-        append(
-            stringResource(
-                R.string.gate_why_next,
-                TierPolicy.entryAtMs(tier + 1) / 60_000,
-            ),
-        )
-    }
+    append(stringResource(whyStanding(reading.terminal)))
     append("\n\n")
     append(stringResource(R.string.gate_why_leaving))
 }

@@ -6,6 +6,7 @@ import dev.molasses.core.model.EngineState
 import dev.molasses.core.model.EventType
 import dev.molasses.core.friction.CycleRollover
 import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.friction.HorizonReading
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.model.FrictionDecision
 import dev.molasses.core.time.BootIdProvider
@@ -279,10 +280,10 @@ class FrictionEngine(
         // and nothing else.
         //
         // Letting it drive tierIndex as well was wrong, and six existing
-        // tests caught it: it made the ledger's tier column stop describing
-        // time the user had spent. It matters again now that the tier decides
-        // whether the walking gate is in force, which is a question about how
-        // long they have really been in the app.
+        // tests caught it: it made the tier stop describing time the user
+        // had spent. The tier decides nothing now (terminal is the horizon,
+        // see isTerminal); it is a count kept for the ledger and the debug
+        // screen, and it stays on true time so it counts what was spent.
         val index = TierPolicy.indexFor(live)
         app.tier.raiseTo(index)
 
@@ -325,11 +326,18 @@ class FrictionEngine(
      * [onScroll] would read, so the answer cannot drift from the one on the
      * stall marker.
      */
-    fun isTerminal(pkg: String, nowMs: Long): Boolean {
+    fun isTerminal(pkg: String, nowMs: Long): Boolean = horizonReading(pkg, nowMs).terminal
+
+    /**
+     * [pkg]'s live time against its horizon. The walking gate is shown from
+     * this, and [isTerminal] answers from it, so the gate's label and the
+     * decision to show the gate cannot disagree. An app with no state reads
+     * as zero time at the default horizon, which is not terminal, as before.
+     */
+    fun horizonReading(pkg: String, nowMs: Long): HorizonReading {
         confinement()
-        val app = apps[pkg] ?: return false
-        return liveAccumulatedMs(app, nowMs) + app.penaltyMs >=
-            FrictionCurve.terminalMs(app.horizonMs)
+        val app = apps[pkg] ?: return HorizonReading(0L, 0L, FrictionCurve.DEFAULT_HORIZON_MS)
+        return HorizonReading(liveAccumulatedMs(app, nowMs), app.penaltyMs, app.horizonMs)
     }
 
     /** Leases granted on [pkg] in the current cycle. Drives the escalation. */
