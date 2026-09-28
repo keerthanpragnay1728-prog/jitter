@@ -482,6 +482,9 @@ private fun execute(
                 when (outcome) {
                     is RemindOutcome.Saved -> DispatchResult.Answered(
                         ackKey = remindAckKey(outcome.armed),
+                        // An acknowledgement, not content: it goes by
+                        // itself once read. See ReadingWindow.
+                        readingWindow = true,
                         args = listOf(lockOpensAtText(context, outcome.dueWallMs)),
                     )
                     RemindOutcome.Full -> DispatchResult.Failed(

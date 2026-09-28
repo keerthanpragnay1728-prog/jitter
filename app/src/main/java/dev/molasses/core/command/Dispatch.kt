@@ -38,6 +38,12 @@ sealed interface DispatchResult {
         val args: List<String> = emptyList(),
         val noteKey: Int? = null,
         val noteArgs: List<String> = emptyList(),
+        /**
+         * True for an acknowledgement rather than content: it goes by itself
+         * after [ReadingWindow.holdMs], as well as on the three early exits.
+         * Only the reminder acknowledgement sets it.
+         */
+        val readingWindow: Boolean = false,
     ) : DispatchResult
 
     /** Bad input. The user can fix this by typing something else. */
@@ -67,7 +73,8 @@ sealed interface DispatchResult {
      * The console calls [await] once with the function that shows an
      * outcome, and the command calls that exactly once when it knows. The
      * delivered outcome goes through the same handling as any other, so an
-     * [Answered] from here is held until the next keystroke like calc's.
+     * [Answered] from here is held like calc's, or for its reading window
+     * when it sets [Answered.readingWindow].
      */
     data class Deferred(val await: (deliver: (DispatchResult) -> Unit) -> Unit) : DispatchResult
 }

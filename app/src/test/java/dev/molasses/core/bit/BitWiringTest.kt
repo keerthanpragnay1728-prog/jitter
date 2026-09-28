@@ -2,6 +2,7 @@ package dev.molasses.core.bit
 
 import dev.molasses.core.repoFile
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -137,13 +138,14 @@ class BitWiringTest {
 
     @Test
     fun `an answer is cleared by each of the three things that end it`() {
-        // The whole of its lifetime, and none of it is a clock. Each of these
-        // is the user moving on, and a missing one is an answer that outlives
-        // its moment on a surface whose argument is that nothing sits on it
-        // without earning the space.
+        // Each of these is the user moving on, and a missing one is an answer
+        // that outlives its moment on a surface whose argument is that nothing
+        // sits on it without earning the space.
+        val edit = host.substring(host.indexOf("onValueChange = edit@{ edited ->")).substringBefore("textStyle =")
+        assertTrue("the next keystroke clears it", edit.contains("answer = null\n                        lastKeystrokeMs ="))
         assertTrue(
-            "the next keystroke clears it",
-            host.contains("answer = null\n                        lastKeystrokeMs ="),
+            "a selection or composing change is not a keystroke",
+            edit.indexOf("if (next == query) return@edit") in 0 until edit.indexOf("answer = null"),
         )
         assertTrue(
             "a new dispatch clears it, before the branch that may set one",
@@ -156,16 +158,38 @@ class BitWiringTest {
     }
 
     @Test
-    fun `nothing puts an answer on a timer`() {
-        // It used to be a reaction, which is the one thing here that expires
-        // on a clock. If a tick or a delay ever reaches this state again, the
-        // migration has been undone by an edit that looks like a tidy-up.
+    fun `only a reading-window acknowledgement is on a clock, and only the reminder's is one`() {
+        // Content the user asked for waits for them. An acknowledgement of
+        // something they just did goes by itself once read.
         val declaration = host.indexOf("var answer by remember")
         assertTrue("the host must hold the answer as state", declaration >= 0)
-        assertTrue(
-            "an answer must not be handed to the reaction ladder",
-            !host.contains("Reaction.Answer("),
-        )
+        assertTrue("an answer must not be handed to the reaction ladder", !host.contains("Reaction.Answer("))
+        val clock = host.substring(host.indexOf("LaunchedEffect(answerSerial) {")).substringBefore("\n    }\n")
+        assertTrue(clock.contains("val hold = answerHoldMs ?: return@LaunchedEffect"))
+        assertTrue(clock.contains("delay(hold)") && clock.contains("answer = null"))
+        val answered = host.substring(host.indexOf("is DispatchResult.Answered -> {")).substringBefore("is DispatchResult.Unavailable")
+        assertTrue(answered.contains("answerHoldMs = if (outcome.readingWindow) ReadingWindow.holdMs(text) else null"))
+        assertTrue("a new answer restarts the clock", answered.contains("answerSerial += 1"))
+        val dispatch = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherDispatch.kt").readText()
+        assertEquals(1, Regex("""readingWindow = true""").findAll(dispatch).count())
+        val rem = dispatch.substring(dispatch.indexOf("is Command.Rem -> DispatchResult.Deferred"))
+        assertTrue(rem.substringBefore("Command.RemList ->").contains("readingWindow = true"))
+    }
+
+    @Test
+    fun `a deferred answer lands with the cleared prompt in one frame, and Enter waits for it`() {
+        val deferred = host.substring(host.indexOf("is DispatchResult.Deferred -> {")).substringBefore("\n            }\n")
+        assertFalse("clearing here drew an empty frame before the answer", deferred.contains("query = \"\""))
+        assertTrue(deferred.contains("awaitingDeferred = true") && deferred.contains("awaitingDeferred = false"))
+        assertTrue(host.contains("if (awaitingDeferred) return@go"))
+    }
+
+    @Test
+    fun `the prompt is a command line, not prose`() {
+        val options = host.substring(host.indexOf("keyboardOptions = KeyboardOptions(")).substringBefore("keyboardActions")
+        assertTrue(options.contains("autoCorrectEnabled = false"))
+        assertTrue(options.contains("capitalization = KeyboardCapitalization.None"))
+        assertTrue("an outside change drops the composing region", host.contains("TextFieldValue(query, TextRange(query.length))"))
     }
 
     @Test

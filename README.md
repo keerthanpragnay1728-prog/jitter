@@ -1053,8 +1053,9 @@ produced it, which is the behaviour the shield was asked for anyway.
   connects.
   `USE_EXACT_ALARM` is restricted on Google Play to alarm and calendar apps;
   this app is distributed by sideload and F-Droid.
-- The acknowledgement stays on the console until the next keystroke, like a
-  calc answer.
+- The acknowledgement stays up for a reading window, 2000 ms plus 250 ms a
+  word, between 3 and 10 seconds, then goes by itself. A keystroke, another
+  command or leaving the launcher clears it sooner.
 - **A missed tone means the text is seen only on the next visit to the
   launcher.** There is no notification, so no notification grant. The tone
   is one short, soft chime (a generated 280 ms sine after 120 ms of silence,
