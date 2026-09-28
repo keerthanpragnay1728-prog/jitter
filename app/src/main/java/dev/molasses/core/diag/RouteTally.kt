@@ -43,8 +43,6 @@ class RouteTally(
         val scrolled: Long = 0,
         val windowState: Long = 0,
         val windowsChanged: Long = 0,
-        /** Content changes, which feed only the scroll proxy. */
-        val contentChanged: Long = 0,
         val routed: Long = 0,
         val ignored: Long = 0,
         /**
@@ -57,7 +55,7 @@ class RouteTally(
          */
         val ignoredBy: Map<IgnoreReason, Long> = emptyMap(),
     ) {
-        val total: Long get() = scrolled + windowState + windowsChanged + contentChanged
+        val total: Long get() = scrolled + windowState + windowsChanged
 
         fun ignoredBy(reason: IgnoreReason): Long = ignoredBy[reason] ?: 0L
     }
@@ -83,8 +81,6 @@ class RouteTally(
                 if (event.kind == WindowEvent.Kind.WINDOW_STATE_CHANGED) 1 else 0,
             windowsChanged = t.windowsChanged +
                 if (event.kind == WindowEvent.Kind.WINDOWS_CHANGED) 1 else 0,
-            contentChanged = t.contentChanged +
-                if (event.kind == WindowEvent.Kind.CONTENT_CHANGED) 1 else 0,
             routed = t.routed + if (ignored == null) 1 else 0,
             ignored = t.ignored + if (ignored == null) 0 else 1,
             ignoredBy = if (ignored == null) {
