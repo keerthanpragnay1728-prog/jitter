@@ -49,12 +49,12 @@ class GateBlockTest {
     fun `the screen offers it outside the panel, so from the first frame`() {
         val screen = repoFile("app/src/main/java/dev/molasses/ui/gate/LeaseGateScreen.kt").readText()
         val body = functionBody(screen, "fun LeaseGateScreen(")
-        val panelBranch = body.indexOf("if (panelUp) {")
-        val block = body.indexOf("if (blockOffered) {")
+        val panelBranch = body.indexOf("if (controls.leases) {")
+        val block = body.indexOf("if (controls.block) {")
         assertTrue(panelBranch >= 0 && block > panelBranch)
         // The panel branch closes before the block control opens.
         val between = body.substring(panelBranch, block)
-        assertEquals("the block control must not sit inside the panelUp branch",
+        assertEquals("the block control must not sit inside the leases branch",
             between.count { it == '{' }, between.count { it == '}' })
         val control = functionBody(screen, "private fun BlockControl(")
         assertTrue(control.contains("GateBlock.RUNGS_MS.forEach"))
@@ -63,8 +63,10 @@ class GateBlockTest {
     @Test
     fun `back from the rungs returns to the gate`() {
         val manager = repoFile("app/src/main/java/dev/molasses/overlay/LeaseGateOverlayManager.kt").readText()
-        assertTrue(manager.contains("if (blockPickerOpen) blockPickerOpen = false else decline(\"back\")"))
-        assertTrue(manager.contains("blockOffered = GateBlock.offered(expired),"))
+        // The rung row closes first; only then is back the gate's own answer.
+        val back = manager.substring(manager.indexOf("onBackPressed = {")).substringBefore("},")
+        assertTrue(back.indexOf("blockPickerOpen -> blockPickerOpen = false") in 0 until back.indexOf("expired -> exit()"))
+        assertTrue(manager.contains("controls = GateControls.visible(expired, remaining),"))
     }
 
     @Test

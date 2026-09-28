@@ -1185,6 +1185,16 @@ numbers.
 by four answers: 5m, 10m, 15m, or TAKE ME OUT, which sends you home. There is
 no unlimited option, and pressing back does the same thing as TAKE ME OUT.
 
+**When a lease runs out, the app goes home under the gate.** The gate
+checks your lease at its deadline, without waiting for you to touch anything,
+and the LEASE EXPIRED gate sends the app to the background as it appears, so
+a video stops because its app stopped, not because anything argued with its
+sound. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
+from the start and leaves (back does the same), [ BLOCK THIS APP ] is there
+from the start, and the lease options appear at zero; taking one reopens the
+app where you left it. Leaving grants nothing and resets nothing. The walking
+gate and a lock that arrives mid-session send the app home the same way.
+
 **Each lease makes the next gate longer.** Eight seconds, then twelve, sixteen,
 twenty, up to thirty, for as long as the cycle lasts. Backing out costs nothing
 extra: only leases you actually take lengthen it. The count resets when the

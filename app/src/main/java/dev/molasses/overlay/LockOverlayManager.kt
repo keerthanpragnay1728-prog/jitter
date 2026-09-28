@@ -7,7 +7,7 @@ import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.model.EventType
-import dev.molasses.core.safety.OverlayAudio
+import dev.molasses.core.safety.HomeFirst
 import dev.molasses.engine.FrictionLedger
 import dev.molasses.ui.lock.LockScreen
 import dev.molasses.ui.lock.lockOpensAtText
@@ -71,9 +71,13 @@ class LockOverlayManager(
 
     /** See [watchForCall]. The same permission-free check the shutter uses. */
     private val calls = CallDetector(service)
-    private val focus = AudioFocusHold(service)
 
     val isShowing: Boolean get() = host?.isShowing == true
+
+    /** Raised mid-session: it sent the app home, so leaving the app must not take it down. See [HomeFirst]. */
+    val homeFirst: Boolean get() = isShowing && homeFirstNow
+
+    private var homeFirstNow = false
 
     /** The package this window is up for, or null when it is not showing. */
     val showingFor: String? get() = if (isShowing) currentPkg else null
@@ -95,8 +99,9 @@ class LockOverlayManager(
      * event, must not stack two windows.
      *
      * @param atEntry raised as the locked app opens, rather than over a
-     *   session already running. Decides audio focus and the media pause
-     *   key together; see `OverlayAudio`.
+     *   session already running. Mid-session it sends the app home after the
+     *   first draw and stays over the launcher until [ ARCHITECT'S SPACE ];
+     *   see `HomeFirst`. At entry it is unchanged.
      */
     fun flash(
         pkg: String,
@@ -109,6 +114,8 @@ class LockOverlayManager(
         if (isShowing) return
 
         currentPkg = pkg
+        val kind = HomeFirst.lock(atEntry)
+        homeFirstNow = HomeFirst.sendsHome(kind)
         val h = OverlayHost(service, windowManager)
         host = h
 
@@ -117,19 +124,28 @@ class LockOverlayManager(
         val remainingText = CommandRender.duration(remainingMs)
         val opensAtText = lockOpensAtText(service, opensAtWallMs)
 
-        // No onFirstDraw callback any more, and the reason it existed is
-        // worth keeping written down. It was there because GLOBAL_ACTION_HOME
-        // fired from a timer started at show(): sending home from the call
-        // that added the window meant the frame never composited, so the user
-        // was thrown to the launcher with no explanation and it read as a
-        // crash. Once the user is the one pressing home, the frame has
-        // demonstrably been composited, because they looked at it and pressed
-        // a button on it.
+        // Mid-session, home goes after the first draw, never from this call:
+        // sending home from the call that added the window meant the frame
+        // never composited, so the user was thrown to the launcher with no
+        // explanation and it read as a crash. At entry there is no home here
+        // at all; the user presses the way out, by which time the frame has
+        // demonstrably been composited.
         //
         // The settle hold on the way out is a different thing and survives:
         // it is about not revealing the locked app for a frame during the
         // transition, and that is still true however home was triggered.
-        h.show {
+        h.show(
+            onFirstDraw = if (homeFirstNow) {
+                {
+                    if (currentPkg == pkg) {
+                        goHome()
+                        Log.i(TAG, "overlay=$kind home sent for $pkg")
+                    }
+                }
+            } else {
+                null
+            },
+        ) {
             MolassesTheme(fontScale = fontScale()) {
                 LockScreen(
                     label = label,
@@ -153,17 +169,6 @@ class LockOverlayManager(
             goHome()
             return
         }
-
-        // After the addView check, for the reason the lease gate gives: the
-        // failure path above returns without reaching dismiss(), so a request
-        // made earlier would never be given back.
-        //
-        // This window needs it more than the gate does. The gate runs for at
-        // most thirty seconds; this one lives until the user presses the way
-        // out, over an app they are not allowed to use at all, so a locked app
-        // playing audio behind a full-screen refusal is the same defect with
-        // no upper bound on it.
-        focus.take("lock overlay for $pkg", overlay = OverlayAudio.lock(atEntry))
 
         onWindowsChanged()
         ledger.log(pkg, EventType.LOCK_ENFORCED, "remaining=${remainingText} reason=${reason.name}")
@@ -225,11 +230,7 @@ class LockOverlayManager(
         callJob?.cancel()
         callJob = null
         val h = host ?: return
-        // Past the null check deliberately. Focus is only ever taken once a
-        // window is genuinely attached, so a null host means there is nothing
-        // held, and releasing above this line would be a claim about state
-        // this method has not established yet.
-        focus.release("lock overlay down ($reason)")
+        homeFirstNow = false
         host = null
         currentPkg = null
         Log.i(TAG, "lock flash down ($reason)")
