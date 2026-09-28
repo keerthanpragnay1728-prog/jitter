@@ -58,31 +58,4 @@ class UntrackCoolingOffTest {
             assertNull("$how", UntrackCoolingOff.onLeave(started(), how))
         }
     }
-
-    @Test
-    fun `last target only when it is the one tracked package`() {
-        val all: (String) -> Boolean = { true }
-        assertTrue(UntrackCoolingOff.isLastTarget(pkg, listOf(pkg), all))
-        assertFalse(UntrackCoolingOff.isLastTarget(pkg, listOf(pkg, "com.twitter.android"), all))
-        assertFalse("not tracked at all", UntrackCoolingOff.isLastTarget(pkg, emptyList(), all))
-        assertFalse("some other app is the last", UntrackCoolingOff.isLastTarget(pkg, listOf("com.twitter.android"), all))
-    }
-
-    @Test
-    fun `a tracked package that is not installed does not stop it being the last`() {
-        // The device case: a default that was never installed stays in the
-        // resolved set, CFG draws no row for it, and the line never showed.
-        val installed = setOf(pkg, "com.google.android.youtube")
-        val tracked = listOf(pkg, "com.twitter.android")
-        assertTrue(UntrackCoolingOff.isLastTarget(pkg, tracked, installed::contains))
-        assertFalse(
-            "an installed second target still counts",
-            UntrackCoolingOff.isLastTarget(pkg, tracked + "com.google.android.youtube", installed::contains),
-        )
-    }
-
-    @Test
-    fun `the app itself counts even while the installed list is still loading`() {
-        assertTrue(UntrackCoolingOff.isLastTarget(pkg, listOf(pkg)) { false })
-    }
 }

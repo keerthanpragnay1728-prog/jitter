@@ -139,4 +139,50 @@ class TargetScopeTest {
             assertEquals("$selection", targets, names - own)
         }
     }
+
+    // ------------------------------------------------ gateable: installed only
+
+    private val ig = "com.instagram.android"
+    private val tw = "com.twitter.android"
+    private val yt = "com.google.android.youtube"
+
+    @Test
+    fun `gateable is tracked and installed, once each`() {
+        assertEquals(listOf(ig), TargetScope.gateable(listOf(ig, tw, ig), setOf(ig, yt)))
+        assertEquals(emptyList<String>(), TargetScope.gateable(listOf(tw), setOf(ig)))
+    }
+
+    @Test
+    fun `an installed list that has not loaded counts every tracked package`() {
+        assertEquals(listOf(ig, tw), TargetScope.gateable(listOf(ig, tw), null))
+        assertEquals(null, TargetScope.installedOrUnknown(emptyList()))
+        assertEquals(setOf(ig), TargetScope.installedOrUnknown(listOf(ig)))
+    }
+
+    @Test
+    fun `last only when it is the one gateable package`() {
+        val all = setOf(ig, tw, yt)
+        assertTrue(TargetScope.isLastGateable(ig, listOf(ig), all))
+        assertFalse(TargetScope.isLastGateable(ig, listOf(ig, tw), all))
+        assertFalse("not tracked at all", TargetScope.isLastGateable(ig, emptyList(), all))
+        assertFalse("another app is the last", TargetScope.isLastGateable(ig, listOf(tw), all))
+    }
+
+    @Test
+    fun `a tracked package that is not installed does not stop it being the last`() {
+        assertTrue(TargetScope.isLastGateable(ig, listOf(ig, tw), setOf(ig, yt)))
+        assertFalse(TargetScope.isLastGateable(ig, listOf(ig, tw, yt), setOf(ig, yt)))
+    }
+
+    @Test
+    fun `the app itself counts even when the installed list does not name it`() {
+        assertTrue(TargetScope.isLastGateable(ig, listOf(ig), setOf(yt)))
+    }
+
+    @Test
+    fun `before the installed list loads, an uninstalled other target still blocks last`() {
+        // Conservative: without the list there is no telling tw apart from
+        // an installed app, and a false LAST TARGET is worse than a missing one.
+        assertFalse(TargetScope.isLastGateable(ig, listOf(ig, tw), null))
+    }
 }
