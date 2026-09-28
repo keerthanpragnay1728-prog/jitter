@@ -688,6 +688,21 @@ Do not include:
 The body is plain prose under the same style rules as above. Explain why, not
 just what.
 
+## Pushing
+
+**Push only with `tools/push-if-green.sh`. Never run `git push` directly.**
+
+A failing suite has been pushed twice, 677928f and 3e5214e, both times
+because the push was chained after the checks instead of gated on them. A
+line like `check-all.sh; git push` pushes whatever the checks said.
+
+The script refuses a dirty working tree (untracked files included), runs
+`check-structure.py`, then `check-all.sh`, and pushes only if the last line
+check-all printed is exactly `check-all: PASS`. Anything else exits non-zero
+and pushes nothing. The clean-tree rule is there because the checks read the
+working tree and the push sends commits, and the two are the same only when
+nothing is uncommitted. `PushGateTest` pins all three conditions.
+
 ## History
 
 Do not rewrite history that has already been pushed. No amend, squash, or
