@@ -1057,8 +1057,10 @@ produced it, which is the behaviour the shield was asked for anyway.
   calc answer.
 - **A missed tone means the text is seen only on the next visit to the
   launcher.** There is no notification, so no notification grant. The tone
-  is one short, soft beep, and follows the ringer: silent plays nothing,
-  vibrate vibrates once. Several reminders missed while the phone
+  is one short, soft chime (a generated 280 ms sine after 120 ms of silence,
+  on the notification volume, silenced by Do Not Disturb like any
+  notification), and follows the ringer: silent plays nothing, vibrate
+  vibrates once. Several reminders missed while the phone
   was off sound it once, not once each. The text waits on the console, in
   order, until each is dismissed.
 - Up to twenty pending. The twenty first is refused, nothing is dropped.
