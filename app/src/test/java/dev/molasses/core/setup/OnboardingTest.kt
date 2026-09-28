@@ -10,36 +10,27 @@ import org.junit.Test
 
 class OnboardingTest {
 
-    private val fresh = Facts(serviceReady = false, accessibilityEnabled = false, usageAccess = false, defaultHome = false, targetsSeen = false, limitsSeen = false)
-    private val done = Facts(serviceReady = true, accessibilityEnabled = true, usageAccess = true, defaultHome = true, targetsSeen = true, limitsSeen = true)
+    private val fresh = Facts(serviceWorking = false, accessibilityEnabled = false, usageAccess = false, defaultHome = false, targetsSeen = false, limitsSeen = false)
+    private val done = Facts(serviceWorking = true, accessibilityEnabled = true, usageAccess = true, defaultHome = true, targetsSeen = true, limitsSeen = true)
 
     @Test
     fun `a fresh install starts at accessibility and walks the steps in order`() {
         assertEquals(Step.ACCESSIBILITY, Onboarding.current(fresh))
-        assertEquals(Step.USAGE_ACCESS, Onboarding.current(fresh.copy(serviceReady = true, accessibilityEnabled = true)))
-        assertEquals(Step.HOME, Onboarding.current(fresh.copy(serviceReady = true, accessibilityEnabled = true, usageAccess = true)))
-        assertEquals(Step.TARGETS, Onboarding.current(fresh.copy(serviceReady = true, accessibilityEnabled = true, usageAccess = true, defaultHome = true)))
+        assertEquals(Step.USAGE_ACCESS, Onboarding.current(fresh.copy(serviceWorking = true, accessibilityEnabled = true)))
+        assertEquals(Step.HOME, Onboarding.current(fresh.copy(serviceWorking = true, accessibilityEnabled = true, usageAccess = true)))
+        assertEquals(Step.TARGETS, Onboarding.current(fresh.copy(serviceWorking = true, accessibilityEnabled = true, usageAccess = true, defaultHome = true)))
         assertEquals(Step.LIMITS, Onboarding.current(done.copy(limitsSeen = false)))
         assertEquals(null, Onboarding.current(done))
         assertTrue(Onboarding.complete(done))
     }
 
     @Test
-    fun `accessibility is satisfied only when the service is bound and ready, not merely enabled`() {
-        val enabledNotBound = fresh.copy(accessibilityEnabled = true, serviceReady = false)
+    fun `accessibility is satisfied only when the service is working, not merely enabled`() {
+        val enabledNotBound = fresh.copy(accessibilityEnabled = true, serviceWorking = false)
         assertFalse(Onboarding.satisfied(Step.ACCESSIBILITY, enabledNotBound))
-        assertTrue(Onboarding.satisfied(Step.ACCESSIBILITY, enabledNotBound.copy(serviceReady = true)))
+        assertTrue(Onboarding.satisfied(Step.ACCESSIBILITY, enabledNotBound.copy(serviceWorking = true)))
         assertTrue(Onboarding.waitingForBind(enabledNotBound))
         assertFalse(Onboarding.waitingForBind(fresh))
-    }
-
-    @Test
-    fun `a service switched off reads unsatisfied while its diagnostics still say ready`() {
-        // ServiceDiagnostics outlives the unbind; the heartbeat takes up to
-        // 45 s to go stale. The Settings string is what closes the gap.
-        val switchedOff = done.copy(accessibilityEnabled = false)
-        assertFalse(Onboarding.satisfied(Step.ACCESSIBILITY, switchedOff))
-        assertEquals(Step.ACCESSIBILITY, Onboarding.current(switchedOff))
     }
 
     @Test

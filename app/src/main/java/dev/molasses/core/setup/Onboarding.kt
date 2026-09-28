@@ -13,12 +13,9 @@ package dev.molasses.core.setup
  *
  * ## What can be detected and what cannot
  * - Accessibility: detected, and strictly. Satisfied only when the service
- *   is bound and ready ([Facts.serviceReady], `ServiceHealth.HEALTHY`) and
- *   still switched on. Enabled but not yet bound reads as not satisfied, and
- *   the screen says it is waiting for the bind. Both halves are needed:
- *   `ServiceDiagnostics` lives in the process rather than in the service, so
- *   after the user switches the service off it keeps reading HEALTHY until
- *   the heartbeat times out, up to 45 s later.
+ *   is working by `ServiceHealthPolicy.working`, the same rule CFG's service
+ *   row uses: HEALTHY and still switched on. Enabled but not yet working
+ *   reads as not satisfied, and the screen says it is waiting for the bind.
  * - Usage access: detected (the app op).
  * - Home app: detected (`RoleManager.isRoleHeld(ROLE_HOME)`, or the resolved
  *   HOME activity where the role is not available). Set through the role
@@ -41,8 +38,8 @@ object Onboarding {
     const val RESTRICTED_SETTINGS_SDK = 33
 
     data class Facts(
-        /** The accessibility service is bound and ready (`ServiceHealth.HEALTHY`). */
-        val serviceReady: Boolean,
+        /** `ServiceHealthPolicy.working`, and nothing computed beside it. */
+        val serviceWorking: Boolean,
         /** Switched on in Settings. Reported, never enough on its own. */
         val accessibilityEnabled: Boolean,
         val usageAccess: Boolean,
@@ -53,7 +50,7 @@ object Onboarding {
     )
 
     fun satisfied(step: Step, facts: Facts): Boolean = when (step) {
-        Step.ACCESSIBILITY -> facts.serviceReady && facts.accessibilityEnabled
+        Step.ACCESSIBILITY -> facts.serviceWorking
         Step.USAGE_ACCESS -> facts.usageAccess
         Step.HOME -> facts.defaultHome
         Step.TARGETS -> facts.targetsSeen
@@ -66,7 +63,7 @@ object Onboarding {
     fun complete(facts: Facts): Boolean = current(facts) == null
 
     /** Switched on, not yet bound. The screen says it is waiting rather than asking again. */
-    fun waitingForBind(facts: Facts): Boolean = facts.accessibilityEnabled && !facts.serviceReady
+    fun waitingForBind(facts: Facts): Boolean = facts.accessibilityEnabled && !facts.serviceWorking
 
     /**
      * Whether to show the restricted-settings unlock. See the class doc: it

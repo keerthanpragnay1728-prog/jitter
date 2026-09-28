@@ -208,6 +208,7 @@
     <string name="settings_service_healthy">Running and accepting events.</string>
     <string name="settings_service_connecting">Bound, but not yet accepting events.</string>
     <string name="settings_service_stale">Bound, but it has stopped reporting. It was probably killed.</string>
+    <string name="settings_service_switched_off">Switched off in Android settings.</string>
     <string name="settings_service_never">Not running. Granting the permission is not the same as the service starting.</string>
     <string name="settings_perm_usage_title">Usage access</string>
     <string name="settings_perm_usage_body">Required. Rebuilds your time if Jitter is killed mid-session.</string>

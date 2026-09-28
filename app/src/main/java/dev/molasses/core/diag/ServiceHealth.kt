@@ -57,6 +57,24 @@ object ServiceHealthPolicy {
     const val HEARTBEAT_TIMEOUT_MS = 45_000L
 
     /**
+     * The one rule for "the service is working", shown by CFG's service row
+     * and required by the first-run flow. Both call this, so they cannot
+     * disagree.
+     *
+     * HEALTHY and nothing looser. CONNECTING is bound but not yet accepting
+     * events. STALE is a service whose heartbeat stopped, probably killed,
+     * and it still accepts events in [ServiceHealth.acceptingEvents]'s sense
+     * only because that answers a different question.
+     *
+     * And still switched on in Settings: the diagnostics live in the
+     * process, not the service, so after the user switches it off they keep
+     * reading HEALTHY until the heartbeat times out, up to
+     * [HEARTBEAT_TIMEOUT_MS] later.
+     */
+    fun working(health: ServiceHealth, enabled: Boolean): Boolean =
+        health == ServiceHealth.HEALTHY && enabled
+
+    /**
      * All timestamps are `elapsedRealtime`. Zero means "never happened",
      * which is safe because elapsedRealtime is only zero in the first
      * millisecond after boot and nothing has connected by then.
