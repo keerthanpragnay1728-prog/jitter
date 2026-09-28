@@ -23,7 +23,7 @@ import dev.molasses.core.setup.Onboarding.Session
 import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.repo.SettingsRepository
 import dev.molasses.monitor.ServiceDiagnostics
-import dev.molasses.core.diag.ServiceHealth
+import dev.molasses.core.diag.ServiceHealthPolicy
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,7 +50,7 @@ object SetupSession {
 
 /** The detectable facts, before the session's seen flags are added. */
 data class SetupGrants(
-    val serviceReady: Boolean = false,
+    val serviceWorking: Boolean = false,
     val accessibilityEnabled: Boolean = false,
     val usageAccess: Boolean = false,
     val defaultHome: Boolean = false,
@@ -99,16 +99,11 @@ class SetupFlowController(
         refresh()
     }
 
-    /**
-     * Ready is HEALTHY and nothing looser: CONNECTING is bound but not yet
-     * accepting events, and STALE is a service whose heartbeat stopped.
-     * Enabled comes from the Settings string, because the diagnostics
-     * outlive an unbind. See Onboarding.
-     */
+    /** Working is `ServiceHealthPolicy.working`, the rule CFG's service row uses. */
     fun refresh() {
         val permissions = repository().permissionState()
         grants = SetupGrants(
-            serviceReady = ServiceDiagnostics.health() == ServiceHealth.HEALTHY,
+            serviceWorking = ServiceHealthPolicy.working(ServiceDiagnostics.health(), permissions.accessibility),
             accessibilityEnabled = permissions.accessibility,
             usageAccess = permissions.usageAccess,
             defaultHome = isDefaultHome(),
@@ -193,7 +188,7 @@ fun SetupFlowGate(
 
     val grants = controller.grants
     val facts = Onboarding.Facts(
-        serviceReady = grants.serviceReady,
+        serviceWorking = grants.serviceWorking,
         accessibilityEnabled = grants.accessibilityEnabled,
         usageAccess = grants.usageAccess,
         defaultHome = grants.defaultHome,

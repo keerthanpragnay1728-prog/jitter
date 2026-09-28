@@ -64,6 +64,7 @@ import dev.molasses.core.lock.PrefixLock
 import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.lock.LockRequest
 import dev.molasses.core.diag.ServiceHealth
+import dev.molasses.core.diag.ServiceHealthPolicy
 import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.ui.AlphaIndex
 import dev.molasses.core.ui.FontScale
@@ -283,8 +284,10 @@ fun SettingsScreen(
                 ChecklistRow(
                     index = 2,
                     title = R.string.settings_service_state_title,
-                    subtitle = serviceStateBody(diag.health),
-                    satisfied = diag.health.acceptingEvents,
+                    subtitle = serviceStateBody(diag.health, permissions.accessibility),
+                    // The rule the first-run flow uses too. See
+                    // ServiceHealthPolicy.working.
+                    satisfied = ServiceHealthPolicy.working(diag.health, permissions.accessibility),
                     onClick = onOpenAccessibility,
                 )
             }
@@ -1551,7 +1554,14 @@ private fun fontScaleLabel(scale: FontScale): Int = when (scale) {
 
 /** Service health to its one-line explanation. Pure mapping, resolved at the call site. */
 @StringRes
-private fun serviceStateBody(health: ServiceHealth): Int = when (health) {
+private fun serviceStateBody(health: ServiceHealth, enabled: Boolean): Int = when {
+    // The diagnostics outlive an unbind, so a service switched off can still
+    // read HEALTHY for a while. Say what the row's tick is actually about.
+    !enabled && health != ServiceHealth.NEVER_CONNECTED -> R.string.settings_service_switched_off
+    else -> serviceHealthBody(health)
+}
+
+private fun serviceHealthBody(health: ServiceHealth): Int = when (health) {
     ServiceHealth.HEALTHY -> R.string.settings_service_healthy
     ServiceHealth.CONNECTING -> R.string.settings_service_connecting
     ServiceHealth.STALE -> R.string.settings_service_stale
