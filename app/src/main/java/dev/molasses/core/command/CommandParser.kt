@@ -3,6 +3,7 @@ package dev.molasses.core.command
 import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.time.DurationParser
 import dev.molasses.core.time.TimeParser
+import dev.molasses.core.util.DateMath
 
 /**
  * The REPL grammar, as a pure function from a line to a [ParseResult].
@@ -27,6 +28,9 @@ import dev.molasses.core.time.TimeParser
  * Pure; no Android imports. Unit-tested in `CommandParserTest`.
  */
 object CommandParser {
+
+    private val WHITESPACE = Regex("\\s+")
+
 
     /** Every verb, including aliases. For autocomplete and for the help line. */
     val VERBS: List<String> = listOf(
@@ -159,7 +163,8 @@ object CommandParser {
         else ok(build(args.joinToString(" ")))
 
     /**
-     * `rem <time|duration> <text>`, or a bare `rem` for the pending list.
+     * `rem <time|duration> <text>`, `rem <date> <time> <text>`, or a bare
+     * `rem` for the pending list.
      *
      * The first token is tried as a duration and then as a time of day. The
      * two forms cannot overlap: a duration always carries a unit letter
@@ -168,30 +173,92 @@ object CommandParser {
      * `rem 25:00 x` says the time is out of range rather than that it is not
      * a time at all.
      *
-     * The text is the remainder of the line as typed, split off after the
-     * second whitespace run with a limit rather than rejoined from tokens,
-     * so its own spacing survives. It is the one argument this grammar leaves
-     * free, and nothing completes, ghosts or rewrites it: see
-     * [completeOnSpace], which only ever touches a verb.
+     * Neither, and it is tried as a date by [DateMath.spec], the reader
+     * `$ days` uses, so the forms and refusals are the same: ISO
+     * (`2026-10-03`), `today` or `tomorrow`, or a day and a month name in
+     * either order (`3 oct`, `oct 3`). A slash date is refused as ambiguous
+     * and a month name with a year is told to use ISO, exactly as in days. A
+     * date must be followed by a time; without one it is refused with a
+     * message that says so. Whether the result is in the future is decided
+     * when the reminder is set, because that needs the clock.
+     *
+     * The text is the remainder of the line as typed, split off with a limit
+     * rather than rejoined from tokens, so its own spacing survives. It is
+     * the one argument this grammar leaves free, and nothing completes,
+     * ghosts or rewrites it: see [completeOnSpace], which only ever touches a
+     * verb.
      */
     private fun remind(verb: String, text: String): ParseResult {
-        val parts = text.split(Regex("\\s+"), limit = 3)
+        val parts = text.split(WHITESPACE, limit = 3)
         // Nothing after the verb lists what is pending. Not a missing time:
         // a bare rem has nothing to be missing from.
         if (parts.size < 2 || parts[1].isEmpty()) return ok(Command.RemList)
-        if (parts.size < 3 || parts[2].isBlank()) return err(ParseError.MissingArgument(verb, "text"))
         val token = parts[1]
-        val body = parts[2].trim()
+        val rest = parts.getOrNull(2)
         when (val d = DurationParser.parse(token)) {
-            is DurationParser.Result.Ok -> return ok(Command.Rem(ReminderBook.When.In(d.ms), body))
+            is DurationParser.Result.Ok -> return withText(verb, ReminderBook.When.In(d.ms), rest)
             is DurationParser.Result.Err ->
                 if (d.kind != DurationParser.Kind.MALFORMED) return err(ParseError.BadDuration(token, d.kind))
         }
-        return when (val t = TimeParser.parse(token)) {
-            is TimeParser.Result.Ok -> ok(Command.Rem(ReminderBook.When.At(t.minuteOfDay), body))
+        when (val t = TimeParser.parse(token)) {
+            is TimeParser.Result.Ok -> return withText(verb, ReminderBook.When.At(t.minuteOfDay), rest)
             is TimeParser.Result.Err ->
-                if (t.kind != TimeParser.Kind.MALFORMED) err(ParseError.BadTime(token, t.kind))
-                else err(ParseError.BadWhen(token))
+                if (t.kind != TimeParser.Kind.MALFORMED) return err(ParseError.BadTime(token, t.kind))
+        }
+        return dated(verb, text, token)
+    }
+
+    /** The text after the when, or the refusal for a missing one. */
+    private fun withText(verb: String, whenSpec: ReminderBook.When, rest: String?): ParseResult =
+        if (rest == null || rest.isBlank()) err(ParseError.MissingArgument(verb, "text"))
+        else ok(Command.Rem(whenSpec, rest.trim()))
+
+    /** `rem <date> <time> <text>`, the date one token or two. See [remind]. */
+    private fun dated(verb: String, text: String, first: String): ParseResult {
+        when (val one = DateMath.spec(listOf(first.lowercase()))) {
+            is DateMath.SpecResult.Ok -> return timed(verb, text, 1, one.spec, first)
+            is DateMath.SpecResult.Bad ->
+                if (one.error == DateMath.Error.NUMERIC_DATE) return err(ParseError.RemDate(first, one.error))
+        }
+        val words = text.split(WHITESPACE, limit = 5)
+        // `3 oct 2026`: a day and a month take the first two words and the
+        // year would then be read as the time. Refused as days refuses it.
+        if (words.size >= 4 && words[3].length == 4 && words[3].all { it.isDigit() }) {
+            val three = DateMath.spec(words.subList(1, 4).map { it.lowercase() })
+            if (three is DateMath.SpecResult.Bad && three.error == DateMath.Error.YEAR_NEEDS_ISO) {
+                return err(ParseError.RemDate(words.subList(1, 4).joinToString(" "), three.error))
+            }
+        }
+        if (words.size >= 3) {
+            val pairText = "${words[1]} ${words[2]}"
+            when (val two = DateMath.spec(listOf(words[1].lowercase(), words[2].lowercase()))) {
+                is DateMath.SpecResult.Ok -> return timed(verb, text, 2, two.spec, pairText)
+                is DateMath.SpecResult.Bad ->
+                    if (two.error == DateMath.Error.NUMERIC_DATE || two.error == DateMath.Error.YEAR_NEEDS_ISO) {
+                        return err(ParseError.RemDate(pairText, two.error))
+                    }
+            }
+        }
+        return err(ParseError.BadWhen(first))
+    }
+
+    /** After a date of [dateTokens] words: a time, then the text. */
+    private fun timed(
+        verb: String,
+        text: String,
+        dateTokens: Int,
+        spec: DateMath.DateSpec,
+        dateText: String,
+    ): ParseResult {
+        val words = text.split(WHITESPACE, limit = dateTokens + 3)
+        val timeToken = words.getOrNull(1 + dateTokens)
+        if (timeToken.isNullOrBlank()) return err(ParseError.RemNeedsTime(dateText))
+        return when (val t = TimeParser.parse(timeToken)) {
+            is TimeParser.Result.Ok ->
+                withText(verb, ReminderBook.When.On(spec, t.minuteOfDay), words.getOrNull(2 + dateTokens))
+            is TimeParser.Result.Err ->
+                if (t.kind != TimeParser.Kind.MALFORMED) err(ParseError.BadTime(timeToken, t.kind))
+                else err(ParseError.RemNeedsTime(dateText))
         }
     }
 

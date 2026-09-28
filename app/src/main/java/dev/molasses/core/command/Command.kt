@@ -114,8 +114,14 @@ sealed interface ParseError {
         ParseError
     data class BadToggle(val token: String) : ParseError
 
-    /** `$ rem`'s first argument is neither a time of day nor a duration. */
+    /** `$ rem`'s first argument is neither a time of day, a duration nor a date. */
     data class BadWhen(val token: String) : ParseError
+
+    /** `$ rem` with a date `$ days` would refuse, for the same [error]. */
+    data class RemDate(val token: String, val error: dev.molasses.core.util.DateMath.Error) : ParseError
+
+    /** `$ rem` with a date and no time after it. */
+    data class RemNeedsTime(val date: String) : ParseError
 }
 
 /** Result of parsing one line. */

@@ -1064,6 +1064,12 @@ produced it, which is the behaviour the shield was asked for anyway.
   was off sound it once, not once each. The text waits on the console, in
   order, until each is dismissed.
 - Up to twenty pending. The twenty first is refused, nothing is dropped.
+- A date can go before the time: `rem 2026-10-03 9am dentist`,
+  `rem 3 oct 18:30 call mum`, `rem oct 3 ...`, `rem tomorrow 9am bins`. The
+  dates are `$ days`'s: ISO or a day and a month name, slash dates refused
+  as ambiguous, a month name with a year told to use ISO. A date needs a
+  time, and a date and time that has already passed is refused rather than
+  moved to next year.
 - A bare `rem` lists what is pending, soonest first, at most five, each
   with its due time and text, held until the next keystroke. With none it
   says NO PENDING REMINDERS. Fired reminders are not listed: they already

@@ -2,6 +2,7 @@ package dev.molasses.core.remind
 
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.time.TimeParser
+import dev.molasses.core.util.DateMath
 
 /**
  * One reminder. [due] is the instant it should fire, stamped on all three
@@ -50,6 +51,13 @@ object ReminderBook {
 
         /** A duration from now. */
         data class In(val durationMs: Long) : When
+
+        /**
+         * A date and a time of day, as in `rem 3 oct 9am`. The date is read
+         * by [DateMath.spec], the same rules `$ days` uses, and resolved
+         * forward from today only when the reminder is set.
+         */
+        data class On(val date: DateMath.DateSpec, val minuteOfDay: Int) : When
     }
 
     sealed interface Added {
@@ -60,14 +68,35 @@ object ReminderBook {
     }
 
     /**
-     * The instant [whenSpec] names, from [now]. A time of day equal to the
-     * current minute means tomorrow, never zero, the same rule `$ alarm`
-     * follows through [TimeParser.msUntil].
+     * The instant [whenSpec] names, from [now], or null when it is not in the
+     * future.
+     *
+     * A time of day equal to the current minute means tomorrow, never zero,
+     * the same rule `$ alarm` follows through [TimeParser.msUntil], so [When.At]
+     * and [When.In] are never null. [When.On] names one instant and does not
+     * roll forward: a date and time not after [now] is null, and the caller
+     * refuses it.
+     *
+     * @param wallOn the wall-clock epoch ms of a date and a minute of the day,
+     *   or null when the date cannot be resolved. Supplied by the host, because
+     *   it needs today's date and the time zone, and neither belongs in the
+     *   pure set (see PurityTest's allowance). Only [When.On] calls it.
      */
-    fun dueAt(whenSpec: When, now: StampedInstant, nowMinuteOfDay: Int): StampedInstant {
+    fun dueAt(
+        whenSpec: When,
+        now: StampedInstant,
+        nowMinuteOfDay: Int,
+        wallOn: (DateMath.DateSpec, Int) -> Long?,
+    ): StampedInstant? {
         val deltaMs = when (whenSpec) {
             is When.At -> TimeParser.msUntil(nowMinuteOfDay, whenSpec.minuteOfDay)
             is When.In -> whenSpec.durationMs
+            is When.On -> {
+                val dueWall = wallOn(whenSpec.date, whenSpec.minuteOfDay) ?: return null
+                val delta = dueWall - now.wallMs
+                if (delta <= 0L) return null
+                delta
+            }
         }
         return StampedInstant(now.wallMs + deltaMs, now.elapsedMs + deltaMs, now.bootId)
     }

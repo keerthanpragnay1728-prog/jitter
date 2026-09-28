@@ -506,7 +506,9 @@
     <string name="cmd_ans_rem_none">NO PENDING REMINDERS</string>
     <string name="cmd_ans_rem_not_armed">REMINDER SAVED FOR %1$s, NOT ARMED. IT ARMS WHEN THE SERVICE NEXT CONNECTS.</string>
     <string name="cmd_err_rem_full">%1$s reminders are pending, the most there can be. Dismiss one first.</string>
-    <string name="cmd_err_when">Not a time or a duration: %1$s. Try 6pm, 18:30 or 45m.</string>
+    <string name="cmd_err_when">Not a time, a duration or a date: %1$s. Try 6pm, 45m or 3 oct 9am.</string>
+    <string name="cmd_err_rem_needs_time">A date needs a time: %1$s 9am.</string>
+    <string name="cmd_err_rem_past">That date and time has passed. Pick one ahead.</string>
     <string name="cmd_err_unknown_app">No app matches %1$s</string>
     <string name="cmd_err_ambiguous_app">%1$s matches %2$s apps. A wrong lock cannot be undone.</string>
     <string name="cmd_err_no_targets">No tracked apps. Add some in settings first.</string>
@@ -585,7 +587,7 @@
     <string name="cmd_desc_calc">Work out an expression. A percent sign always means a hundredth of what it follows.</string>
     <string name="cmd_desc_conv">Convert between km mi, m ft, cm in, kg lb, g oz, kg st, c f, kph mph. Full names, plurals and a joining word all work: 5 kilometers to miles.</string>
     <string name="cmd_desc_days">Count days until, since, or between two dates. Write a year as 2026-12-25.</string>
-    <string name="cmd_desc_rem">Remind yourself at a time or after a while: rem 6pm call mum, rem 45m tea. Up to 20. A bare rem lists the next five pending. Exact where Android allows it; otherwise inexact and possibly late, and the answer says which, or that it was saved but not armed. A tone plays unless the phone is silent, and the text waits here until you dismiss it.</string>
+    <string name="cmd_desc_rem">Remind yourself at a time or after a while: rem 6pm call mum, rem 45m tea, rem 3 oct 9am dentist. Up to 20. A bare rem lists the next five pending. Exact where Android allows it; otherwise inexact and possibly late, and the answer says which, or that it was saved but not armed. A tone plays unless the phone is silent, and the text waits here until you dismiss it.</string>
     <!--
       The manual carries the reason the ack no longer has room for, and the
       two reasons stay different on purpose. Wifi is a platform limit binding

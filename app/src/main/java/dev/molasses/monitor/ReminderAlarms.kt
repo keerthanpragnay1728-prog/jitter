@@ -9,7 +9,12 @@ import android.util.Log
 import dev.molasses.core.remind.ReminderArming
 import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.time.StampedInstant
+import dev.molasses.core.util.DateMath
 import dev.molasses.data.datastore.CycleStateStore
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 /**
  * Scheduling for `$ rem`, on AlarmManager.
@@ -70,6 +75,22 @@ object ReminderAlarms {
         // The one line that says which acknowledgement the prompt showed.
         Log.i(TAG, "reminder $id armed=$armed exactAllowed=$exactAllowed sdk=${Build.VERSION.SDK_INT}")
         return armed
+    }
+
+    /**
+     * The wall-clock epoch ms of [spec] at [minuteOfDay] in the device's time
+     * zone, resolved forward from today by the same rule `$ days` uses, or
+     * null when no such date exists. The host half of a dated `$ rem`: the
+     * zone and today's date stay out of the pure set, and
+     * `ReminderBook.dueAt` decides whether the result is in the future.
+     * Computed as a local time on that date, so a date across a
+     * daylight-saving change still means that time on that day.
+     */
+    fun wallOn(spec: DateMath.DateSpec, minuteOfDay: Int): Long? {
+        val zone = ZoneId.systemDefault()
+        val date = DateMath.forwardFrom(spec, LocalDate.now(zone)) ?: return null
+        return ZonedDateTime.of(date, LocalTime.of(minuteOfDay / 60, minuteOfDay % 60), zone)
+            .toInstant().toEpochMilli()
     }
 
     /**

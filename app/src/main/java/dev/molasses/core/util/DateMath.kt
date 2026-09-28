@@ -228,16 +228,39 @@ object DateMath {
         data class Bad(val error: Error) : Parsed
     }
 
-    private fun dateFrom(tokens: List<String>, today: LocalDate): Parsed {
-        if (tokens.isEmpty()) return Parsed.Bad(Error.MISSING_DATE)
-        if (tokens.any { it.contains('/') }) return Parsed.Bad(Error.NUMERIC_DATE)
+    /**
+     * A date as written, before any reference day is known. Public because
+     * `$ rem` takes a date too, and a second date parser would be a second
+     * set of rules to keep in step with this one: the same forms are
+     * accepted and the same ones refused, slash dates included.
+     */
+    sealed interface DateSpec {
+        /** `today`, `tomorrow`, `yesterday`: a number of days from the reference day. */
+        data class Offset(val days: Long) : DateSpec
+
+        /** ISO, which names its own year. */
+        data class Iso(val date: LocalDate) : DateSpec
+
+        /** A day and a month name, in either order, with the year left open. */
+        data class DayMonth(val month: Int, val day: Int) : DateSpec
+    }
+
+    sealed interface SpecResult {
+        data class Ok(val spec: DateSpec) : SpecResult
+        data class Bad(val error: Error) : SpecResult
+    }
+
+    /** Read [tokens], lowercased, as one date. No reference day is needed to know the form. */
+    fun spec(tokens: List<String>): SpecResult {
+        if (tokens.isEmpty()) return SpecResult.Bad(Error.MISSING_DATE)
+        if (tokens.any { it.contains('/') }) return SpecResult.Bad(Error.NUMERIC_DATE)
 
         if (tokens.size == 1) {
             val token = tokens[0]
             when (token) {
-                "today" -> return Parsed.Fixed(today, resolved = true)
-                "tomorrow" -> return Parsed.Fixed(today.plusDays(1), resolved = true)
-                "yesterday" -> return Parsed.Fixed(today.minusDays(1), resolved = true)
+                "today" -> return SpecResult.Ok(DateSpec.Offset(0))
+                "tomorrow" -> return SpecResult.Ok(DateSpec.Offset(1))
+                "yesterday" -> return SpecResult.Ok(DateSpec.Offset(-1))
             }
             val iso = ISO.matchEntire(token)
             if (iso != null) {
@@ -246,11 +269,11 @@ object DateMath {
                     iso.groupValues[2].toInt(),
                     iso.groupValues[3].toInt(),
                 )
-                return if (date != null) Parsed.Fixed(date, resolved = false)
-                else Parsed.Bad(Error.UNREADABLE_DATE)
+                return if (date != null) SpecResult.Ok(DateSpec.Iso(date))
+                else SpecResult.Bad(Error.UNREADABLE_DATE)
             }
-            if (NUMERIC.matches(token)) return Parsed.Bad(Error.NUMERIC_DATE)
-            return Parsed.Bad(Error.UNREADABLE_DATE)
+            if (NUMERIC.matches(token)) return SpecResult.Bad(Error.NUMERIC_DATE)
+            return SpecResult.Bad(Error.UNREADABLE_DATE)
         }
 
         // Two tokens, a day and a month in either order. A year alongside a
@@ -260,19 +283,55 @@ object DateMath {
         // one, because the user wrote something this understands in every
         // part and will not guess from "not a date" that the fix is ISO.
         if (tokens.size == 3 && tokens.any { monthOf(it) != null } && tokens.any { isYear(it) }) {
-            return Parsed.Bad(Error.YEAR_NEEDS_ISO)
+            return SpecResult.Bad(Error.YEAR_NEEDS_ISO)
         }
-        if (tokens.size != 2) return Parsed.Bad(Error.UNREADABLE_DATE)
-        val month = monthOf(tokens[0]) ?: monthOf(tokens[1]) ?: return Parsed.Bad(Error.UNREADABLE_DATE)
+        if (tokens.size != 2) return SpecResult.Bad(Error.UNREADABLE_DATE)
+        val month = monthOf(tokens[0]) ?: monthOf(tokens[1]) ?: return SpecResult.Bad(Error.UNREADABLE_DATE)
         val dayToken = if (monthOf(tokens[0]) != null) tokens[1] else tokens[0]
-        if (NUMERIC.matches(dayToken)) return Parsed.Bad(Error.NUMERIC_DATE)
+        if (NUMERIC.matches(dayToken)) return SpecResult.Bad(Error.NUMERIC_DATE)
         // `dec 2026` is the same mistake one token shorter: a month name and
         // a year, with no day at all.
-        if (isYear(dayToken)) return Parsed.Bad(Error.YEAR_NEEDS_ISO)
-        val day = dayToken.toIntOrNull() ?: return Parsed.Bad(Error.UNREADABLE_DATE)
-        if (day < 1 || day > 31) return Parsed.Bad(Error.UNREADABLE_DATE)
-        return Parsed.DayMonth(month, day)
+        if (isYear(dayToken)) return SpecResult.Bad(Error.YEAR_NEEDS_ISO)
+        val day = dayToken.toIntOrNull() ?: return SpecResult.Bad(Error.UNREADABLE_DATE)
+        if (day < 1 || day > 31) return SpecResult.Bad(Error.UNREADABLE_DATE)
+        return SpecResult.Ok(DateSpec.DayMonth(month, day))
     }
+
+    /**
+     * The date [spec] names, looking forward from [today]: an offset from
+     * it, the ISO date as written, or the next day-and-month on or after it.
+     * Null only for a day that exists in no year in reach.
+     */
+    fun forwardFrom(spec: DateSpec, today: LocalDate): LocalDate? = when (spec) {
+        is DateSpec.Offset -> today.plusDays(spec.days)
+        is DateSpec.Iso -> spec.date
+        is DateSpec.DayMonth -> onOrAfter(Parsed.DayMonth(spec.month, spec.day), today)
+    }
+
+    /** [spec] written back in a form [spec] reads as the same thing. */
+    fun text(spec: DateSpec): String = when (spec) {
+        is DateSpec.Offset -> when (spec.days) {
+            0L -> "today"
+            1L -> "tomorrow"
+            -1L -> "yesterday"
+            // Unreachable from [spec], which makes only these three. Written
+            // as the ISO date it would be from no reference, rather than
+            // guessed, so a render can never invent a relative word.
+            else -> "today"
+        }
+        is DateSpec.Iso -> spec.date.toString()
+        is DateSpec.DayMonth -> "${spec.day} ${MONTHS[spec.month - 1].take(3)}"
+    }
+
+    private fun dateFrom(tokens: List<String>, today: LocalDate): Parsed =
+        when (val result = spec(tokens)) {
+            is SpecResult.Bad -> Parsed.Bad(result.error)
+            is SpecResult.Ok -> when (val spec = result.spec) {
+                is DateSpec.Offset -> Parsed.Fixed(today.plusDays(spec.days), resolved = true)
+                is DateSpec.Iso -> Parsed.Fixed(spec.date, resolved = false)
+                is DateSpec.DayMonth -> Parsed.DayMonth(spec.month, spec.day)
+            }
+        }
 
     /** Four digits, which in a date this app accepts can only be a year. */
     private fun isYear(token: String): Boolean =
