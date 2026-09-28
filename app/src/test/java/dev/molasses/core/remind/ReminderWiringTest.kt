@@ -171,7 +171,7 @@ class ReminderWiringTest {
     fun `a bare rem is a held list of pending reminders, or NO PENDING REMINDERS`() {
         val dispatch = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherDispatch.kt").readText()
         val branch = dispatch.substring(dispatch.indexOf("Command.RemList -> {")).substringBefore("is Command.Days ->")
-        assertTrue(branch.contains("ReminderBook.pending(actions.pendingReminders())"))
+        assertTrue(branch.contains("val all = actions.pendingReminders()") && branch.contains("ReminderBook.pending(all)"))
         assertTrue(branch.contains("DispatchResult.Answered(R.string.cmd_ans_rem_none)"))
         assertTrue(branch.contains("ackKey = R.string.cmd_ans_rem_list"))
         assertTrue(branch.contains("R.string.cmd_ans_rem_row, lockOpensAtText(context, it.due.wallMs), it.text"))
@@ -186,5 +186,19 @@ class ReminderWiringTest {
         assertTrue(Regex("""name="cmd_desc_rem">[^<]*A bare rem lists the next five pending""").containsMatchIn(strings))
         val launcher = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
         assertTrue(launcher.contains("pendingReminders = { reminders },"))
+    }
+
+    @Test
+    fun `the bare rem path is logged at the parse, the read and the answer, never with the text`() {
+        val launcher = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
+        val submit = functionBody(launcher, "fun submit(): DispatchResult {")
+        assertTrue(submit.contains("submit: parsed verb=\${CommandRegistry.verbOf(parsed.command)}"))
+        assertTrue(submit.contains("if (parsed.command == Command.RemList) \" (pending list)\""))
+        assertFalse("never the typed text", Regex("""Log\.i\([^)]*\btext\b""").containsMatchIn(submit))
+        val dispatch = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherDispatch.kt").readText()
+        val branch = dispatch.substring(dispatch.indexOf("Command.RemList -> {")).substringBefore("is Command.Days ->")
+        assertTrue(branch.contains("rem list: read \${all.size} reminders"))
+        val answered = launcher.substring(launcher.indexOf("is DispatchResult.Answered -> {")).substringBefore("is DispatchResult.Unavailable")
+        assertTrue(answered.contains("answer shown:"))
     }
 }
