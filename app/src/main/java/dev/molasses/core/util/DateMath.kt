@@ -314,9 +314,9 @@ object DateMath {
             0L -> "today"
             1L -> "tomorrow"
             -1L -> "yesterday"
-            // Unreachable from [spec], which makes only these three. Written
-            // as the ISO date it would be from no reference, rather than
-            // guessed, so a render can never invent a relative word.
+            // Unreachable: [spec] makes only these three offsets. A render
+            // must not throw on the prompt, so this answers something that
+            // parses rather than crashing; no path reaches it.
             else -> "today"
         }
         is DateSpec.Iso -> spec.date.toString()
