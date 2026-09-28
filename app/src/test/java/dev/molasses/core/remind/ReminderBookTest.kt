@@ -16,14 +16,15 @@ class ReminderBookTest {
     private val wall0 = 1_700_000_000_000L
     private fun at(wall: Long, elapsed: Long, boot: Int = 1) = StampedInstant(wall, elapsed, boot)
     private val now = at(wall0, 10 * min)
+    private val noDates: (dev.molasses.core.util.DateMath.DateSpec, Int) -> Long? = { _, _ -> error("not dated") }
 
     @Test
     fun `a duration is from now and a time of day is the next one`() {
-        assertEquals(at(wall0 + 45 * min, 55 * min), ReminderBook.dueAt(When.In(45 * min), now, nowMinuteOfDay = 9 * 60))
+        assertEquals(at(wall0 + 45 * min, 55 * min), ReminderBook.dueAt(When.In(45 * min), now, nowMinuteOfDay = 9 * 60, wallOn = noDates))
         // 09:00 now, 18:00 asked: nine hours.
-        assertEquals(wall0 + 9 * 60 * min, ReminderBook.dueAt(When.At(18 * 60), now, 9 * 60).wallMs)
+        assertEquals(wall0 + 9 * 60 * min, ReminderBook.dueAt(When.At(18 * 60), now, 9 * 60, noDates)!!.wallMs)
         // The current minute means tomorrow, never zero.
-        assertEquals(wall0 + 24 * 60 * min, ReminderBook.dueAt(When.At(9 * 60), now, 9 * 60).wallMs)
+        assertEquals(wall0 + 24 * 60 * min, ReminderBook.dueAt(When.At(9 * 60), now, 9 * 60, noDates)!!.wallMs)
     }
 
     @Test
@@ -117,5 +118,33 @@ class ReminderBookTest {
         assertEquals(listOf(1L, 2L), ReminderBook.pending(listOf(Reminder(2, "b", same), Reminder(1, "a", same))).map { it.id })
         assertEquals(emptyList<Reminder>(), ReminderBook.pending(listOf(Reminder(1, "a", same, fired = true))))
         assertEquals(emptyList<Reminder>(), ReminderBook.pending(emptyList()))
+    }
+
+    // ------------------------------------------------------------ dated
+
+    private val oct3 = dev.molasses.core.util.DateMath.DateSpec.DayMonth(10, 3)
+
+    @Test
+    fun `a dated reminder is due at the wall time the host resolves, on both clocks`() {
+        val due = ReminderBook.dueAt(When.On(oct3, 9 * 60), now, 9 * 60) { _, _ -> wall0 + 60 * min }
+        assertEquals(at(wall0 + 60 * min, 70 * min), due)
+    }
+
+    @Test
+    fun `a dated reminder not in the future is refused, never rolled forward`() {
+        assertEquals(null, ReminderBook.dueAt(When.On(oct3, 9 * 60), now, 9 * 60) { _, _ -> wall0 })
+        assertEquals(null, ReminderBook.dueAt(When.On(oct3, 9 * 60), now, 9 * 60) { _, _ -> wall0 - min })
+    }
+
+    @Test
+    fun `a date the host cannot resolve is refused`() {
+        assertEquals(null, ReminderBook.dueAt(When.On(oct3, 9 * 60), now, 9 * 60) { _, _ -> null })
+    }
+
+    @Test
+    fun `the host is asked for exactly the date and minute that were typed`() {
+        var asked: Pair<Any, Int>? = null
+        ReminderBook.dueAt(When.On(oct3, 18 * 60 + 30), now, 9 * 60) { d, m -> asked = d to m; wall0 + min }
+        assertEquals(oct3 to 18 * 60 + 30, asked)
     }
 }

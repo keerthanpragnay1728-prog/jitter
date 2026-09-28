@@ -75,6 +75,9 @@ sealed interface RemindOutcome {
 
     /** Twenty are pending. Nothing was added. */
     data object Full : RemindOutcome
+
+    /** A date and time that is not in the future. Nothing was added. */
+    data object Past : RemindOutcome
 }
 
 /**
@@ -491,6 +494,7 @@ private fun execute(
                         R.string.cmd_err_rem_full,
                         listOf(ReminderBook.MAX.toString()),
                     )
+                    RemindOutcome.Past -> DispatchResult.Failed(R.string.cmd_err_rem_past)
                 },
             )
         }
@@ -680,6 +684,10 @@ fun ParseError.messageRes(): Int = when (this) {
     is ParseError.BadTime -> R.string.cmd_err_time
     is ParseError.BadToggle -> R.string.cmd_err_toggle
     is ParseError.BadWhen -> R.string.cmd_err_when
+    // The same copy days gives for the same date, so a refusal reads the
+    // same in both commands.
+    is ParseError.RemDate -> error.messageRes()
+    is ParseError.RemNeedsTime -> R.string.cmd_err_rem_needs_time
 }
 
 /** The token or usage hint to interpolate into [messageRes]. */
@@ -692,6 +700,8 @@ fun ParseError.argument(): String? = when (this) {
     is ParseError.BadTime -> token
     is ParseError.BadToggle -> token
     is ParseError.BadWhen -> token
+    is ParseError.RemDate -> token
+    is ParseError.RemNeedsTime -> date
 }
 
 /** A parse failure as a dispatch result, so the prompt has one result type. */

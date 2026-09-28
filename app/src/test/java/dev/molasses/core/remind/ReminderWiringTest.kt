@@ -164,7 +164,7 @@ class ReminderWiringTest {
         assertTrue(add.contains("return verdict"))
         val launcher = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
         assertFalse("no check on a stale snapshot", launcher.contains("reminders.size >= ReminderBook.MAX"))
-        val remind = launcher.substring(launcher.indexOf("remind = { whenSpec, text, done ->")).substringBefore("onDialer = {")
+        val remind = launcher.substring(launcher.indexOf("remind = remind@{ whenSpec, text, done ->")).substringBefore("onDialer = {")
         assertTrue(remind.contains("when (val verdict = settingsRepository.addReminder(text, due))"))
         assertTrue(remind.contains("ReminderBook.Added.Full -> done(RemindOutcome.Full)"))
         assertTrue(remind.contains("is ReminderBook.Added.Ok ->"))

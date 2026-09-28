@@ -378,11 +378,17 @@ class LauncherActivity : ComponentActivity() {
                                         val c = Calendar.getInstance()
                                         c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
                                     },
-                                    remind = { whenSpec, text, done ->
+                                    remind = remind@{ whenSpec, text, done ->
                                         val now = settingsRepository.nowStamped()
                                         val c = Calendar.getInstance()
                                         val minute = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
-                                        val due = ReminderBook.dueAt(whenSpec, now, minute)
+                                        val due = ReminderBook.dueAt(whenSpec, now, minute, ReminderAlarms::wallOn)
+                                        // A dated reminder in the past is refused
+                                        // before anything is written.
+                                        if (due == null) {
+                                            done(RemindOutcome.Past)
+                                            return@remind
+                                        }
                                         scope.launch {
                                             // The cap is the store's call, made in its own
                                             // transaction, not a check on the list this
