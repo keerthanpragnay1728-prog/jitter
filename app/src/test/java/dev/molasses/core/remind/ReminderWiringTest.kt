@@ -2,6 +2,7 @@ package dev.molasses.core.remind
 
 import dev.molasses.core.functionBody
 import dev.molasses.core.repoFile
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -83,27 +84,34 @@ class ReminderWiringTest {
         val chime = functionBody(repoFile("app/src/main/java/dev/molasses/monitor/ReminderChime.kt").readText(), "fun play(")
         assertTrue(chime.contains("AudioManager.RINGER_MODE_SILENT -> Unit"))
         assertTrue(chime.contains("AudioManager.RINGER_MODE_VIBRATE -> vibrate(context)"))
-        assertTrue(chime.contains("else -> tone()"))
+        assertTrue(chime.contains("else -> tone(context, am)"))
     }
 
     @Test
-    fun `one soft tone, awaited, well inside the receiver window`() {
+    fun `one generated chime on the notification event usage, awaited, well inside the receiver window`() {
         val src = repoFile("app/src/main/java/dev/molasses/monitor/ReminderChime.kt").readText()
         assertTrue(src.contains("suspend fun play(context: Context)"))
+        assertFalse("ToneGenerator produced no sound on hardware", src.contains("ToneGenerator("))
         val tone = functionBody(src, "private suspend fun tone(")
-        assertTrue(Regex("""generator\.startTone\(""").findAll(tone).count() == 1)
-        assertTrue(tone.contains("generator.startTone(ToneGenerator.TONE_PROP_BEEP, TONE_MS.toInt())"))
-        assertFalse("BEEP2 is two beeps", tone.contains("TONE_PROP_BEEP2"))
-        assertTrue(tone.contains("ToneGenerator(AudioManager.STREAM_NOTIFICATION, VOLUME)"))
-        assertTrue(src.contains("const val VOLUME = 50"))
-        assertTrue(tone.indexOf("generator.release()") > tone.indexOf("delay(TOTAL_MS)"))
+        assertTrue(tone.contains("AudioAttributes.USAGE_NOTIFICATION_EVENT"))
+        assertTrue(tone.contains("ChimeWave.samples()"))
+        assertTrue(tone.contains(".setTransferMode(AudioTrack.MODE_STATIC)"))
+        assertEquals(1, Regex("""track\.play\(\)""").findAll(tone).count())
+        val play = tone.indexOf("track.play()")
+        val wait = tone.indexOf("delay(TOTAL_MS)")
+        val release = tone.indexOf("track.release()")
+        assertTrue("released after the wait", play in 0 until wait && wait < release)
+        assertTrue(tone.substring(wait, release).contains("} finally {"))
+        // The diagnosis the next run needs.
+        assertTrue(tone.contains("am.isStreamMute(stream)") && tone.contains("currentInterruptionFilter"))
+        assertTrue(functionBody(src, "suspend fun play(").contains("chime: play reached"))
         val vibrate = functionBody(src, "private suspend fun vibrate(")
-        assertTrue(vibrate.contains("VibrationEffect.createOneShot(TONE_MS"))
+        assertTrue(vibrate.contains("VibrationEffect.createOneShot(VIBRATE_MS"))
         assertFalse("once, not a waveform", vibrate.contains("createWaveform"))
         assertTrue(vibrate.contains("delay(TOTAL_MS)"))
-        // 150 + 100 = 250 ms. The shortest goAsync window is 10 s.
-        assertTrue(src.contains("const val TONE_MS = 150L") && src.contains("const val TAIL_MS = 100L"))
-        assertTrue(src.contains("const val TOTAL_MS = TONE_MS + TAIL_MS"))
+        // 400 ms of buffer plus 100 ms. The shortest goAsync window is 10 s.
+        assertTrue(src.contains("const val TOTAL_MS = ChimeWave.TOTAL_MS + TAIL_MS"))
+        assertEquals(400, dev.molasses.core.remind.ChimeWave.TOTAL_MS)
     }
 
     @Test
