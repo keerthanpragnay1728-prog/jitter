@@ -992,6 +992,21 @@ produced it, which is the behaviour the shield was asked for anyway.
   Jitter from Android Settings afterwards. Google Pay and PhonePe are
   unaffected and complete payments normally. See "Banking and UPI apps".
 
+**YouTube is gated by the lease, not by scroll friction**
+- **YouTube's home feed and Shorts send no scroll events**, so the stall that
+  a scroll earns never arms there, however far past its horizon YouTube is.
+  Seen on one device: the per-event log showed window changes from YouTube and
+  no `TYPE_VIEW_SCROLLED` on those surfaces. Other targets are unaffected.
+- **The lease gate still governs it.** The lease is checked at its deadline
+  without waiting for a scroll, so the LEASE EXPIRED gate fires on time even
+  during passive playback, and sends YouTube home under it.
+- **A proxy was tried and reverted.** Treating `TYPE_WINDOW_CONTENT_CHANGED`
+  as a stand-in for scrolling did stall the feed, but it could not tell
+  scrolling from video playback: it armed every few seconds while a video
+  simply played, eating taps on the player controls, and it fired for
+  LinkedIn too. It was removed in full, and the declared event types are back
+  to the three the app acts on.
+
 **Verification**
 - The Android layer has never been compiled. See "Build status".
 - No measured stall latency. The feasibility question is open.
