@@ -106,7 +106,6 @@ import dev.molasses.core.safety.OverlayAudio
  * usage. This request is `AUDIOFOCUS_GAIN_TRANSIENT` with a sonification
  * usage, so it does not qualify. Changing that is proposed, not built.
  */
- */
 class AudioFocusHold(context: Context) {
 
     private val audio: AudioManager? =
