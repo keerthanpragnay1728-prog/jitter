@@ -88,15 +88,16 @@ class ReminderWiringTest {
     }
 
     @Test
-    fun `the default notification sound, awaited through isPlaying, capped, and stopped on every path`() {
+    fun `the fallback plays the default notification sound, awaited through isPlaying, capped, and stopped on every path`() {
         val src = repoFile("app/src/main/java/dev/molasses/monitor/ReminderChime.kt").readText()
         assertTrue(src.contains("suspend fun play(context: Context)"))
         // Imports, not text: the class doc names both to say why they went.
         assertFalse("silent on hardware", src.contains("import android.media.ToneGenerator"))
         assertFalse("silent on hardware", src.contains("import android.media.AudioTrack"))
-        val sound = functionBody(src, "private suspend fun sound(")
+        val sound = functionBody(src, "private suspend fun playRingtone(")
         assertTrue(sound.contains("RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)"))
-        assertTrue(sound.contains(".setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)"))
+        assertTrue(sound.contains("ringtone.audioAttributes = notificationEvent()"))
+        assertTrue(functionBody(src, "private fun notificationEvent()").contains(".setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)"))
         val attrs = sound.indexOf("ringtone.audioAttributes =")
         val play = sound.indexOf("ringtone.play()")
         val poll = sound.indexOf("ChimeWait.keepWaiting(elapsed, playing, everPlayed)")
@@ -108,6 +109,26 @@ class ReminderWiringTest {
         val vibrate = functionBody(src, "private suspend fun vibrate(")
         assertTrue(vibrate.contains("VibrationEffect.createOneShot(VIBRATE_MS"))
         assertFalse("once, not a waveform", vibrate.contains("createWaveform"))
+    }
+
+    @Test
+    fun `the bundled chime plays first, through MediaPlayer, and falls back to the ringtone on any failure`() {
+        val src = repoFile("app/src/main/java/dev/molasses/monitor/ReminderChime.kt").readText()
+        val sound = functionBody(src, "private suspend fun sound(")
+        assertTrue(sound.indexOf("if (playRaw(context)) return") in 0 until sound.indexOf("playRingtone(context)"))
+        val raw = functionBody(src, "private suspend fun playRaw(")
+        val attrs = raw.indexOf("player.setAudioAttributes(notificationEvent())")
+        val source = raw.indexOf("openRawResourceFd(R.raw.jitter_chime)")
+        val prepare = raw.indexOf("player.prepare()")
+        val start = raw.indexOf("player.start()")
+        val wait = raw.indexOf("withTimeoutOrNull(ChimeWait.CAP_MS) { finished.await() }")
+        val release = raw.indexOf("player.release()")
+        assertTrue(attrs in 0 until source && source < prepare && prepare < start && start < wait && wait < release)
+        assertTrue("released on every path", raw.substring(wait, release).contains("} finally {"))
+        assertTrue(raw.contains("player.setOnCompletionListener { finished.complete(true) }"))
+        assertTrue("a playback error falls back", raw.contains("finished.complete(false)") && raw.contains("false -> false"))
+        assertTrue(raw.contains("} catch (e: Exception) {") && raw.contains("return false"))
+        assertTrue(raw.contains("chime: path=raw prepared in") && raw.contains("completed after") && raw.contains("cap reached after"))
     }
 
     @Test
