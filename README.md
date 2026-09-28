@@ -159,6 +159,29 @@ the accessibility service and usage access from the setup checklist in
 settings. Uninstalling removes everything; the app stores nothing outside its
 own data directory.
 
+### Building
+
+Debug: `./gradlew assembleDebug`, signed with the SDK's debug key, for
+development only.
+
+Release: `./gradlew assembleRelease`. It is signed with the one release key,
+which never lives in this repository. Set these four in
+`~/.gradle/gradle.properties`, or as environment variables of the same names:
+
+```
+JITTER_STORE_FILE=/absolute/path/to/jitter-release.jks
+JITTER_STORE_PASSWORD=...
+JITTER_KEY_ALIAS=...
+JITTER_KEY_PASSWORD=...
+```
+
+If any is missing the release build stops at packaging with a message naming
+the missing ones. It never produces an unsigned APK and never signs a release
+with the debug key. Debug builds, and compiling or testing the release
+variant, do not need them. Key files (`*.jks`, `*.keystore`, `*.p12`) are
+ignored by git, and a test fails if one is ever tracked. There are no product
+flavors: one channel, one key. See RELEASE.md for the release steps.
+
 ---
 
 ## Build status (read this first)

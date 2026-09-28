@@ -28,6 +28,30 @@ fun versionCodeOf(version: String): Int {
 
 val appVersion: String = libs.versions.appVersion.get()
 
+/**
+ * Release signing, read from ~/.gradle/gradle.properties or the environment,
+ * never from the repository. No key is created or committed here.
+ *
+ * Each value is a Gradle property of this name, or an environment variable
+ * of the same name. A release build with any of them missing fails at
+ * packaging and names what is missing. It never falls back to an unsigned
+ * APK or to the debug key: a release signed with anything but the one key
+ * cannot update an installed release, and testers would lose their data.
+ */
+val releaseSigningProperties = listOf(
+    "JITTER_STORE_FILE",
+    "JITTER_STORE_PASSWORD",
+    "JITTER_KEY_ALIAS",
+    "JITTER_KEY_PASSWORD",
+)
+
+fun releaseSigningValue(name: String): String? =
+    providers.gradleProperty(name).orElse(providers.environmentVariable(name)).orNull
+        ?.takeIf { it.isNotBlank() }
+
+val releaseSigning: Map<String, String?> = releaseSigningProperties.associateWith(::releaseSigningValue)
+val missingReleaseSigning: List<String> = releaseSigning.filterValues { it == null }.keys.toList()
+
 android {
     namespace = "dev.molasses"
     compileSdk = 36
@@ -42,11 +66,28 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        // Only when all four are present. With any missing there is no
+        // release signing config at all, and packageRelease is stopped below
+        // before it can write an unsigned APK.
+        if (missingReleaseSigning.isEmpty()) {
+            create("release") {
+                storeFile = file(releaseSigning.getValue("JITTER_STORE_FILE")!!)
+                storePassword = releaseSigning.getValue("JITTER_STORE_PASSWORD")
+                keyAlias = releaseSigning.getValue("JITTER_KEY_ALIAS")
+                keyPassword = releaseSigning.getValue("JITTER_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
         }
         release {
+            // Never the debug key, and never null by design: see
+            // releaseSigningProperties and the packaging check below.
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -76,6 +117,21 @@ android {
 
     packaging {
         resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")
+    }
+}
+
+// A release APK or bundle is never packaged without the release key. The
+// check sits on packaging rather than configuration so a debug build, and
+// compiling or testing the release variant, still work without the key.
+tasks.matching { it.name.matches(Regex("(package|sign)Release(Bundle)?")) }.configureEach {
+    doFirst {
+        if (missingReleaseSigning.isNotEmpty()) {
+            throw GradleException(
+                "Release signing is not configured. Missing: ${missingReleaseSigning.joinToString(", ")}. " +
+                    "Set each in ~/.gradle/gradle.properties or as an environment variable of the same name. " +
+                    "The release build will not fall back to an unsigned APK or to the debug key.",
+            )
+        }
     }
 }
 
