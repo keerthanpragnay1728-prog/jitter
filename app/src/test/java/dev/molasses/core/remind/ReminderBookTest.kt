@@ -147,4 +147,13 @@ class ReminderBookTest {
         ReminderBook.dueAt(When.On(oct3, 18 * 60 + 30), now, 9 * 60) { d, m -> asked = d to m; wall0 + min }
         assertEquals(oct3 to 18 * 60 + 30, asked)
     }
+
+    @Test
+    fun `only a pending reminder can be killed`() {
+        val due = at(wall0 + min, 0)
+        val list = listOf(Reminder(1, "a", due), Reminder(2, "b", due, fired = true))
+        assertEquals(listOf(Reminder(2, "b", due, fired = true)), ReminderBook.killed(list, 1))
+        assertEquals("a fired one is dismissed on the console, not killed", null, ReminderBook.killed(list, 2))
+        assertEquals("an unknown id", null, ReminderBook.killed(list, 9))
+    }
 }

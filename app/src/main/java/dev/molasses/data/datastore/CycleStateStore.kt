@@ -500,6 +500,23 @@ class CycleStateStore(context: Context) {
     }
 
     /** The user dismissed [id] on the console. The only thing that removes one. */
+    /**
+     * Kill a pending reminder: remove it in one transaction, and say whether
+     * there was one to remove. The caller cancels its alarm only on true. If
+     * the alarm fires first it finds nothing unfired and does nothing, so the
+     * order store then alarm cannot sound a killed reminder.
+     */
+    suspend fun killReminder(id: Long): Boolean {
+        var removed = false
+        store.updateData { state ->
+            val next = ReminderBook.killed(state.remindersList.map { it.toReminder() }, id)
+            removed = next != null
+            if (next == null) state
+            else state.toBuilder().clearReminders().addAllReminders(next.map { it.toProto() }).build()
+        }
+        return removed
+    }
+
     suspend fun dismissReminder(id: Long) {
         store.updateData { state ->
             val next = ReminderBook.dismissed(state.remindersList.map { it.toReminder() }, id)

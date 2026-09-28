@@ -244,6 +244,9 @@ class SettingsRepository(
     /** The console's dismiss. The only thing that removes a reminder. */
     suspend fun dismissReminder(id: Long) = store.dismissReminder(id)
 
+    /** True when a pending reminder [id] was removed. See [CycleStateStore.killReminder]. */
+    suspend fun killReminder(id: Long): Boolean = store.killReminder(id)
+
     /** The console's quick-launch rows, as stored. See [QuickLaunch]. */
     val quickLaunch: Flow<QuickLaunch.Selection> = store.quickLaunch
 

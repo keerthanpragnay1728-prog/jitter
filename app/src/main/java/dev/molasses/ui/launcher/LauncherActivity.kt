@@ -154,6 +154,7 @@ import dev.molasses.data.repo.CycleReadout
 import dev.molasses.data.repo.SettingsRepository
 import dev.molasses.monitor.ReminderAlarms
 import dev.molasses.monitor.ServiceDiagnostics
+import dev.molasses.ui.lock.lockOpensAtText
 import dev.molasses.ui.settings.SettingsActivity
 import dev.molasses.ui.theme.JitterBackground
 import dev.molasses.ui.theme.MolassesTheme
@@ -340,6 +341,15 @@ class LauncherActivity : ComponentActivity() {
                             reminders = reminders,
                             onDismissReminder = { id ->
                                 scope.launch { settingsRepository.dismissReminder(id) }
+                            },
+                            onKillReminder = { id ->
+                                scope.launch {
+                                    // Store first, then the alarm: an alarm that
+                                    // fires in between finds nothing unfired.
+                                    val removed = settingsRepository.killReminder(id)
+                                    val cancelled = removed && ReminderAlarms.cancel(this@LauncherActivity, id)
+                                    Log.i(REMINDER_TAG, "kill: reminder $id removed=$removed alarmCancelled=$cancelled")
+                                }
                             },
                             // Remembered so the prompt can build its
                             // dispatcher once rather than on every keystroke.
@@ -782,6 +792,7 @@ fun MainLauncherWorkspace(
     quickLaunch: QuickLaunch.Selection,
     reminders: List<Reminder>,
     onDismissReminder: (Long) -> Unit,
+    onKillReminder: (Long) -> Unit,
     cycle: CycleReadout,
     curfewEndMinuteOfDay: Int?,
     nowStamped: () -> StampedInstant,
@@ -868,6 +879,7 @@ fun MainLauncherWorkspace(
                     quickLaunch = quickLaunch,
                     reminders = reminders,
                     onDismissReminder = onDismissReminder,
+                    onKillReminder = onKillReminder,
                     cycle = cycle,
                     curfewEndMinuteOfDay = curfewEndMinuteOfDay,
                     nowStamped = nowStamped,
@@ -909,6 +921,8 @@ fun TerminalHomeView(
     /** Every reminder not yet dismissed. The fired ones are shown here, oldest first. */
     reminders: List<Reminder>,
     onDismissReminder: (Long) -> Unit,
+    /** Kill a pending reminder from the bare `$ rem` list. */
+    onKillReminder: (Long) -> Unit,
     cycle: CycleReadout,
     /** Minute of day a bedtime lock lifts, or null when none stands. */
     curfewEndMinuteOfDay: Int?,
@@ -1106,6 +1120,10 @@ fun TerminalHomeView(
     var answerHoldMs by remember { mutableStateOf<Long?>(null) }
     var answerSerial by remember { mutableIntStateOf(0) }
     var answerShownAtMs by remember { mutableLongStateOf(0L) }
+    // The pending reminders a bare `rem` listed, drawn under its answer as
+    // rows, and the one whose [kill] is showing. See PendingReminderRow.
+    var answerReminderIds by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var killArmedId by remember { mutableStateOf<Long?>(null) }
     // A deferred command is in flight. See the Deferred branch of handleOutcome.
     var awaitingDeferred by remember { mutableStateOf(false) }
     LaunchedEffect(answerSerial) {
@@ -1371,6 +1389,8 @@ fun TerminalHomeView(
                 // The answer and the cleared prompt land in the same frame.
                 answer = text
                 answerHoldMs = if (outcome.readingWindow) ReadingWindow.holdMs(text) else null
+                answerReminderIds = outcome.reminderIds
+                killArmedId = null
                 answerShownAtMs = SystemClock.elapsedRealtime()
                 answerSerial += 1
                 query = ""
@@ -1755,6 +1775,36 @@ fun TerminalHomeView(
                     deliveringId = null
                 },
             )
+            // A bare `rem`: its pending reminders, one row each, under the
+            // header. Drawn from the live list, so a reminder killed or fired
+            // since the list was asked for drops out without a second `rem`.
+            if (spoken is BitDisplay.Answer && answerReminderIds.isNotEmpty()) {
+                val rows = ReminderBook.pending(reminders).filter { it.id in answerReminderIds }
+                if (rows.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.cmd_ans_rem_none),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = PhosphorDim,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+                }
+                rows.forEach { pending ->
+                    PendingReminderRow(
+                        text = stringResource(
+                            R.string.cmd_ans_rem_row,
+                            lockOpensAtText(context, pending.due.wallMs),
+                            pending.text,
+                        ),
+                        armed = killArmedId == pending.id,
+                        onTap = { killArmedId = if (killArmedId == pending.id) null else pending.id },
+                        onKill = {
+                            killArmedId = null
+                            onKillReminder(pending.id)
+                        },
+                    )
+                }
+            }
             Spacer(Modifier.height(8.dp))
         }
 
@@ -3032,6 +3082,42 @@ private fun ReminderRow(face: String, text: String, onDismiss: () -> Unit) {
     }
 }
 
+/**
+ * One pending reminder in the bare `$ rem` list. A tap reveals [kill] beside
+ * it and a second tap hides it again; [kill] is the only thing that removes
+ * the reminder, so a stray tap on the row cannot.
+ */
+@Composable
+private fun PendingReminderRow(text: String, armed: Boolean, onTap: () -> Unit, onKill: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onTap)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            color = PhosphorDim,
+            modifier = Modifier.weight(1f),
+        )
+        if (armed) {
+            Text(
+                text = stringResource(R.string.console_reminder_kill),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = PhosphorGreen,
+                modifier = Modifier
+                    .clickable(onClick = onKill)
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun ConsoleSpeechRow(
     face: String,
@@ -3123,3 +3209,6 @@ private const val CONSOLE_TAG = "Molasses.Console"
 
 /** `adb logcat -s Molasses.Bit`: each change of Bit's resting mood. */
 private const val BIT_TAG = "Molasses.Bit"
+
+/** `adb logcat -s Molasses.Reminder`: a pending reminder killed from the list, never its text. */
+private const val REMINDER_TAG = "Molasses.Reminder"

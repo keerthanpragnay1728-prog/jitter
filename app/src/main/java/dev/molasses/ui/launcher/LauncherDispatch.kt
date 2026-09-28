@@ -509,13 +509,11 @@ private fun execute(
         if (pending.isEmpty()) {
             DispatchResult.Answered(R.string.cmd_ans_rem_none)
         } else {
+            // The header only: each reminder is drawn under it as its own
+            // row, so it can be tapped and killed. See PendingReminderRow.
             DispatchResult.Answered(
                 ackKey = R.string.cmd_ans_rem_list,
-                args = listOf(
-                    pending.joinToString("\n") {
-                        context.getString(R.string.cmd_ans_rem_row, lockOpensAtText(context, it.due.wallMs), it.text)
-                    },
-                ),
+                reminderIds = pending.map { it.id },
             )
         }
     }

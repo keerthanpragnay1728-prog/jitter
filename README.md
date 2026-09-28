@@ -1071,7 +1071,9 @@ produced it, which is the behaviour the shield was asked for anyway.
   time, and a date and time that has already passed is refused rather than
   moved to next year.
 - A bare `rem` lists what is pending, soonest first, at most five, each
-  with its due time and text, held until the next keystroke. With none it
+  with its due time and text, held until the next keystroke. Tapping a row
+  shows `[kill]` beside it, and `[kill]` removes that reminder and cancels
+  its alarm. Only a pending reminder can be killed. With none it
   says NO PENDING REMINDERS. Fired reminders are not listed: they already
   wait on the console until dismissed, and a list of past ones would be
   something to come back and read.

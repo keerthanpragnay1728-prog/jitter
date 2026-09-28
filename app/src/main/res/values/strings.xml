@@ -501,7 +501,7 @@
     <!-- Held until the next keystroke, like calc's answer. -->
     <string name="cmd_ans_rem_exact">REMINDER SET FOR %1$s. EXACT.</string>
     <string name="cmd_ans_rem_inexact">REMINDER SET FOR %1$s. INEXACT: ANDROID MAY DELIVER IT LATE.</string>
-    <string name="cmd_ans_rem_list">PENDING, SOONEST FIRST:\n%1$s</string>
+    <string name="cmd_ans_rem_list">PENDING, SOONEST FIRST. TAP ONE TO KILL IT.</string>
     <string name="cmd_ans_rem_row" translatable="false">%1$s: %2$s</string>
     <string name="cmd_ans_rem_none">NO PENDING REMINDERS</string>
     <string name="cmd_ans_rem_not_armed">REMINDER SAVED FOR %1$s, NOT ARMED. IT ARMS WHEN THE SERVICE NEXT CONNECTS.</string>
@@ -640,6 +640,7 @@
     <string name="console_reminder_fmt" translatable="false">REMINDER // %1$s</string>
     <string name="console_reminder_late_fmt" translatable="false">REMINDER // %1$s // LATE</string>
     <string name="console_reminder_ok" translatable="false">[OK]</string>
+    <string name="console_reminder_kill" translatable="false">[kill]</string>
     <string name="console_do_it">[DO IT]</string>
     <string name="console_nah">[NAH]</string>
     <!-- App drawer -->

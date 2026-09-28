@@ -150,6 +150,14 @@ object ReminderBook {
     fun fired(list: List<Reminder>, id: Long, late: Boolean): List<Reminder> =
         list.map { if (it.id == id && !it.fired) it.copy(fired = true, late = late) else it }
 
+    /**
+     * [list] without the pending reminder [id], or null when there is no
+     * such pending reminder. Only a pending one can be killed: a fired one
+     * is on the console, and it leaves by being dismissed there.
+     */
+    fun killed(list: List<Reminder>, id: Long): List<Reminder>? =
+        if (list.any { it.id == id && !it.fired }) list.filterNot { it.id == id } else null
+
     /** Removed when the user dismisses it, never when it fires. */
     fun dismissed(list: List<Reminder>, id: Long): List<Reminder> = list.filterNot { it.id == id }
 
