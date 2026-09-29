@@ -1,0 +1,9 @@
+First public release, as org.jitteros.app.
+
+- A horizon per tracked app, 25 minutes by default. Past 40% of it, scrolls can stall, longer and more often up to a ceiling.
+- Opening a tracked app shows a countdown, then a lease of 5, 10 or 15 minutes.
+- Locks with no unlock, and a console home screen.
+- A setup guide for two permissions (accessibility, usage access) and your home app.
+- No network permission. Nothing leaves the device.
+
+Uninstall dev.molasses first; its data does not carry over.

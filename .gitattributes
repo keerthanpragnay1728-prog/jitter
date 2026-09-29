@@ -1,0 +1,22 @@
+# Every text file is LF, in the repository and in every working tree, on
+# every platform. See CLAUDE.md, "Source encoding and format strings".
+#
+# Without this, a Windows checkout with core.autocrlf=true turns every source
+# file CRLF, and the tests that read source as text and match across a line
+# break fail on code that is correct. BitWiringTest and
+# UntrackCoolingOffWiringTest did exactly that on the owner's machine.
+* text=auto eol=lf
+
+# Windows batch files need CRLF to run. Left exactly as committed (gradlew.bat
+# already is CRLF), so this file does not force a renormalization of it.
+*.bat -text
+
+# Byte for byte.
+*.jar binary
+*.wav binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.jks binary
+*.keystore binary
+*.p12 binary

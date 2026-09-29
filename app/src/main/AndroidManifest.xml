@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      No SYSTEM_ALERT_WINDOW and no READ_PHONE_STATE.
+
+      Every floating element is a TYPE_ACCESSIBILITY_OVERLAY window owned by
+      the accessibility service, which needs no overlay grant. The call panic
+      check uses AudioManager.getMode(), which needs no phone grant and also
+      catches VoIP.
+
+      No foreground service of any type either. An AccessibilityService is
+      already system-bound and persistent.
+
+      No POST_NOTIFICATIONS: nothing in the app posts a notification, $ rem
+      included. No HIGH_SAMPLING_RATE_SENSORS: every sensor is registered at
+      SENSOR_DELAY_GAME or slower, which does not need it.
+    -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions"/>
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- $ rem vibrates when the ringer is on vibrate. Granted at install. -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <!--
+      $ rem fires on time. USE_EXACT_ALARM on Android 13 and later, granted at
+      install. SCHEDULE_EXACT_ALARM on 12 and 12L only, which the user can
+      revoke; the app then falls back to inexact and says so. Below 12, exact
+      alarms need neither. USE_EXACT_ALARM is restricted on Google Play to
+      alarm and calendar apps; this app is distributed by sideload and F-Droid.
+    -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32"/>
+
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true"/>
+    <uses-feature android:name="android.hardware.sensor.stepdetector" android:required="false"/>
+    <uses-feature android:name="android.hardware.sensor.barometer" android:required="false"/>
+
+    <!--
+      Package visibility for the target picker, and later for the launcher's
+      app list. A <queries> element rather than QUERY_ALL_PACKAGES: the
+      permission is flagged on review and this is the narrower grant that does
+      the same job. Without either, PackageManager returns only our own package
+      on API 30+.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
+        <!--
+          The command bar reports a command as unavailable when nothing on the
+          device handles its Intent. Without these entries resolveActivity
+          returns null on API 30+ even where a clock app is installed, and
+          "$ alarm 6am" would report no clock app on a phone that has one.
+        -->
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_TIMER"/>
+        </intent>
+        <intent>
+            <action android:name="android.settings.panel.action.WIFI"/>
+        </intent>
+        <intent>
+            <action android:name="android.settings.WIFI_SETTINGS"/>
+        </intent>
+        <intent>
+            <action android:name="android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS"/>
+        </intent>
+        <!--
+          Digital Wellbeing, for the ledger's "open system wellbeing" link.
+
+          Both entries, because they cover different devices. The package
+          entry makes Google's Wellbeing visible, which is what lets
+          resolveActivity see its settings Activity by ComponentName; on a
+          Pixel that Activity is the only thing that actually starts, and
+          the action below fails with "No activity found". The action entry
+          covers an OEM implementation in some other package, which a
+          package entry naming Google's would miss entirely.
+
+          Without these, resolveActivity returns null on API 30+ even where
+          Wellbeing is installed, and the link fell through to raw Usage
+          Access on every device.
+        -->
+        <!--
+          The console's favourite rows. Every action ShortcutLadder probes has
+          to be here: on API 30+ resolveActivity returns null for an action
+          that is not declared, on a device that handles it perfectly well, so
+          a ladder and a manifest that disagree produce a fallback chain that
+          collapses to nothing without saying so. That is not hypothetical, it
+          is how the Wellbeing link below failed on every device.
+
+          The package rungs of those ladders need nothing here. They are
+          launched through getLaunchIntentForPackage, which needs the package
+          visible rather than the action declared, and the MAIN plus LAUNCHER
+          query at the top of this block already covers every app with an
+          icon. ShortcutLadderTest holds the action list and this block in
+          step.
+        -->
+        <intent>
+            <action android:name="android.intent.action.SHOW_ALARMS"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.APP_CLOCK"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.APP_CALCULATOR"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.APP_CALENDAR"/>
+        </intent>
+        <!--
+          The messaging selector asks for the device's SMS clients by
+          category, and offers named chat apps beside them. The chat apps are
+          covered by the launcher query; this entry is what makes the SMS ones
+          visible, since some ship without a launcher icon.
+        -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.APP_MESSAGING"/>
+        </intent>
+        <package android:name="com.google.android.apps.wellbeing"/>
+        <intent>
+            <action android:name="android.settings.DIGITAL_WELLBEING_SETTINGS"/>
+        </intent>
+    </queries>
+
+    <application
+        android:name=".MolassesApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Molasses">
+
+        <!--
+        windowLayoutInDisplayCutoutMode is declared here and on
+        LauncherActivity, and it is deliberately not the value the overlays
+        use. See the comment on LauncherActivity for the whole of why.
+        -->
+        <activity
+            android:name=".ui.settings.SettingsActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:windowLayoutInDisplayCutoutMode="default">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- No foreground service. An AccessibilityService is already
+             system-bound and persistent; adding an FGS on API 34+ forces a
+             `specialUse` type plus a Play justification for no added
+             capability. All long-lived work lives in this service's
+             lifecycle scope. -->
+        <service
+            android:name=".monitor.MolassesAccessibilityService"
+            android:exported="true"
+            android:label="@string/a11y_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config"/>
+        </service>
+            <!--
+            windowSoftInputMode is declared rather than left to the default,
+            and both halves are load bearing.
+
+            adjustResize, because the default is adjustUnspecified and
+            ViewRootImpl resolves that by walking AttachInfo.mScrollContainers
+            and falling back to adjustPan when the list is empty. A pure
+            Compose window registers nothing there: setScrollContainer is a
+            View API and AndroidComposeView never calls it, so the resolved
+            mode today is pan. Panning translates the whole window to keep the
+            focused field visible, and the prompt sits two thirds down while
+            the keyboard takes the bottom of the screen, so the pan distance
+            is enough to push the header, the status line and Bit's row off
+            the top. The constant is deprecated in favour of
+            setDecorFitsSystemWindows(false) plus an ime() inset listener, and
+            the launcher already does the first half; declaring it is what
+            stops the unspecified value resolving to pan before any of that
+            runs.
+
+            stateAlwaysHidden, because this is the HOME activity and it is
+            singleTask, so coming back from an app returns to the same
+            instance with whatever focus it had. ImeVisibilityStateComputer
+            reads this in two places and both are focus transitions:
+            computeState hides on hasImeFocusChanged, and
+            shouldRestoreImeVisibility returns false so a keyboard that was up
+            when the user left is not restored when they come home. Neither
+            touches the explicit show path, so tapping the prompt still raises
+            the keyboard.
+
+            windowLayoutInDisplayCutoutMode is declared for the same reason
+            the soft input mode is: inherited window geometry is geometry
+            nobody decided. The value is the one the activity already had, so
+            this changes no pixels; it states it and lets a test hold it.
+
+            It is deliberately NOT the overlays' value, and the difference is
+            the point rather than an oversight. OverlayHost and
+            ShutterOverlayManager set LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            because they are full screen scrims that have to cover the whole
+            display, a scrim that letterboxes leaves a visible strip down one
+            side, and their content is vertically centred so it cannot land
+            under anything. The activities are the opposite case: their
+            content is top anchored and positioned by a constant, 44dp
+            vertical and 18dp horizontal, that is read from no inset at all.
+            For them always would be strictly worse, because default is what
+            currently letterboxes the window away from a cutout in landscape,
+            and that letterbox is the only thing protecting the 18dp.
+
+            never was considered and rejected. It would inset the window below
+            a portrait cutout and so make the 44dp safe on punch hole devices,
+            which is a real improvement, but it changes geometry on hardware
+            nobody here has and it is the wrong end state: once the constants
+            are replaced by real inset consumption, always plus safeDrawing is
+            correct and never would have to be undone. A temporary fix that
+            has to be reverted is worse than a declared status quo.
+            -->
+            <!--
+            $ rem: each reminder's alarm, and BOOT_COMPLETED to re-arm them
+            (RECEIVE_BOOT_COMPLETED is declared above). Not exported: the alarm
+            names this class explicitly and the boot broadcast comes from the
+            system, which reaches a non-exported receiver.
+            -->
+            <receiver
+            android:name=".monitor.ReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+            </receiver>
+
+            <activity
+            android:name=".ui.launcher.LauncherActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
+            android:windowLayoutInDisplayCutoutMode="default">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

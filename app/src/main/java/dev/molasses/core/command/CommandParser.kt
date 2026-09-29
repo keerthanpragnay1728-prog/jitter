@@ -1,0 +1,406 @@
+package dev.molasses.core.command
+
+import dev.molasses.core.remind.ReminderBook
+import dev.molasses.core.time.DurationParser
+import dev.molasses.core.time.TimeParser
+import dev.molasses.core.util.DateMath
+
+/**
+ * The REPL grammar, as a pure function from a line to a [ParseResult].
+ *
+ * ## Arity is checked wherever there is an arity to check
+ * Every verb with an argument list rejects surplus arguments rather than
+ * ignoring them. A line like `block instagram 30m 2h` is a user who is unsure
+ * what the syntax is, and silently arming a 30 minute lock teaches them the
+ * wrong thing at the cost of a lock they cannot undo. Failing is cheap; a
+ * wrong lock is not.
+ *
+ * `calc`, `conv` and `days` take a remainder rather than a list, because
+ * their argument is itself a language with its own parser. See [rest], which
+ * is the one shape that counts no tokens and says why that is safe here and
+ * nowhere else.
+ *
+ * ## No argument is ever guessed
+ * A missing duration is [ParseError.MissingArgument], never a default. The
+ * autocomplete hint shows the *shape* of a command (`block <app> <duration>`)
+ * for the same reason: one stray Tab must not be able to arm anything.
+ *
+ * Pure; no Android imports. Unit-tested in `CommandParserTest`.
+ */
+object CommandParser {
+
+    private val WHITESPACE = Regex("\\s+")
+
+
+    /** Every verb, including aliases. For autocomplete and for the help line. */
+    val VERBS: List<String> = listOf(
+        "block", "focus", "bedtime", "sleep", "status",
+        "alarm", "timer", "reboot", "poweroff", "wifi", "dnd",
+        "calc", "conv", "days", "rem",
+        "help", "?",
+    )
+
+    /**
+     * Argument shape per verb, shown as an inline hint. Never filled in with
+     * concrete values: see the class doc.
+     */
+    val USAGE: Map<String, String> = mapOf(
+        "block" to "block <app> <duration>",
+        "focus" to "focus <duration>",
+        "bedtime" to "bedtime",
+        "sleep" to "sleep",
+        "status" to "status",
+        "alarm" to "alarm <time>",
+        "timer" to "timer <duration>",
+        "reboot" to "reboot",
+        "poweroff" to "poweroff",
+        "wifi" to "wifi [on|off]",
+        "dnd" to "dnd [on|off]",
+        "calc" to "calc <expression>",
+        "conv" to "conv <amount> <from> <to>",
+        "days" to "days until|since|between <date>",
+        "rem" to "rem <time|duration> <text>",
+        "help" to "help",
+        "?" to "?",
+    )
+
+    fun parse(line: String): ParseResult {
+        // A leading "$" is part of the prompt, not the command, but users
+        // retype what they see. Accept and drop it.
+        val text = line.trim().removePrefix("$").trim()
+        if (text.isEmpty()) return err(ParseError.Empty)
+
+        val tokens = text.split(Regex("\\s+"))
+        val verb = tokens[0].lowercase()
+        val args = tokens.drop(1)
+
+        return when (verb) {
+            "block" -> appAndDuration(verb, args) { app, ms -> Command.Block(app, ms) }
+
+            "focus" -> durationOnly(verb, args) { Command.Focus(it) }
+            "timer" -> durationOnly(verb, args) { Command.Timer(it) }
+
+            "bedtime", "sleep" -> noArgs(verb, args, Command.Bedtime)
+            "status" -> noArgs(verb, args, Command.Status)
+            "help", "?" -> noArgs(verb, args, Command.Help)
+            "reboot" -> noArgs(verb, args, Command.Reboot)
+            "poweroff" -> noArgs(verb, args, Command.PowerOff)
+
+            "alarm" -> when (args.size) {
+                0 -> err(ParseError.MissingArgument(verb, "time"))
+                1 -> when (val t = TimeParser.parse(args[0])) {
+                    is TimeParser.Result.Ok -> ok(Command.Alarm(t.minuteOfDay))
+                    is TimeParser.Result.Err -> err(ParseError.BadTime(args[0], t.kind))
+                }
+                else -> err(ParseError.TooManyArguments(verb))
+            }
+
+            "wifi" -> toggle(verb, args) { Command.Wifi(it) }
+            "dnd" -> toggle(verb, args) { Command.Dnd(it) }
+
+            "calc" -> rest(verb, args, "expression") { Command.Calc(it) }
+            "conv" -> rest(verb, args, "amount") { Command.Conv(it) }
+            "days" -> rest(verb, args, "date") { Command.Days(it) }
+            "rem" -> remind(verb, text)
+
+            else -> err(ParseError.UnknownCommand(verb))
+        }
+    }
+
+    // ------------------------------------------------------------- shapes
+
+    private inline fun appAndDuration(
+        verb: String,
+        args: List<String>,
+        build: (String, Long) -> Command,
+    ): ParseResult = when {
+        args.isEmpty() -> err(ParseError.MissingArgument(verb, "app"))
+        args.size == 1 -> err(ParseError.MissingArgument(verb, "duration"))
+        args.size > 2 -> err(ParseError.TooManyArguments(verb))
+        else -> when (val d = DurationParser.parse(args[1])) {
+            is DurationParser.Result.Ok -> ok(build(args[0], d.ms))
+            is DurationParser.Result.Err -> err(ParseError.BadDuration(args[1], d.kind))
+        }
+    }
+
+    private inline fun durationOnly(
+        verb: String,
+        args: List<String>,
+        build: (Long) -> Command,
+    ): ParseResult = when {
+        args.isEmpty() -> err(ParseError.MissingArgument(verb, "duration"))
+        args.size > 1 -> err(ParseError.TooManyArguments(verb))
+        else -> when (val d = DurationParser.parse(args[0])) {
+            is DurationParser.Result.Ok -> ok(build(d.ms))
+            is DurationParser.Result.Err -> err(ParseError.BadDuration(args[0], d.kind))
+        }
+    }
+
+    /**
+     * The whole remainder of the line, as one string.
+     *
+     * ## The one shape that does not check arity
+     * Every other shape rejects a surplus argument, because a surplus
+     * argument means the user is unsure of the syntax and the cost of
+     * guessing is a lock they cannot undo. Here there is no surplus to
+     * detect: the argument is an expression, a conversion or a date phrase,
+     * all of which are several tokens by design, and all of which have their
+     * own parser with its own named refusals. Counting tokens here would be a
+     * second grammar that drifts from the first, and none of these three can
+     * arm anything, so the reason arity is strict elsewhere does not apply.
+     *
+     * An empty remainder is still [ParseError.MissingArgument]. That is the
+     * one thing this level can see and the utility's parser cannot tell apart
+     * from a blank line.
+     */
+    private inline fun rest(
+        verb: String,
+        args: List<String>,
+        expected: String,
+        build: (String) -> Command,
+    ): ParseResult =
+        if (args.isEmpty()) err(ParseError.MissingArgument(verb, expected))
+        else ok(build(args.joinToString(" ")))
+
+    /**
+     * `rem <time|duration> <text>`, `rem <date> <time> <text>`, or a bare
+     * `rem` for the pending list.
+     *
+     * The first token is tried as a duration and then as a time of day. The
+     * two forms cannot overlap: a duration always carries a unit letter
+     * (`45m`, `2h`) and a time always carries am, pm or a colon. A token
+     * shaped like one but out of range keeps that form's own refusal, so
+     * `rem 25:00 x` says the time is out of range rather than that it is not
+     * a time at all.
+     *
+     * Neither, and it is tried as a date by [DateMath.spec], the reader
+     * `$ days` uses, so the forms and refusals are the same: ISO
+     * (`2026-10-03`), `today` or `tomorrow`, or a day and a month name in
+     * either order (`3 oct`, `oct 3`). A slash date is refused as ambiguous
+     * and a month name with a year is told to use ISO, exactly as in days. A
+     * date must be followed by a time; without one it is refused with a
+     * message that says so. Whether the result is in the future is decided
+     * when the reminder is set, because that needs the clock.
+     *
+     * The text is the remainder of the line as typed, split off with a limit
+     * rather than rejoined from tokens, so its own spacing survives. It is
+     * the one argument this grammar leaves free, and nothing completes,
+     * ghosts or rewrites it: see [completeOnSpace], which only ever touches a
+     * verb.
+     */
+    private fun remind(verb: String, text: String): ParseResult {
+        val parts = text.split(WHITESPACE, limit = 3)
+        // Nothing after the verb lists what is pending. Not a missing time:
+        // a bare rem has nothing to be missing from.
+        if (parts.size < 2 || parts[1].isEmpty()) return ok(Command.RemList)
+        val token = parts[1]
+        val rest = parts.getOrNull(2)
+        when (val d = DurationParser.parse(token)) {
+            is DurationParser.Result.Ok -> return withText(verb, ReminderBook.When.In(d.ms), rest)
+            is DurationParser.Result.Err ->
+                if (d.kind != DurationParser.Kind.MALFORMED) return err(ParseError.BadDuration(token, d.kind))
+        }
+        when (val t = TimeParser.parse(token)) {
+            is TimeParser.Result.Ok -> return withText(verb, ReminderBook.When.At(t.minuteOfDay), rest)
+            is TimeParser.Result.Err ->
+                if (t.kind != TimeParser.Kind.MALFORMED) return err(ParseError.BadTime(token, t.kind))
+        }
+        return dated(verb, text, token)
+    }
+
+    /** The text after the when, or the refusal for a missing one. */
+    private fun withText(verb: String, whenSpec: ReminderBook.When, rest: String?): ParseResult =
+        if (rest == null || rest.isBlank()) err(ParseError.MissingArgument(verb, "text"))
+        else ok(Command.Rem(whenSpec, rest.trim()))
+
+    /** `rem <date> <time> <text>`, the date one token or two. See [remind]. */
+    private fun dated(verb: String, text: String, first: String): ParseResult {
+        when (val one = DateMath.spec(listOf(first.lowercase()))) {
+            is DateMath.SpecResult.Ok -> return timed(verb, text, 1, one.spec, first)
+            is DateMath.SpecResult.Bad ->
+                if (one.error == DateMath.Error.NUMERIC_DATE) return err(ParseError.RemDate(first, one.error))
+        }
+        val words = text.split(WHITESPACE, limit = 5)
+        // `3 oct 2026`: a day and a month take the first two words and the
+        // year would then be read as the time. Refused as days refuses it.
+        if (words.size >= 4 && words[3].length == 4 && words[3].all { it.isDigit() }) {
+            val three = DateMath.spec(words.subList(1, 4).map { it.lowercase() })
+            if (three is DateMath.SpecResult.Bad && three.error == DateMath.Error.YEAR_NEEDS_ISO) {
+                return err(ParseError.RemDate(words.subList(1, 4).joinToString(" "), three.error))
+            }
+        }
+        if (words.size >= 3) {
+            val pairText = "${words[1]} ${words[2]}"
+            when (val two = DateMath.spec(listOf(words[1].lowercase(), words[2].lowercase()))) {
+                is DateMath.SpecResult.Ok -> return timed(verb, text, 2, two.spec, pairText)
+                is DateMath.SpecResult.Bad ->
+                    if (two.error == DateMath.Error.NUMERIC_DATE || two.error == DateMath.Error.YEAR_NEEDS_ISO) {
+                        return err(ParseError.RemDate(pairText, two.error))
+                    }
+            }
+        }
+        return err(ParseError.BadWhen(first))
+    }
+
+    /** After a date of [dateTokens] words: a time, then the text. */
+    private fun timed(
+        verb: String,
+        text: String,
+        dateTokens: Int,
+        spec: DateMath.DateSpec,
+        dateText: String,
+    ): ParseResult {
+        val words = text.split(WHITESPACE, limit = dateTokens + 3)
+        val timeToken = words.getOrNull(1 + dateTokens)
+        if (timeToken.isNullOrBlank()) return err(ParseError.RemNeedsTime(dateText))
+        return when (val t = TimeParser.parse(timeToken)) {
+            is TimeParser.Result.Ok ->
+                withText(verb, ReminderBook.When.On(spec, t.minuteOfDay), words.getOrNull(2 + dateTokens))
+            is TimeParser.Result.Err ->
+                if (t.kind != TimeParser.Kind.MALFORMED) err(ParseError.BadTime(timeToken, t.kind))
+                else err(ParseError.RemNeedsTime(dateText))
+        }
+    }
+
+    private fun noArgs(verb: String, args: List<String>, command: Command): ParseResult =
+        if (args.isEmpty()) ok(command) else err(ParseError.TooManyArguments(verb))
+
+    private inline fun toggle(
+        verb: String,
+        args: List<String>,
+        build: (Boolean?) -> Command,
+    ): ParseResult = when {
+        args.isEmpty() -> ok(build(null))
+        args.size > 1 -> err(ParseError.TooManyArguments(verb))
+        else -> when (args[0].lowercase()) {
+            "on" -> ok(build(true))
+            "off" -> ok(build(false))
+            else -> err(ParseError.BadToggle(args[0]))
+        }
+    }
+
+    /**
+     * Inline autocomplete for a partly typed line.
+     *
+     * Returns the usage shape of the single matching verb, or null when the
+     * prefix is ambiguous or already complete. Never returns a filled-in
+     * argument: completing `b` to `block instagram 30m` would mean one Tab
+     * can arm a real lock nobody asked for.
+     */
+    fun hintFor(partial: String): String? {
+        val text = partial.trim().removePrefix("$").trim().lowercase()
+        if (text.isEmpty() || text.contains(' ')) return null
+        val matches = VERBS.filter { it.startsWith(text) }
+        return if (matches.size == 1) USAGE[matches[0]] else null
+    }
+
+    /** The command a Tab or Space completion should insert, or null. */
+    fun completionFor(partial: String): String? {
+        val text = partial.trim().removePrefix("$").trim().lowercase()
+        if (text.isEmpty() || text.contains(' ')) return null
+        val matches = VERBS.filter { it.startsWith(text) }
+        return matches.singleOrNull()
+    }
+
+    /**
+     * The text the prompt should hold after a keystroke, applying space
+     * completion.
+     *
+     * A soft keyboard has no Tab, and Space is the key a terminal user
+     * reaches for anyway. So typing a space after a unique verb prefix
+     * completes it: `bl` then Space becomes `block `.
+     *
+     * Only the verb, and only when the space is the very next character after
+     * the prefix. Anything else is returned untouched, so a space inside an
+     * app name or a reminder never rewrites what the user typed.
+     *
+     * @param before the text as it was.
+     * @param after the text the field is proposing.
+     */
+    fun completeOnSpace(before: String, after: String): String {
+        if (after != "$before ") return after
+        val completion = completionFor(before) ?: return after
+        val typed = before.removePrefix("$").trimStart()
+        if (completion == typed) return after
+        return before.dropLast(typed.length) + completion + " "
+    }
+
+    /**
+     * The dim remainder to draw after what the user has typed, or null.
+     *
+     * The verb only. Ghosting an argument would put a concrete value on
+     * screen one keystroke from being accepted, and the one rule this grammar
+     * has is that no completion can ever offer a value.
+     *
+     * Returns null for anything but a plain lower-case prefix typed at the
+     * start of the line. The ghost is drawn by overlaying the typed text
+     * exactly, so it is only correct when the completion extends the typed
+     * characters rather than changing them: `BL` completes to `block`, and
+     * drawing "ock" after "BL" would read as `BLock`.
+     */
+    fun ghostFor(partial: String): String? {
+        val typed = partial.removePrefix("$").trimStart()
+        if (typed.isEmpty()) return null
+        return if (typed.any { it.isWhitespace() }) argumentGhost(typed) else verbGhost(typed)
+    }
+
+    /**
+     * The remainder of a unique verb prefix.
+     *
+     * Null for anything but a plain lower-case prefix. This branch *replaces*
+     * characters conceptually, and the ghost is drawn by overlaying the typed
+     * text exactly, so it is only correct when the completion extends what
+     * was typed: `BL` completes to `block`, and drawing "ock" after "BL"
+     * would read as `BLock`.
+     */
+    private fun verbGhost(typed: String): String? {
+        if (typed != typed.lowercase()) return null
+        val completion = completionFor(typed) ?: return null
+        return completion.removePrefix(typed).ifEmpty { null }
+    }
+
+    /**
+     * The argument shapes still owed, after a complete verb.
+     *
+     * ## It never expands what is being typed
+     * `block insta` ghosts ` <duration>`, never `gram <duration>`. Expanding
+     * a partial argument would have to replace characters the user has
+     * already typed, and the ghost is an overlay with the typed prefix drawn
+     * transparent: anything that does not purely extend the line renders as
+     * garbage. That constraint is also the safe one, because a completion
+     * that can rewrite an argument is a completion that can put a value the
+     * user did not choose one keystroke from being armed.
+     *
+     * ## The shapes come from the registry and nowhere else
+     * [USAGE] is the single source. A second list of argument hints would be
+     * a second thing to keep in step with the grammar, and the usage strings
+     * are already required by test to contain no digits, so a ghost
+     * structurally cannot propose a concrete value.
+     */
+    private fun argumentGhost(typed: String): String? {
+        val verb = typed.substringBefore(' ').lowercase()
+        // A complete, known verb only. A prefix followed by a space is not
+        // one, and offering arguments for a command the user has not finished
+        // naming would be guessing at which command they meant.
+        val usage = USAGE[verb] ?: return null
+
+        val shapes = usage.split(' ').drop(1)
+        if (shapes.isEmpty()) return null
+
+        val rest = typed.substringAfter(' ')
+        // A trailing space means the next argument has not been started; any
+        // other text means one is part typed and this one is spoken for.
+        val started = rest.split(Regex("\\s+")).count { it.isNotEmpty() }
+        val owed = shapes.drop(started)
+        if (owed.isEmpty()) return null
+
+        // Prefixed with a space only when the caret is against a token, so
+        // the ghost always reads as the next word rather than joining the one
+        // being typed.
+        val prefix = if (typed.endsWith(' ')) "" else " "
+        return prefix + owed.joinToString(" ")
+    }
+
+    private fun ok(c: Command): ParseResult = ParseResult.Ok(c)
+    private fun err(e: ParseError): ParseResult = ParseResult.Err(e)
+}

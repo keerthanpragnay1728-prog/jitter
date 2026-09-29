@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The "visible tell": a desaturated bar drawn along the top edge while
+         the sink is armed. Themeable, deliberately not removable. -->
+    <color name="molasses_tell">#FF8C8C96</color>
+    <!-- The same marker at the terminal tier. The one hue break in the app,
+         and the permanent terminal signal now that Bit's glitch is a burst on
+         the crossing rather than a state. Must equal TerminalAlert in
+         ui/theme/Color.kt; ShutterTellTest asserts that. -->
+    <color name="molasses_tell_terminal">#FFFF5555</color>
+    <color name="ic_launcher_background">#FF3A2E22</color>
+</resources>
