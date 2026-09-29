@@ -117,8 +117,15 @@ each of the faults they catch has already reached this repository:
   them. They were latent only because the renderer hardcoded its literals
   instead of reading the resources.
 
-Sources are UTF-8 with no BOM. Every conversion is `%n$s`. A literal percent is
-`%%`. `formatted="false"` and positional arguments are mutually exclusive.
+Sources are UTF-8 with no BOM, and LF. Every conversion is `%n$s`. A literal
+percent is `%%`. `formatted="false"` and positional arguments are mutually
+exclusive.
+
+LF is pinned by `.gitattributes` (`* text=auto eol=lf`), not by habit. A
+Windows checkout with `core.autocrlf=true` made every source CRLF, and two
+wiring tests that match across a line break failed on correct code with
+messages that read as regressions. `LineEndingsTest` now fails first, naming
+the cause and the fix.
 
 The encoding check covers **every tracked file under `app/src` and `tools`**,
 not just resource XML, because the file that was actually damaged was Kotlin.
@@ -760,3 +767,29 @@ Kotlin files added under `app/src/main/java` outside the pure set inherit this
 silence automatically. Moving a file into `pureMain` is the only thing that
 buys it a compiler, and `check-structure.py` derives its own scope from that
 list so the two cannot drift.
+
+### What check-all does not run
+
+**check-all does not run the app module's tests.** `./gradlew
+testDebugUnitTest` runs only on the owner's machine, and RELEASE.md makes it a
+required step before tagging.
+
+The gap is not a list of skipped files. Every test class under `app/src/test`
+sits in pure-verify's test source set (`core`, `engine`, `sensing`, `legacy`,
+`debug` cover all of them), so every one of them runs in check-all. What
+differs is how they are built and what they read:
+
+- **No Compose compiler.** pure-verify compiles the pure classes with plain
+  Kotlin. The app module applies the Compose compiler, which adds a `$stable`
+  field to every class, including pure ones like `Lease` and `Lock`. A test
+  that reflects over fields sees it in `testDebugUnitTest` and not here, which
+  is how `LeasePersistenceTest` and `LockPersistenceTest` failed on first run.
+- **This checkout's line endings.** A text-reading test sees whatever the
+  working tree has. See `.gitattributes` and `LineEndingsTest`.
+- **`app/src/androidTest` never runs anywhere but a device.** Today that is
+  `LatencyProbeTest`, which nothing here compiles or runs.
+
+So a test can be green in check-all and red on the owner's machine, and the
+first run of `testDebugUnitTest` found four that were. Treat a green check-all
+as "the pure layer and the text contracts hold under plain Kotlin on LF", and
+nothing more.

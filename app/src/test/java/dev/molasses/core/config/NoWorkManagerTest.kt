@@ -28,9 +28,14 @@ class NoWorkManagerTest {
     @Test
     fun `no main source imports androidx dot work`() {
         // app/src/main only: this file names the package in its own asserts.
+        // parentFile is nullable. A null here would mean the manifest path has
+        // no directory at all, which is a broken checkout, so it fails loudly
+        // rather than walking nothing and passing.
         val src = repoFile("app/src/main/AndroidManifest.xml").parentFile
-        val offenders = src.walkTopDown().filter { it.extension == "kt" }
-            .filter { it.readText().contains("androidx.work") }.map { it.name }.toList()
+            ?: throw AssertionError("AndroidManifest.xml has no parent directory")
+        val sources = src.walkTopDown().filter { it.extension == "kt" }.toList()
+        assertTrue("walked no Kotlin sources under $src", sources.isNotEmpty())
+        val offenders = sources.filter { it.readText().contains("androidx.work") }.map { it.name }
         assertTrue("androidx.work referenced in $offenders", offenders.isEmpty())
     }
 }
