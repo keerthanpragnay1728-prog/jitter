@@ -1,0 +1,29 @@
+Jitter is a progressive-friction focus tool. It never blocks the apps you pick. Instead, the longer you use them inside a six-hour cycle, the more the phone feels like it is failing.
+
+<b>What it does</b>
+<ul>
+<li><b>A gate at the door.</b> Opening a tracked app puts a full-screen page in front of it: how long you have spent in it today and this cycle, and a countdown. Eight seconds the first time, longer after each lease you take, up to thirty.</li>
+<li><b>Leases, not unlimited use.</b> At zero you choose 5, 10 or 15 minutes, or leave. When the lease runs out the gate comes back on time, even if you are only watching, and the app goes to the background under it.</li>
+<li><b>Scroll stalls.</b> Each app has a horizon you set, 25 minutes by default. From 40% of it, a scroll can cause a short touch blackout, longer and more likely the further in you are, up to a ceiling at the horizon. A thin bar marks every stall so it is never mistaken for a broken screen, and four taps in the top-left corner release it.</li>
+<li><b>Locks.</b> Lock an app, or all tracked apps, for a set time. A lock has no unlock. It runs until it ends.</li>
+<li><b>A terminal launcher.</b> A plain console home screen with a few commands that answer once, among them calc, conv, days, rem, block, focus and bedtime.</li>
+</ul>
+
+<b>What it needs</b>
+Two permissions (accessibility, usage access) and your home app.
+<ul>
+<li><b>Accessibility service.</b> To see which app is in front and when you scroll, in the apps you track only. It cannot read your screen: window content retrieval is switched off in its configuration.</li>
+<li><b>Usage access.</b> To rebuild your time if Jitter is killed mid-session.</li>
+<li><b>Home app.</b> The console is a launcher, so it needs Jitter set as your home app. The setup guide asks for it, and opens from the app drawer before that is done.</li>
+</ul>
+On Android 13 and later, Android marks the accessibility service as a restricted setting for apps installed outside a store. The setup guide shows how to allow it from App info.
+
+<b>Privacy</b>
+Jitter has no network permission. Nothing leaves the device: no telemetry, no account, no update checker.
+
+<b>Known limits</b>
+<ul>
+<li><b>Paytm blocks payments while Jitter is enabled.</b> It checks for any enabled accessibility service. Use Disable for payments in Settings, Safety, then re-enable Jitter afterwards. Google Pay and PhonePe work normally.</li>
+<li><b>YouTube is gated by the lease only.</b> Its home feed and Shorts send no scroll events, so scroll stalls do not apply there.</li>
+<li>Tested on a small number of devices. Timing was measured on one.</li>
+</ul>

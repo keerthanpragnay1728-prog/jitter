@@ -1,0 +1,593 @@
+package dev.molasses.overlay
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.os.SystemClock
+import android.util.Log
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import androidx.core.content.ContextCompat
+import android.view.Choreographer
+import dev.molasses.core.latency.LatencyRegistry
+import dev.molasses.core.latency.Segment
+import dev.molasses.core.model.EventType
+import dev.molasses.engine.FrictionLedger
+import dev.molasses.monitor.ServiceDiagnostics
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/**
+ * The Phantom Stall: a full-screen window that swallows touches for a
+ * tier-dependent interval so the device feels momentarily broken rather than
+ * blocked.
+ *
+ * ## Why TYPE_ACCESSIBILITY_OVERLAY
+ * A `TYPE_APPLICATION_OVERLAY` window is untrusted, so Android 12's
+ * untrusted-touch-blocking rules apply: a window that is both invisible-ish
+ * and touch-consuming is exactly what that feature exists to stop, and the
+ * platform would pass touches through regardless of our flags.
+ * `TYPE_ACCESSIBILITY_OVERLAY` comes from the accessibility service's own
+ * window token, is trusted, and needs no `SYSTEM_ALERT_WINDOW` grant.
+ * `SYSTEM_ALERT_WINDOW` stays in the manifest only for the settings-screen
+ * preview, which has no service token to borrow.
+ *
+ * ## Why the view is added once
+ * Creating a window costs 1-3 frames. At tier 1 the whole stall is 1000 ms and
+ * the user's perception of "the screen went dead the instant I flicked" is the
+ * entire product, so arming has to be a flag mutation on an existing window,
+ * not an `addView`.
+ */
+class ShutterOverlayManager(
+    private val service: Context,
+    private val windowManager: WindowManager,
+    private val ledger: FrictionLedger,
+    private val scope: CoroutineScope,
+    /** Shared with the service, which records segment A. */
+    val latency: LatencyRegistry = LatencyRegistry(),
+    /**
+     * Fired after this manager adds or removes a window, so the service can
+     * re-read which window ids belong to it. Without that, arming the sink
+     * emits a window event from our own package that is indistinguishable
+     * from the user going home.
+     */
+    private val onWindowsChanged: () -> Unit = {},
+) {
+    private val sink = SinkView(service)
+    private var added = false
+
+    /** Deadline on the monotonic clock; 0 when disarmed. */
+    private var armedUntilElapsed = 0L
+    private var armedSinceElapsed = 0L
+    private var requestedMs = 0L
+    private var disarmJob: Job? = null
+
+    private val params = WindowManager.LayoutParams(
+        WindowManager.LayoutParams.MATCH_PARENT,
+        WindowManager.LayoutParams.MATCH_PARENT,
+        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        IDLE_FLAGS,
+        PixelFormat.TRANSLUCENT,
+    ).apply {
+        gravity = Gravity.TOP or Gravity.START
+        layoutInDisplayCutoutMode =
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+    }
+
+    // ---------------------------------------------------------- panic paths
+
+    private val screenOffReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) release("screen off")
+        }
+    }
+    private var receiverRegistered = false
+
+    /**
+     * The call check. The only one.
+     *
+     * There used to be a telephony secondary beside it, a
+     * `TelephonyCallback.CallStateListener` on API 31+ and a
+     * `PhoneStateListener` below. It is deleted rather than guarded, and the
+     * reason is the same one that deleted the window-id guard: it had never
+     * once run.
+     *
+     * Both listeners need `READ_PHONE_STATE`. That permission is deliberately
+     * absent from the manifest and `AccessibilityConfigTest` asserts it stays
+     * out, so registration could not succeed on any build this app has ever
+     * shipped. It was not a fallback that rarely fired; it was a path with no
+     * reachable configuration.
+     *
+     * Nor was it carrying anything. `AudioManager.getMode()` reports
+     * `MODE_IN_CALL` for a cellular call and `MODE_IN_COMMUNICATION` for VoIP.
+     * Telephony sees only the first. So the secondary covered a strict subset
+     * of the primary while needing a grant the primary does not, which is the
+     * wrong way round for a fallback.
+     *
+     * What it did do was cost something. It threw `SecurityException` on every
+     * startup, the text landed on the debug screen in the error colour, and a
+     * design decision arrived in the user's hand looking like a swallowed
+     * crash. The one real warning this app can print, that the call check
+     * cannot answer and therefore no stall will ever arm, sat underneath it
+     * where nobody would have believed it.
+     */
+    private val calls = CallDetector(service)
+
+    /**
+     * Primary call check, and permission-free. Checked before every arm and
+     * again on each disarm tick. See [CallDetector] for why this one and not
+     * telephony, and why a false positive is the safe direction.
+     *
+     * `whenUnknown = true`: a detector that cannot answer must not unblock an
+     * armed touch sink. The cost of getting this wrong in that direction is
+     * that no stall is ever armed on such a device, which is friction lost.
+     * The cost in the other direction is a touch sink absorbing the taps on an
+     * incoming call, which is a phone that cannot answer.
+     */
+    private fun callInProgress(): Boolean {
+        val verdict = calls.inProgress(whenUnknown = true)
+        publishPanicNote()
+        return verdict
+    }
+
+    private var publishedPanicNote: String? = null
+
+    /**
+     * Put a degraded call path where the debug screen can see it.
+     *
+     * Published from here rather than from where each failure is recorded,
+     * because `AudioManager` can start answering and then stop: the read is
+     * only attempted when something is about to arm, so the first sign of it
+     * is a call check that just came back unanswerable.
+     *
+     * Compared before writing so the hot path stores a reference only when the
+     * text actually changes, which in the healthy case is never.
+     *
+     * The launch gate holds its own [CallDetector] and is not published
+     * separately. Both resolve `AudioManager` from the same application
+     * context, so they fail together and one note describes both.
+     */
+    private fun publishPanicNote() {
+        // One clause now, and it means one thing: the call check cannot
+        // answer. The shutter reads that as "assume a call", so a device in
+        // this state arms no stall at all, and the friction engine runs with
+        // nothing it decides able to reach the glass. That is the loudest
+        // thing the debug screen can say and it is now the only thing in this
+        // field, which is what makes it worth believing.
+        val note = calls.unavailable?.let { "audio mode unavailable: $it" }
+        if (note != publishedPanicNote) {
+            publishedPanicNote = note
+            ServiceDiagnostics.panicPathNote = note
+        }
+    }
+
+    // ------------------------------------------------------------- lifecycle
+
+    /**
+     * True while the sink view is in the window hierarchy. Read by the
+     * service to decide how hard to poll for a foreground change: while
+     * anything of ours is on the glass, a switch to a banking app has to be
+     * noticed in hundreds of milliseconds rather than seconds.
+     */
+    val isAttached: Boolean get() = added
+
+    /** Called when a target app enters the foreground. Idempotent. */
+    fun attach() {
+        if (added) return
+        try {
+            windowManager.addView(sink, params)
+            added = true
+            onWindowsChanged()
+        } catch (e: Exception) {
+            // A duplicate add, a dead token, or a display that went away.
+            // Never fatal: without the sink the app simply behaves normally.
+            Log.w(TAG, "sink addView failed", e)
+            added = false
+            return
+        }
+        registerPanicListeners()
+    }
+
+    /** Called when the target app leaves the foreground, or on teardown. */
+    fun detach() {
+        disarm("detach")
+        unregisterPanicListeners()
+        if (!added) return
+        try {
+            windowManager.removeViewImmediate(sink)
+        } catch (e: Exception) {
+            // WindowManager throws if the view is already detached.
+            Log.w(TAG, "sink removeView failed", e)
+        } finally {
+            added = false
+            onWindowsChanged()
+        }
+    }
+
+    // ------------------------------------------------------------- arm/disarm
+
+    /**
+     * Arm for [ms], extending rather than restacking.
+     *
+     * A scroll burst produces many calls in quick succession. Taking the max
+     * of the existing and the new deadline means the blackout ends [ms] after
+     * the *last* scroll, which is what "every scroll blacks out" has to mean;
+     * queueing them would multiply a 5 s stall into half a minute.
+     */
+    @JvmOverloads
+    fun arm(
+        ms: Long,
+        /**
+         * `AccessibilityEvent.getEventTime()` of the scroll that triggered
+         * this, on the `uptimeMillis` clock. Segment D is measured from here.
+         * Zero disables latency accounting (the settings-screen preview).
+         */
+        scrollEventTimeUptimeMs: Long = 0,
+        /** `uptimeMillis` at entry to `onAccessibilityEvent`. Starts segment B. */
+        callbackEntryUptimeMs: Long = 0,
+        /**
+         * The friction curve has saturated for this package.
+         *
+         * Turns the top-edge marker the terminal colour. This is the one
+         * place in the app that hue is used, and it is what carries the
+         * permanent terminal signal now that Bit's glitch is a burst on the
+         * crossing rather than a state.
+         */
+        terminal: Boolean = false,
+    ): Boolean {
+        if (!added) attach()
+        if (!added) return false
+
+        // Checked before every arm, not only on a call-state transition.
+        if (callInProgress()) {
+            Log.d(TAG, "refusing to arm: ${calls.describe()}")
+            return false
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        if (armedUntilElapsed <= now) {
+            armedSinceElapsed = now
+            requestedMs = ms
+            sink.armedAtElapsed = now
+        } else {
+            requestedMs = maxOf(requestedMs, ms)
+        }
+
+        // Hard ceiling: never armed for more than 8 s continuously, whatever
+        // the tier or the scroll rate. Without it, continuous scrolling at
+        // tier 3 would hold the screen dead indefinitely, which stops being
+        // friction and becomes a broken phone.
+        val ceiling = armedSinceElapsed + MAX_CONTINUOUS_ARMED_MS
+        val target = minOf(now + ms, ceiling)
+        armedUntilElapsed = maxOf(armedUntilElapsed, target)
+        // Bit reads this and holds flat eyes for exactly the armed window. A
+        // continuous readout of the one thing in this app that is otherwise
+        // completely invisible.
+        ServiceDiagnostics.onShutterArmed(armedUntilElapsed)
+
+        setFlags(ARMED_FLAGS)
+        sink.terminal = terminal
+        sink.setArmed(true)
+
+        // SS6 segments B, C and the D start marker. All four timestamps are on
+        // uptimeMillis, because MotionEvent.getEventTime() and
+        // AccessibilityEvent.getEventTime() are on that clock and can be
+        // subtracted directly; currentTimeMillis cannot be compared with
+        // either.
+        if (scrollEventTimeUptimeMs > 0) {
+            val pkg = sink.currentPkg
+            sink.pendingScrollEventTimeUptimeMs = scrollEventTimeUptimeMs
+            val afterUpdate = SystemClock.uptimeMillis()
+            if (callbackEntryUptimeMs > 0 && pkg != null) {
+                latency.forPackage(pkg).record(Segment.B, afterUpdate - callbackEntryUptimeMs)
+            }
+            // Segment C: updateViewLayout returning means only that the change
+            // is queued to WindowManagerService. The flag is not live in the
+            // input dispatcher until WMS relayouts and InputDispatcher
+            // refreshes its window handles, one or more frames later. Stopping
+            // at the call's return would under-report absorption latency by a
+            // frame or more.
+            Choreographer.getInstance().postFrameCallback {
+                pkg?.let {
+                    latency.forPackage(it)
+                        .record(Segment.C, SystemClock.uptimeMillis() - afterUpdate)
+                }
+            }
+        }
+
+        disarmJob?.cancel()
+        disarmJob = scope.launch(Dispatchers.Main.immediate) {
+            while (true) {
+                // Re-checked on the existing tick rather than from a new timer.
+                // A call that starts mid-stall has to release it.
+                if (callInProgress()) {
+                    disarm(calls.describe())
+                    return@launch
+                }
+                val remaining = armedUntilElapsed - SystemClock.elapsedRealtime()
+                if (remaining <= 0) break
+                delay(minOf(remaining, CALL_POLL_INTERVAL_MS))
+                if (armedUntilElapsed <= SystemClock.elapsedRealtime()) break
+            }
+            disarm("deadline")
+        }
+        return true
+    }
+
+    /** Panic release: immediate, unconditional, logged. */
+    fun release(reason: String) {
+        if (armedUntilElapsed == 0L) return
+        disarm(reason)
+    }
+
+    private fun disarm(reason: String) {
+        disarmJob?.cancel()
+        disarmJob = null
+        if (armedUntilElapsed == 0L && !sink.armed) return
+
+        val actual = SystemClock.elapsedRealtime() - armedSinceElapsed
+        armedUntilElapsed = 0
+        ServiceDiagnostics.onShutterReleased()
+        setFlags(IDLE_FLAGS)
+        sink.setArmed(false)
+
+        if (requestedMs > 0) {
+            // SS6: log requested vs. actual so real latency is measurable
+            // rather than assumed.
+            ledger.log(
+                sink.currentPkg ?: "",
+                EventType.STALL_ARMED,
+                "requestedMs=$requestedMs actualMs=$actual release=$reason",
+            )
+            requestedMs = 0
+        }
+        armedSinceElapsed = 0
+    }
+
+    /** Set by the service so ledger rows attribute the stall to an app. */
+    fun setCurrentPackage(pkg: String?) { sink.currentPkg = pkg }
+
+    val isArmed: Boolean get() = armedUntilElapsed > SystemClock.elapsedRealtime()
+
+    private fun setFlags(flags: Int) {
+        if (!added || params.flags == flags) return
+        params.flags = flags
+        try {
+            windowManager.updateViewLayout(sink, params)
+        } catch (e: Exception) {
+            Log.w(TAG, "updateViewLayout failed", e)
+        }
+    }
+
+    // --------------------------------------------------------- panic wiring
+
+    private fun registerPanicListeners() {
+        if (!receiverRegistered) {
+            runCatching {
+                // ACTION_SCREEN_OFF is a protected system broadcast and so is
+                // exempt from Android 14's exported-flag requirement, but
+                // declaring NOT_EXPORTED keeps the intent explicit and lint
+                // quiet.
+                ContextCompat.registerReceiver(
+                    service,
+                    screenOffReceiver,
+                    IntentFilter(Intent.ACTION_SCREEN_OFF),
+                    ContextCompat.RECEIVER_NOT_EXPORTED,
+                )
+                receiverRegistered = true
+            }
+        }
+    }
+
+    private fun unregisterPanicListeners() {
+        if (receiverRegistered) {
+            runCatching { service.unregisterReceiver(screenOffReceiver) }
+            receiverRegistered = false
+        }
+    }
+
+    // ------------------------------------------------------------- the sink
+
+    /**
+     * A plain [View], deliberately not Compose. Compose in this window would
+     * add a composition and a recomposer to the touch path of something whose
+     * entire job is to consume a `MotionEvent` in as few microseconds as
+     * possible, and the visible tell is two rectangles.
+     */
+    private inner class SinkView(context: Context) : View(context) {
+
+        var armed = false
+            private set
+        var currentPkg: String? = null
+        var armedAtElapsed = 0L
+
+        /** Scroll eventTime of the arming event; 0 once segment D is recorded. */
+        var pendingScrollEventTimeUptimeMs = 0L
+
+        /** The curve has saturated. Set before [setArmed]; read on draw. */
+        var terminal = false
+
+        /**
+         * The ordinary tell.
+         *
+         * 35% was always the design for a line that can be continuous, which
+         * is why nobody has ever reported this one as stuck even though it
+         * behaves identically: [onDraw] branches on colour alone, and the
+         * armed window it draws during is the same window. At 91% probability
+         * and a three second stall the ordinary marker is on screen almost
+         * constantly too. It reads as a disclosure rather than an alarm, and
+         * that is entirely the alpha.
+         */
+        private val tellPaint = Paint().apply {
+            color = TELL_COLOR
+            alpha = TELL_ALPHA
+        }
+
+        /**
+         * The one hue break in the app, reserved for the terminal tier.
+         *
+         * ## Same alpha as the ordinary tell, and it used to be full
+         * Full alpha was justified while the marker was intermittent: it
+         * appeared for a stall, went, and came back, and against that rhythm
+         * brightness carried the argument "this is as bad as it gets".
+         *
+         * It is not intermittent at the terminal. `arm` extends
+         * `armedUntilElapsed` on every scroll, so at terminal probability a
+         * burst holds the sink armed to its eight second ceiling, clears, and
+         * re-arms on the next event. The marker is a continuous red line
+         * across the top of someone else's app, and a line that is always
+         * there says nothing by being brighter. Opacity was carrying an
+         * argument that only worked while it flickered.
+         *
+         * The hue still separates terminal from ordinary, which is the
+         * distinction that was ever load bearing. What is dropped is an
+         * emphasis that stopped being true, not the signal.
+         *
+         * ## Why not a pulse instead
+         * Continuous animation over another app's content costs battery and
+         * draws the eye, which is the opposite of what a 2dp tell is for. The
+         * tell discloses; it does not perform.
+         */
+        private val terminalTellPaint = Paint().apply {
+            color = TELL_COLOR_TERMINAL
+            alpha = TELL_ALPHA
+        }
+        private val tapTimesMs = ArrayDeque<Long>()
+        private val density = context.resources.displayMetrics.density
+        private val tellHeightPx = TELL_DP * density
+        private val panicRegionPx = PANIC_REGION_DP * density
+
+        init {
+            setBackgroundColor(Color.TRANSPARENT)
+            setWillNotDraw(false)
+        }
+
+        fun setArmed(value: Boolean) {
+            if (armed == value) return
+            armed = value
+            if (!value) tapTimesMs.clear()
+            invalidate()
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (!armed) return false
+
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                // Panic escape: four taps in the top-left 64 dp within 1.5 s.
+                // Counted here because the sink is already consuming them.
+                if (event.x <= panicRegionPx && event.y <= panicRegionPx) {
+                    val now = SystemClock.uptimeMillis()
+                    tapTimesMs.addLast(now)
+                    while (tapTimesMs.isNotEmpty() && now - tapTimesMs.first() > PANIC_WINDOW_MS) {
+                        tapTimesMs.removeFirst()
+                    }
+                    if (tapTimesMs.size >= PANIC_TAPS) {
+                        tapTimesMs.clear()
+                        release("panic taps")
+                        return true
+                    }
+                }
+                // Only here, inside the branch that ran because a touch was
+                // actually swallowed. Bit's 200 ms tell hangs off this, and
+                // firing it on every armed window instead would be a tell that
+                // something is running rather than that something is broken.
+                ServiceDiagnostics.onTouchAbsorbed()
+                recordGroundTruth(event)
+            }
+            return true
+        }
+
+        /**
+         * Segment D: scroll `eventTime` -> `eventTime` of the first touch this
+         * sink actually consumed. The number that decides the product.
+         */
+        private fun recordGroundTruth(event: MotionEvent) {
+            val scrollAt = pendingScrollEventTimeUptimeMs
+            if (scrollAt <= 0L) return
+            val pkg = currentPkg ?: return
+            val d = event.eventTime - scrollAt
+
+            // Only count a touch whose eventTime is after the arming scroll.
+            // The sink can consume a touch that was already in flight, which
+            // would report an absurdly low or negative D and flatter the
+            // result. LatencyRing.add discards negatives and counts them.
+            val recorded = latency.forPackage(pkg).record(Segment.D, d)
+            if (recorded) pendingScrollEventTimeUptimeMs = 0L
+
+            val p = latency.forPackage(pkg)
+            Log.d(
+                LATENCY_TAG,
+                p.formatLine(
+                    a = p[Segment.A].last,
+                    b = p[Segment.B].last,
+                    c = p[Segment.C].last,
+                    d = d,
+                ),
+            )
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            if (!armed) return
+            // The visible tell. Non-negotiable: a user who has forgotten this
+            // app is installed must be able to tell a deliberate stall from a
+            // failing digitizer. Themeable via R.color.molasses_tell, but
+            // there is no code path that removes it.
+            val paint = if (terminal) terminalTellPaint else tellPaint
+            canvas.drawRect(0f, 0f, width.toFloat(), tellHeightPx, paint)
+        }
+    }
+
+    companion object {
+        private const val TAG = "Molasses.Shutter"
+        const val LATENCY_TAG = "STALL_LATENCY"
+
+        /** Touches pass straight through to the app below. */
+        const val IDLE_FLAGS =
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+
+        /**
+         * Swallows every touch. `FLAG_NOT_TOUCHABLE` removed;
+         * `FLAG_NOT_FOCUSABLE` retained so the stall never steals IME focus or
+         * the back key from the host app -- a stall that ate the back button
+         * would read as a crash, not as lag.
+         */
+        const val ARMED_FLAGS =
+            IDLE_FLAGS and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+
+        const val MAX_CONTINUOUS_ARMED_MS = 8_000L
+
+        /**
+         * Upper bound on how long a stall can outlive the start of a call.
+         * Short enough to be imperceptible, long enough that the poll costs
+         * nothing: AudioManager.getMode() is a cached binder read.
+         */
+        const val CALL_POLL_INTERVAL_MS = 250L
+        const val PANIC_TAPS = 4
+        const val PANIC_WINDOW_MS = 1_500L
+        const val PANIC_REGION_DP = 64f
+        const val TELL_DP = 2f
+        const val TELL_COLOR = 0xFF8C8C96.toInt()
+        const val TELL_ALPHA = 89 // ~35%
+
+        /**
+         * Must equal `ui.theme.TerminalAlert`. The two cannot share a
+         * constant: one is a Compose `Color` and this is an Android colour
+         * int on a `Paint`, and `tools/check-colors.sh` does not reach this
+         * file. `ShutterTellTest` asserts they agree.
+         */
+        const val TELL_COLOR_TERMINAL = 0xFFFF5555.toInt()
+    }
+}

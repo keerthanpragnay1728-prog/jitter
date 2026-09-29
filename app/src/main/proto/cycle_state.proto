@@ -1,0 +1,365 @@
+syntax = "proto3";
+
+option java_package = "dev.molasses";
+option java_multiple_files = true;
+
+// Hot state, read on every accessibility event and written on a 15 s
+// checkpoint cadence. Room holds the append-only ledger; this holds only what
+// the engine needs synchronously.
+message CycleState {
+  int64 cycle_anchor_wall_ms = 1;      // start of current cycle
+  int64 last_target_use_wall_ms = 2;   // drives ABSTINENCE_6H
+  int32 boot_id = 3;
+  int64 last_seen_elapsed_ms = 4;
+  int64 last_seen_wall_ms = 5;
+  map<string, AppState> per_app = 6;
+  string open_session_pkg = 7;         // "" if none
+  int64 open_session_start_wall_ms = 8;
+
+  // Added beyond the brief: the open session's start on the monotonic clock.
+  // Without it a mid-session process death cannot distinguish "wall clock
+  // moved" from "time passed", which is exactly the case step 4 of the
+  // reconciler has to adjudicate.
+  int64 open_session_start_elapsed_ms = 9;
+  CycleResetPolicyProto reset_policy = 10;
+  repeated string target_packages = 11;
+  // Retired. The accessibility escape hatch is now a value of
+  // gate_mode_ordinal (GateMode.TYPING_ONLY) rather than a flag beside the
+  // walking gate, because the walking gate itself became optional and a
+  // boolean would have taken the escape hatch away with it.
+  //
+  // Left declared rather than reserved: nothing reads it, and removing the
+  // field from a message that has shipped is a change no stored file needs.
+  bool alternative_challenge = 12;
+
+  // Bumped by the debug state editor. The accessibility service watches it and
+  // rebuilds the engine from this file when it changes. Without that the
+  // running engine holds per-app state in memory and overwrites any direct
+  // edit at its next checkpoint, so the editor would appear to do nothing.
+  int64 debug_override_nonce = 13;
+
+  // Bumped by the "Test Phantom Stall" button. The settings Activity cannot
+  // open a TYPE_ACCESSIBILITY_OVERLAY window itself, and SYSTEM_ALERT_WINDOW
+  // is no longer requested, so the preview is a request to the service rather
+  // than something the Activity does directly.
+  int64 preview_stall_nonce = 14;
+
+  // 15 was debug_pinned_stall_ms and 26 was debug_forced_probability_pct,
+  // segment D capture aids. Neither ever had a control in any build: nothing
+  // could write them, and the service read the first in release anyway.
+  // Deleted, and reserved so the numbers are never reused with a new meaning
+  // against a file that may still carry an old value.
+  reserved 15, 26;
+  reserved "debug_pinned_stall_ms", "debug_forced_probability_pct";
+
+  // The monotonic and boot-count halves of cycle_anchor_wall_ms and
+  // last_target_use_wall_ms. A wall-clock stamp on its own is defeated by
+  // setting the system clock forward six hours, which needs no root and no
+  // tooling. Carrying elapsedRealtime and BOOT_COUNT alongside lets
+  // CycleWindow apply ClockTamperClamp to the deadline instead of trusting
+  // the wall delta.
+  int64 cycle_anchor_elapsed_ms = 16;
+  int32 cycle_anchor_boot_id = 17;
+  int64 last_target_use_elapsed_ms = 18;
+  int32 last_target_use_boot_id = 19;
+
+  // Bumped when a migration that cannot be expressed as a proto3 default has
+  // been applied to this file. Currently only version 1, which flips an
+  // install created under the old ABSTINENCE_6H default over to
+  // FIXED_WINDOW_6H. proto3 pins the zero value of an enum as its default and
+  // ABSTINENCE_6H is already 0, so the new default cannot be expressed by
+  // renumbering without silently reinterpreting every stored file.
+  int32 schema_version = 20;
+
+  // Extra package prefixes the user has added to the never-draw-over set.
+  // The shipped defaults in SensitivePackages are always applied on top of
+  // this, so an empty list is safe and removing a default is not possible.
+  repeated string sensitive_package_prefixes = 21;
+
+  // "Pause Jitter (15m)". Stored on elapsedRealtime plus BOOT_COUNT and NOT
+  // on the wall clock, because for a pause the wall clock's failure mode
+  // grants friction relief rather than costing it. See PauseWindow.
+  int64 pause_started_elapsed_ms = 22;
+  int32 pause_started_boot_id = 23;
+  // Set when a pause has ever been armed. Needed because elapsed 0 is a real
+  // reading a few milliseconds after boot, so it cannot double as "unset".
+  bool pause_armed = 24;
+
+  // FontScale ordinal. Stored as an int rather than a proto enum so an
+  // unknown value resolves to the default in one place, FontScale.fromOrdinal,
+  // rather than needing a proto enum default that duplicates the same choice.
+  int32 font_scale_ordinal = 25;
+
+  // The last twenty command lines, newest first. Capped and deduped by
+  // CommandHistory before it is written, so the stored order is the display
+  // order and nothing here needs to sort or truncate.
+  //
+  // The second Enter on a long lock is never recorded. It carries text the
+  // app generated rather than text the user typed, and a fully formed
+  // "block instagram 30d" sitting in a list the user taps is one tap and one
+  // Enter from a month.
+  repeated string command_history = 27;
+
+  // Armed locks, expired entries pruned on every write.
+  //
+  // Persisted rather than held in memory because a lock that does not survive
+  // a process death is not a lock. The extend-only rule is enforced against
+  // THIS list inside updateData, not against a copy read earlier, so a
+  // shorter lock armed after a restart is still a no-op.
+  repeated LockEntry locks = 28;
+
+  // Bit's one queued unprompted line, awaiting delivery. Depth one: only the
+  // most recent survives, because a backlog delivered at once is a lecture.
+  ConsoleQueued console_queued = 29;
+
+  // A delivered prompt, still awaiting an answer. Separate from the queue so
+  // a newer notice cannot evict a question the user has not answered.
+  ConsoleQueued console_live = 30;
+
+  ConsoleBudget console_budget = 31;
+
+  // Bumped by "Disable for payments". The settings Activity cannot call
+  // AccessibilityService.disableSelf(); only the service can, so the request
+  // crosses here the same way the stall preview does.
+  //
+  // There is deliberately no matching enable nonce. disableSelf cannot be
+  // reversed programmatically, by platform guarantee, and that guarantee is
+  // the entire value of the control.
+  int64 disable_request_nonce = 32;
+
+  // Granted leases, expired entries pruned on every write.
+  //
+  // Persisted for the opposite reason to locks: a lock that does not survive
+  // a process death is not a lock, and a lease that does not survive one is a
+  // gate the user can clear by killing the launcher. Expiry is recomputed
+  // from the clock on every read, so restoring this list cannot resurrect a
+  // lease that has run out.
+  repeated LeaseEntry leases = 33;
+
+  // GatePolicy.GateMode ordinal. Stored as an int rather than a proto enum
+  // for the same reason as font_scale_ordinal: an unknown value resolves to
+  // the default in one Kotlin function rather than needing a proto enum whose
+  // zero value duplicates the same choice. COUNTDOWN is ordinal 0, which is
+  // also the default, so an install that has never touched the setting reads
+  // correctly with no migration.
+  int32 gate_mode_ordinal = 34;
+
+  // The user's declared horizon per package, as set in settings.
+  //
+  // Separate from AppState.horizon_ms, which is the engine's derived state:
+  // this is the standing preference and that is what is actually in force,
+  // and between a widen and the rollover that promotes it they differ. The
+  // engine owns per app state and rewrites it at every checkpoint, so a
+  // settings screen writing there directly would be overwritten within
+  // fifteen seconds, which is the same problem debug_override_nonce exists
+  // for.
+  //
+  // Applying a request is idempotent, so this is never cleared and never
+  // needs to be: it is read on every settings emission and re-applied, and
+  // re-applying it changes nothing once it is in force.
+  map<string, int64> app_horizon_ms = 35;
+
+  // Whether target_packages is the user's answer or an untouched default.
+  //
+  // Without this, an empty list means two different things and the app
+  // resolves both the same way: a fresh install that has never been
+  // configured, and a user who deliberately turned every target off. The
+  // second was not expressible at all, so unticking the last app wrote empty
+  // and the defaults came straight back.
+  //
+  // False plus an empty list is a fresh install, and the defaults apply.
+  // True plus an empty list is "track nothing", and it is honoured.
+  // A non-empty list is the list, whichever this says, because a list with
+  // packages in it is data and this flag is only ever a tiebreak for empty.
+  //
+  // Proto3 defaults this to false, so every install that already exists reads
+  // as untouched. That is the right answer for all of them: the ones with a
+  // list keep it through the clause above, and the ones with an empty list
+  // were fresh installs anyway. The migration is a no-op by construction
+  // rather than by a step that could be skipped.
+  bool targets_chosen = 36;
+
+  // The console's quick-launch rows, and whether the user has ever edited
+  // them. The same two-part shape as target_packages and targets_chosen.
+  //
+  // Each entry is a package name, or a built-in row spelled "@" plus its
+  // name: @phone, @messages, @calendar, @calculator, @clock. No package name
+  // can contain "@", so the two never collide. @messages is the row with the
+  // multi-client selector behind it, which is why it is not a package.
+  //
+  // False and empty shows the five defaults. True and empty shows nothing,
+  // because the user removed every row. See core/launch/QuickLaunch.
+  repeated string quick_launch_packages = 37;
+  bool quick_launch_chosen = 38;
+
+  // $ rem. Every reminder not yet dismissed, fired or not. A fired one is
+  // the console's to show until the user dismisses it, which is what removes
+  // it: this list is its own queue, apart from console_queued and the speech
+  // budget, and it is here so a reminder that fired while the launcher was
+  // closed survives a process death. Capped at twenty by ReminderBook.
+  repeated ReminderEntry reminders = 39;
+  // The last id issued, so an id is never reused while an alarm that named
+  // an earlier holder of it could still be pending.
+  int64 reminder_last_id = 40;
+
+  // The first-run flow has been completed once. Proto3 defaults it to false,
+  // so every existing install reads as not yet onboarded and sees the flow
+  // once, which is harmless: its steps read as already satisfied. See
+  // core/setup/Onboarding.
+  bool onboarding_complete = 41;
+}
+
+// One $ rem. The due instant is stamped on all three clocks when it is set,
+// like LockEntry's start, so a reschedule on the same boot can measure on
+// elapsedRealtime and one after a reboot on the wall clock.
+message ReminderEntry {
+  int64 id = 1;
+  string text = 2;
+  int64 due_wall_ms = 3;
+  int64 due_elapsed_ms = 4;
+  int32 due_boot_id = 5;
+  bool fired = 6;
+  bool late = 7;
+}
+
+// One line of Bit's speech, in the form that survives a process death.
+//
+// The id is a string rather than a resource id on purpose: R ids are
+// regenerated every build, so a stored one would point at unrelated copy
+// after an upgrade and the "never the same line twice in a cycle" rule would
+// be keyed on a number that silently changed meaning.
+message ConsoleQueued {
+  string id = 1;
+  repeated string args = 2;
+  bool is_prompt = 3;
+  // Opaque to everything but the launcher, which maps it to an effect.
+  string action = 4;
+  // A greeting is charged to its own counter and is exempt from the
+  // once-per-cycle rule. See ConsoleLine.Category.
+  bool is_greeting = 5;
+}
+
+// What Bit has already spent. Counts renders, never attempts: a line counted
+// but never seen costs the user one of three an hour and gives them nothing.
+message ConsoleBudget {
+  // Wall times. These are rate limits on how often a person is spoken to, so
+  // they are measured in the clock a person lives in. elapsedRealtime would
+  // restart at zero on reboot and hand out a fresh budget with the power
+  // button.
+  repeated int64 delivered_at_wall_ms = 1;
+  repeated string seen_ids = 2;
+  // Greetings are capped separately: three a day, over their own window.
+  repeated int64 greeted_at_wall_ms = 4;
+  // The cycle seen_ids belongs to, so the set expires itself on a rollover
+  // rather than needing something to remember to clear it.
+  int64 cycle_anchor_wall_ms = 3;
+}
+
+// One armed lock. The three stamp fields are a StampedInstant; splitting them
+// keeps the proto flat and matches how cycle_anchor_* is already stored.
+//
+// LockPersistenceTest asserts a field here for every property of Lock and
+// StampedInstant, so growing the model without growing the proto fails rather
+// than silently dropping a field on the next write.
+message LockEntry {
+  string pkg = 1;
+  int64 started_wall_ms = 2;
+  int64 started_elapsed_ms = 3;
+  int32 started_boot_id = 4;
+  int64 duration_ms = 5;
+  LockReasonProto reason = 6;
+}
+
+// Mirrors dev.molasses.core.lock.LockReason. BLOCK is 0 because proto3 pins
+// the zero value as the default, and a lock with a corrupt reason field
+// reading as BLOCK is the honest fallback: it is the reason with no extra
+// behaviour attached.
+enum LockReasonProto {
+  BLOCK = 0;
+  FOCUS = 1;
+  BEDTIME = 2;
+  CHECKPOINT = 3;
+}
+
+// One granted lease. The three stamp fields are a StampedInstant, split the
+// same way LockEntry splits them.
+//
+// started_wall_ms is stored for the round trip and is deliberately not read
+// when deciding whether a lease is live: LeaseManager measures on
+// elapsedRealtime alone, because a lease is relief and a wall clock's failure
+// mode for relief is granting it forever. See LeaseManager.
+//
+// LeasePersistenceTest asserts a field here for every property of Lease and
+// StampedInstant, so growing the model without growing the proto fails rather
+// than silently dropping a field on the next write.
+message LeaseEntry {
+  string pkg = 1;
+  int64 started_wall_ms = 2;
+  int64 started_elapsed_ms = 3;
+  int32 started_boot_id = 4;
+  int64 duration_ms = 5;
+  // Accumulated foreground total at the moment of the grant. The one number
+  // that crosses from the lease system to the friction engine.
+  int64 taken_at_accumulated_ms = 6;
+}
+
+message AppState {
+  int64 accumulated_ms = 1;
+  int32 tier_index = 2;                // monotonic, never decremented
+
+  // Leases granted on this package in the current cycle. Drives the gate
+  // escalation and resets with everything else on rollover.
+  //
+  // Field 3 was gates_cleared, the count of checkpoint gates passed. The
+  // number means very nearly the same thing (tolls paid this cycle on this
+  // app) and the field is reused rather than reserved for that reason: an
+  // install upgrading across this change carries its count forward, which is
+  // the honest reading, and the alternative is every existing user getting
+  // their escalation reset to zero on update.
+  int32 leases_taken = 3;
+
+  // Accumulated-time mark where the last lease taken runs out. Zero when none
+  // has been taken this cycle, and that is not the same as a lease that
+  // expired at zero: with none taken nothing is overdue and the ratchet below
+  // does not run at all.
+  //
+  // Field 4 was tier_unlocked_until_ms, the accumulated ceiling the user had
+  // paid for under the checkpoint gate. Same shape, same units, same role in
+  // the ratchet, so the field is reused. An install upgrading across this
+  // change reads its old ceiling as a lease mark, which is wrong by at most
+  // one tier width and is corrected by the next cycle rollover.
+  int64 lease_until_accumulated_ms = 4;
+
+  // Sitting in an app past the lease you took adds friction rather than
+  // suspending it. This is the ratchet that does it: it accrues while the
+  // lease is overdue and never decreases. Kept separate from accumulated_ms
+  // on purpose, so the ledger still reports true time.
+  int64 penalty_ms = 5;
+
+  // The declared session horizon this app's curve is scaled to, and a wider
+  // one waiting for the next rollover. New field numbers, not reused: field 4
+  // has already changed meaning once and a second reinterpretation of an
+  // existing number is how a stored file starts lying.
+  //
+  // Zero means unset, which reads as the default rather than as ten minutes
+  // clamped up from zero. That is what every existing install reads on its
+  // first launch after this ships, so it has to be the migration.
+  int64 horizon_ms = 6;
+  int64 pending_horizon_ms = 7;
+
+  // Live accumulated time at the ratchet's last evaluation: the point
+  // penalty_ms has already been charged up to. Without it a restart put the
+  // anchor at zero, so the next evaluation charged again from the lease mark
+  // over time the ratchet had already billed.
+  //
+  // `optional` for presence. A file written before this field has none, and
+  // that reads as "no anchor", which the engine resolves to the restored
+  // accumulated time: nothing is charged retroactively for an interval this
+  // build cannot see. A present zero is a real anchor at zero.
+  optional int64 penalty_anchor_ms = 8;
+}
+
+enum CycleResetPolicyProto {
+  ABSTINENCE_6H = 0;                   // default
+  FIXED_WINDOW_6H = 1;
+}

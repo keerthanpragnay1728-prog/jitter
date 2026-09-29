@@ -1,0 +1,94 @@
+package dev.molasses.core.bit
+
+import dev.molasses.core.friction.FrictionCurve
+import dev.molasses.core.model.AppSnapshot
+
+/**
+ * The conditions the docked slit reports.
+ *
+ * ## Why one character
+ * A docked Bit is a shell prompt, not a status bar. `vi` says which mode it is
+ * in with a word at the bottom of the screen; a prompt says the last command
+ * failed by changing one glyph. The second is the one that can sit on screen
+ * permanently without asking for anything, which is exactly the property
+ * section 05 protects.
+ *
+ * Zero interaction by construction. There is nothing to tap and nothing to
+ * read; a user who has never noticed the glyph loses nothing, and one who has
+ * gets the state for free.
+ *
+ * Pure; no Android imports. Unit-tested in `BitStatusTest`.
+ */
+object BitStatus {
+
+    /**
+     * True when any tracked app is being used past the lease taken for it.
+     *
+     * Reads the lease mark rather than `penaltyMs` itself. The ratchet only
+     * ever grows, so a non-zero `penaltyMs` says a lease was overrun at some
+     * point in this cycle, not that one is being overrun now. The glyph is
+     * about the second: it is an alert the user can act on, by leaving.
+     */
+    fun penaltyAccruing(apps: Collection<AppSnapshot>): Boolean =
+        apps.any { it.pastLease }
+
+    /**
+     * The deepest single app, which is what the mood reads.
+     *
+     * Not the sum. The friction curve is per package, so two apps at ten
+     * minutes each are not twenty minutes deep in anything; adding them would
+     * put Bit in a mood that no app's friction justifies. The sum is still
+     * the right answer for the HUD's second step, which asks how much of the
+     * cycle has gone rather than how bad it is anywhere.
+     */
+    fun deepestMs(apps: Collection<AppSnapshot>): Long = deepest(apps)?.accumulatedMs ?: 0L
+
+    /**
+     * The deepest app itself, or null when nothing has accumulated.
+     *
+     * Ties break on the package name rather than on iteration order, because
+     * the ledger reports this app's time, tier and penalty on one line and
+     * three fields describing two different apps would be worse than showing
+     * none of them.
+     */
+    fun deepest(apps: Collection<AppSnapshot>): AppSnapshot? =
+        apps.minWithOrNull(
+            compareByDescending<AppSnapshot> { it.accumulatedMs }.thenBy { it.pkg },
+        )
+
+    /**
+     * Whether this observation crosses into the terminal.
+     *
+     * ## Why a transition and not a threshold
+     * The burst fires once per entry, not once per scroll and not once per
+     * foreground. Reading a transition rather than a level gives that for
+     * free, and it gives the reset for free too: the deepest app's
+     * accumulated time only ever falls at a cycle rollover, so the next
+     * crossing after a rollover is the next burst and nothing else is.
+     *
+     * @param previousDeepestMs null before the first observation. A caller
+     *   that has just started, and finds itself already past the terminal,
+     *   must not burst: it did not see the crossing, and a burst for a
+     *   threshold that was passed twenty minutes ago is a lie about when.
+     * @param horizonMs the deepest app's horizon, because the terminal is
+     *   now a property of that app rather than of the curve. Reading a fixed
+     *   terminal here would burst at a moment the engine did not saturate at.
+     *
+     * A horizon widened between two observations moves the threshold up, so a
+     * crossing can be un-crossed. That is correct and needs no special case:
+     * the burst fires on the crossing, and if the user moved the line before
+     * reaching it, there was no crossing to fire on. Widening only takes
+     * effect at a cycle rollover anyway, which resets the accumulated total
+     * that feeds this.
+     */
+    fun crossedTerminal(
+        previousDeepestMs: Long?,
+        deepestMs: Long,
+        horizonMs: Long,
+    ): Boolean {
+        val terminal = FrictionCurve.terminalMs(horizonMs)
+        return previousDeepestMs != null &&
+            previousDeepestMs < terminal &&
+            deepestMs >= terminal
+    }
+}

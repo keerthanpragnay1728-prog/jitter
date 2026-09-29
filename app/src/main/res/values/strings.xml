@@ -1,0 +1,721 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  All display copy lives here, never inline in Kotlin. Two reasons:
+
+  1. It is the Android convention and the only thing that makes the app
+     translatable.
+  2. It keeps the repo-wide prose rules checkable in one place. With copy
+     inline, a grep over *.kt could not tell a user-facing sentence from a
+     code comment, and the two have different rules.
+
+  Strings marked translatable="false" are commands, field labels and format
+  templates for the debug screen. They are shown on screen but must not be
+  reworded or localised.
+
+  Format arguments are all %n$s. Passing an Int to a %d is fine, but passing a
+  Double to one throws IllegalFormatConversionException at runtime, and several
+  of these take Double thresholds.
+-->
+<resources>
+    <string name="app_name">Jitter</string>
+    <string name="a11y_service_label">Jitter progressive friction</string>
+    <string name="a11y_service_description">Jitter adds deliberate friction to apps you choose, so that the longer you spend in them the harder they are to keep using. To do that it needs to know two things and only two things: which of your chosen apps is in the foreground, and when you scroll inside one. It uses that to delay your touches and to show a full-screen prompt that asks you to move. It does not read the contents of your screen, it does not read text, and it does not see anything in apps you have not chosen. Nothing it observes leaves your device.</string>
+
+    <!-- Movement gate -->
+    <!-- ================================================== the launch gate
+
+         Field labels and a header template, shown on a screen that is
+         deliberately three numbers and a countdown with no sentence anywhere
+         on it. translatable="false" because the layout is a fixed-width
+         terminal readout: a longer word in another language reflows the
+         columns, and the words themselves are labels rather than prose.
+
+         There is no "are you sure", no encouragement and no explanation
+         string here, and there must not be one. The numbers are the argument.
+    -->
+    <string name="lease_gate_today" translatable="false">TODAY</string>
+    <string name="lease_gate_cycle" translatable="false">THIS CYCLE</string>
+    <string name="lease_gate_opens" translatable="false">OPENS TODAY</string>
+    <string name="lease_gate_select" translatable="false">SELECT LEASE</string>
+    <string name="lease_gate_out" translatable="false">[ TAKE ME OUT ]</string>
+    <!-- LEASE EXPIRED gate only. The rungs reuse lease_gate_button_fmt. -->
+    <string name="lease_gate_block" translatable="false">[ BLOCK THIS APP ]</string>
+    <string name="lease_gate_block_select" translatable="false">BLOCK FOR</string>
+    <string name="lease_gate_button_fmt" translatable="false">[ %1$s ]</string>
+    <!-- %1$s is the app label, already uppercased by the caller. -->
+    <!-- What the next scroll costs. Three bands, one question; see NextScroll. -->
+    <string name="lease_gate_next_none" translatable="false">NEXT SCROLL // NO STALL YET</string>
+    <string name="lease_gate_next_fmt" translatable="false">NEXT SCROLL // %1$s%% CHANCE OF %2$sms</string>
+    <string name="lease_gate_next_pinned" translatable="false">NEXT SCROLL // AT THE CEILING</string>
+    <string name="lease_gate_header_fmt" translatable="false">%1$s</string>
+    <string name="lease_gate_header_expired_fmt" translatable="false">%1$s // LEASE EXPIRED</string>
+
+    <!-- The walking gate reads the app's time against its horizon. Every
+         number is an argument from FrictionCurve through HorizonReading. -->
+    <string name="gate_within_horizon">WITHIN A %1$s MIN HORIZON</string>
+    <string name="gate_past_horizon">PAST THE %1$s MIN HORIZON</string>
+    <string name="gate_minutes_used">%1$s of %2$s minutes used</string>
+    <string name="gate_penalty">+%1$s min for staying past a lease</string>
+    <string name="gate_progress_percent">%1$s%%</string>
+    <string name="gate_why">Why am I seeing this?</string>
+    <string name="gate_why_intro">You have used this app for %1$s minutes in the current cycle, against a %2$s minute horizon. Clearing this gate opens the lease choice. It does not reset your accumulated time, and it does not reduce the delay on scrolling. Within a cycle the delay only ever grows.</string>
+    <string name="gate_why_terminal">You are past this app\'s horizon, so friction is at its ceiling and this gate replaces the countdown until the cycle resets.</string>
+    <string name="gate_why_within">Friction reaches its ceiling at the horizon.</string>
+    <string name="gate_why_leaving">Pressing HOME or RECENTS will leave this screen. That pauses the gate rather than clearing it. The gate returns when you scroll again.</string>
+
+    <string name="gate_debug_bypass_hint">Debug build. Hold the ring for 2 seconds to bypass.</string>
+    <string name="gate_alt_type_this">Type this phrase</string>
+    <string name="gate_alt_continue">Continue</string>
+
+    <string name="gate_reason_waiting">Stand up and start walking.</string>
+    <string name="gate_reason_need_more_steps">Keep walking. %1$s steps counted.</string>
+    <string name="gate_reason_too_slow">A little faster.</string>
+    <string name="gate_reason_too_fast">Slower. That is faster than walking.</string>
+    <string name="gate_reason_irregular">Keep an even pace.</string>
+    <string name="gate_reason_too_regular">That is too even to be walking.</string>
+    <string name="gate_reason_not_enough_motion">Not enough movement yet.</string>
+    <string name="gate_reason_too_violent">Too much. Walk, do not shake.</string>
+    <string name="gate_reason_not_vertical">That is side-to-side, not walking.</string>
+    <string name="gate_reason_stationary">The phone is not moving with you.</string>
+    <string name="gate_reason_sustaining">Good, keep going.</string>
+    <string name="gate_reason_passed">Done.</string>
+
+    <string name="gate_path_step">step sensor</string>
+    <string name="gate_path_fused">motion analysis (fused sensor)</string>
+    <string name="gate_path_imu">motion analysis</string>
+    <string name="gate_path_alt">alternative challenge</string>
+
+    <!-- Settings -->
+    <string name="settings_tagline">Your chosen apps are never blocked. The longer you use them in a six-hour cycle, the more the phone feels like it is failing.</string>
+    <string name="settings_section_setup">Setup</string>
+    <string name="settings_section_ladder">How friction works</string>
+    <string name="settings_section_suffix_fmt" translatable="false">// %1$s</string>
+    <string name="settings_targets_none">None</string>
+    <string name="settings_section_targets">Target apps</string>
+    <!-- The untrack cooling-off panel. Terminal field labels, like the lock
+         screen's, so not translatable. The two answers appear only at zero. -->
+    <string name="untrack_title" translatable="false">UNTRACK COOLING-OFF</string>
+    <string name="untrack_target_fmt" translatable="false">TARGET // %1$s</string>
+    <string name="untrack_last_target" translatable="false">LAST TARGET. UNTRACKING IT LEAVES NOTHING GATED.</string>
+    <string name="untrack_confirm" translatable="false">[ CONFIRM REMOVE ]</string>
+    <string name="untrack_keep" translatable="false">[ KEEP TRACKING ]</string>
+    <string name="settings_section_quick">Quick launch</string>
+    <string name="settings_quick_body">The rows on the console. Up to five, any app, in the order you add them.</string>
+    <string name="settings_quick_count_fmt">%1$s of %2$s</string>
+    <string name="settings_quick_empty">No rows. The console shows none until you add one.</string>
+    <string name="settings_quick_remove">Remove</string>
+    <string name="settings_quick_full">Five rows. Swap one to replace it in place, or remove one to add another.</string>
+    <string name="settings_quick_swap" translatable="false">[swap]</string>
+    <string name="settings_quick_swap_cancel" translatable="false">[cancel]</string>
+    <string name="settings_quick_swapping_fmt">Replacing %1$s. Pick a row or find an app.</string>
+    <string name="settings_quick_search">Find an app</string>
+    <!--
+      The lock scrubber, in the target list. The same 1h to 30d ladder the
+      grammar accepts, and the same confirmation step above a day, because a
+      second way to arm a lock that skipped it would make the step decorative.
+    -->
+    <!-- ================================================ the session horizon
+
+         What a session in this app is for. The copy states the consequence in
+         both directions and recommends neither: a long horizon is not
+         generous and a short one is not virtuous, they describe different
+         apps.
+    -->
+    <string name="settings_horizon_title">Session horizon</string>
+    <string name="settings_horizon_body">How long a session in this app is meant to be. A longer horizon means friction starts later and stays lighter at its heaviest, so an hour of lectures stays watchable. It is not extra time and it refunds nothing: time you have already spent in this cycle still counts against the new shape. Widening asks twice and then takes effect at the next cycle reset. Narrowing takes effect on the first press.</string>
+    <string name="settings_horizon_fmt" translatable="false">horizon  %1$s</string>
+    <!--
+      The tracking toggle, in place of a checkbox. Bracketed because in a
+      zero-border layout the brackets are the whole affordance: they are what
+      tells [CFG], [DO IT] and [ TAKE ME OUT ] apart from a label that merely
+      sits there. translatable="false" for the same reason those are: this is
+      terminal chrome on a character grid, and a two-letter word replaced by a
+      six-letter one moves the column.
+    -->
+    <!--
+      Group headers inside the target list. They appear only when they
+      separate something: nothing is tracked on a fresh install, so a fresh
+      install sees none of these. The horizon one shows only when tracked apps
+      disagree about their horizon, so seeing it at all is the information.
+    -->
+    <string name="settings_group_tracked">TRACKED</string>
+    <string name="settings_group_untracked">NOT TRACKED</string>
+    <string name="settings_group_horizon_fmt" translatable="false">%1$s HORIZON</string>
+    <string name="settings_target_on" translatable="false">[ON]</string>
+    <string name="settings_target_off" translatable="false">[OFF]</string>
+    <string name="settings_horizon_onset_fmt" translatable="false">onset %1$s</string>
+    <string name="settings_horizon_narrow" translatable="false">[ - ]</string>
+    <string name="settings_horizon_widen" translatable="false">[ + ]</string>
+    <!-- %1$s is the new horizon, %2$s is the time until the cycle resets. -->
+    <string name="settings_horizon_pending_fmt">%1$s takes effect next cycle (%2$s)</string>
+    <string name="settings_horizon_pending_unknown_fmt">%1$s takes effect next cycle</string>
+    <!-- %1$s is the horizon in force, %2$s the one being asked for. The app is
+         named by the row this sits under, so it is not repeated here. -->
+    <string name="settings_horizon_confirm_fmt">%1$s to %2$s? Press again to confirm.</string>
+
+    <string name="settings_lock_remaining_fmt">LOCKED %1$s</string>
+    <!-- Under the SAFETY prefix field, after a save that dropped an entry.
+         See PrefixLock: a covered app is never drawn over, so its lock would
+         stop being enforced. -->
+    <string name="settings_safety_prefix_refused">Not added. It would switch off a standing lock.</string>
+    <string name="settings_safety_prefix_refused_row">%1$s covers %2$s</string>
+    <string name="settings_lock_scrub_fmt">Lock for %1$s</string>
+    <string name="settings_lock_arm">Lock</string>
+    <string name="settings_lock_confirm_fmt">Confirm %1$s</string>
+    <!-- Shown on an expanded row whose toggle a standing lock is holding. -->
+    <string name="settings_target_pinned">A locked app stays tracked. Untracking it would stop the lock.</string>
+    <string name="settings_lock_no_unlock">A lock can only be extended. There is no unlock, and nothing here will cancel one.</string>
+    <string name="settings_gate_unavoidable_title">The gate cannot be skipped</string>
+    <string name="settings_gate_unavoidable_body">Opening a target app puts a countdown in front of it. When it reaches zero you choose how long you are staying, or you leave. Taking a lease buys time and nothing else: scroll delays run exactly as they would have, and staying past the lease you took makes them arrive sooner. There is no setting that turns friction off.</string>
+    <string name="settings_section_gate">The gate</string>
+    <string name="settings_gate_mode_title">What the gate asks for</string>
+    <string name="settings_gate_mode_body">Applies only once an app is past its horizon (%1$s minutes unless you change it) in one cycle. Before that it is always the countdown, whatever is chosen here.</string>
+    <string name="settings_gate_mode_countdown">Wait it out</string>
+    <string name="settings_gate_mode_countdown_body">A countdown, eight seconds the first time and four seconds longer each time you take another lease in the same cycle, up to thirty. Nothing to do but read the numbers.</string>
+    <string name="settings_gate_mode_walk">Walk</string>
+    <string name="settings_gate_mode_walk_body">Replaces the countdown with the movement gate: actual walking, measured by the accelerometer. Then you choose the lease as usual.</string>
+    <string name="settings_gate_mode_type">Type a phrase</string>
+    <string name="settings_gate_mode_type_body">Replaces the countdown with a 25 second untimed typing task. For anyone who cannot or should not be made to walk on demand.</string>
+    <string name="settings_section_safety">Safety</string>
+    <string name="settings_safety_body">Banking and UPI apps refuse to run when something is drawn over them, and some block on the presence of an accessibility service regardless of what it does. Jitter never draws over the apps listed here. Google Pay and PhonePe work normally, and the pause below is enough for anything else that objects to an overlay. Paytm is the exception: it blocks on the service existing, which only the second button changes.</string>
+    <!--
+      Paytm blocks payments on the presence of any enabled accessibility
+      service, not on what it observes, so nothing short of the service being
+      off changes what it sees. GPay and PhonePe both complete normally.
+    -->
+    <string name="settings_disable_start">Disable for payments</string>
+    <string name="settings_disable_body">Turns the accessibility service off. Friction stops completely: no stalls, no checkpoints, no locks enforced. There is no timer and nothing in Jitter can switch it back on. To undo it you go into Android Settings, Accessibility, and enable Jitter again yourself.</string>
+    <string name="settings_disable_confirm">Disable now</string>
+    <string name="settings_disable_cancel">Cancel</string>
+    <string name="settings_pause_start">Pause friction (15m)</string>
+    <!-- %1$s is minutes, %2$s is zero padded seconds. Both are strings, not
+         %d: several strings in this file take Double thresholds and a %d
+         given a Double throws IllegalFormatConversionException at runtime, so
+         the whole file uses %n$s without exception. -->
+    <string name="settings_pause_active">Paused. %1$s:%2$s left.</string>
+    <string name="settings_pause_resume">Resume now</string>
+    <string name="settings_pause_hint">Stalls, gates and overlays stop for fifteen minutes and then come back on their own, so there is nothing to undo. Jitter stays enabled, which means an app that blocks on an accessibility service being enabled at all (Paytm does) still blocks. Your accumulated time keeps counting, so this does not buy you a clean slate. Locked apps stay locked: a lock is something you chose, and a fifteen minute button that cancelled it would make every lock in this app decorative.</string>
+    <string name="settings_safety_defaults_title">Always excluded</string>
+    <string name="settings_safety_extra_title">Your additions</string>
+    <string name="settings_safety_extra_body">One package name per line. A partial name matches everything below it, so com.icicibank covers every app that bank ships. This list cannot cover every Indian bank, so add yours if you see a warning.</string>
+    <string name="settings_safety_extra_label">Package prefixes</string>
+    <string name="settings_safety_extra_save">Save excluded apps</string>
+    <string name="settings_section_try">Try it</string>
+
+    <string name="settings_checklist_step">%1$s.</string>
+
+    <string name="settings_perm_a11y_title">Accessibility service</string>
+    <string name="settings_perm_a11y_body">Required. Lets Jitter see which app is in front and when you scroll.</string>
+    <string name="settings_service_state_title">Service state</string>
+    <string name="settings_service_healthy">Running and accepting events.</string>
+    <string name="settings_service_connecting">Bound, but not yet accepting events.</string>
+    <string name="settings_service_stale">Bound, but it has stopped reporting. It was probably killed.</string>
+    <string name="settings_service_switched_off">Switched off in Android settings.</string>
+    <string name="settings_service_never">Not running. Granting the permission is not the same as the service starting.</string>
+    <string name="settings_perm_usage_title">Usage access</string>
+    <string name="settings_perm_usage_body">Required. Rebuilds your time if Jitter is killed mid-session.</string>
+    <string name="settings_perm_activity_title">Physical activity</string>
+    <string name="settings_perm_activity_body">Preferred. Uses the step sensor for the movement gate. Without it the gate falls back to motion analysis.</string>
+
+    <string name="settings_targets_hint">Scrolling in these apps accumulates time.</string>
+    <string name="settings_targets_search">Filter apps</string>
+    <string name="settings_targets_no_match">No app matches that.</string>
+    <string name="settings_targets_count_fmt">%1$s of %2$s apps</string>
+    <string name="settings_targets_empty">No launchable apps listed yet.</string>
+
+    <!--
+      How friction works, in CFG. Every number is an argument computed from
+      FrictionCurve at the default horizon (FrictionSummary), never written
+      here, so this cannot drift from the curve the way the old fixed ladder
+      did.
+    -->
+    <string name="settings_friction_horizon">Each app has a horizon, the length of session it is for. A new app gets %1$s minutes. Change it per app under Target apps.</string>
+    <string name="settings_friction_onset">For the first %1$s minutes (%2$s%% of the horizon), scrolling is untouched.</string>
+    <string name="settings_friction_ramp">Then a scroll can stall. It starts at %1$s ms with a %2$s%% chance, and both rise until the horizon.</string>
+    <string name="settings_friction_ceiling">At %1$s minutes it reaches its ceiling, %2$s ms at %3$s%%, and stays there. Longer horizons have a lower ceiling.</string>
+    <string name="settings_friction_lease">The lease gate is separate. It asks how long you are staying each time you open a tracked app, and it runs on real time, not on time spent in the app.</string>
+    <string name="settings_friction_note">A lease never resets your time and never shortens a stall. Within a cycle, friction only ever grows.</string>
+
+    <string name="settings_test_stall">Test Phantom Stall (1 second)</string>
+    <string name="settings_debug">Debug and ledger</string>
+    <!--
+      The header entry. Bracketed like [CFG] and [ON], because in a
+      zero-border layout the brackets are what say a thing is pressable.
+      translatable="false" for the same reason those are: terminal chrome on a
+      character grid, and a three-letter word replaced by a longer one moves
+      the title.
+    -->
+    <string name="settings_debug_short" translatable="false">[DBG]</string>
+
+    <!-- Debug screen -->
+    <string name="debug_title">Debug</string>
+    <string name="debug_back">&lt; Back</string>
+
+    <string name="debug_section_latency">Stall latency, four segments</string>
+    <string name="debug_latency_legend">A pipeline (not optimisable), B our code, C relayout, D ground truth</string>
+    <string name="debug_latency_dump_intro">Per-package percentile tables come from the live service:</string>
+    <string name="debug_latency_note">The rings live in the accessibility service process and are not persisted, so this screen cannot read them directly. D is the number that decides the product. A is the number that decides whether it is fixable.</string>
+
+    <string name="debug_section_stall_duration">Stall duration (requested vs actual, from the ledger)</string>
+    <string name="debug_stall_empty">No STALL_ARMED rows yet. Scroll in a target app past the start of its friction, then come back.</string>
+    <string name="debug_overshoot_note">Overshoot is actual armed duration minus requested. It bundles the coroutine wake-up, the updateViewLayout round trip, and any panic release. Negative values are early releases.</string>
+
+    <string name="debug_section_calibration">Sensing calibration</string>
+    <string name="debug_calibration_uncalibrated">%1$s (UNCALIBRATED)</string>
+    <string name="debug_calibration_status">%1$s (%2$s)</string>
+    <string name="debug_uncalibrated_note">Seeded from IIR. The fused sensor has an internal high-pass we cannot query, so these numbers have never been measured for this pipeline.</string>
+    <string name="debug_gate_outcomes">Gate outcomes by pipeline</string>
+    <string name="debug_none_recorded">(none recorded)</string>
+
+    <string name="debug_section_state_editor">Set state (debug build only)</string>
+    <string name="debug_state_editor_note">Writes accumulated time and tier index straight into the store and rebuilds the engine, so any point on the friction curve can be reached without waiting for it. Any open session is dropped.</string>
+    <string name="debug_state_editor_pkg">Package</string>
+    <string name="debug_state_editor_minutes">Accumulated minutes</string>
+    <string name="debug_state_editor_tier">Tier index (blank to derive)</string>
+    <string name="debug_state_editor_apply">Apply</string>
+
+    <string name="debug_section_appstate">AppState per package</string>
+    <string name="debug_empty">(empty)</string>
+    <string name="debug_section_ledger">Ledger (newest first)</string>
+
+    <string name="debug_export_ledger">Export ledger to a file</string>
+    <string name="debug_export_stamp_format" translatable="false">yyyy-MM-dd-HHmm</string>
+    <string name="debug_clear_ledger">Clear ledger</string>
+    <string name="debug_reset_all">Reset all state (ladder and ledger)</string>
+
+    <!--
+      Shown on screen but never reworded or localised: commands, field labels
+      and format templates.
+    -->
+    <string name="debug_dumpsys_cmd" translatable="false">adb shell dumpsys activity service org.jitteros.app/dev.molasses.monitor.MolassesAccessibilityService</string>
+    <string name="debug_date_format" translatable="false">MM-dd HH:mm:ss.SSS</string>
+
+    <string name="debug_stall_overshoot" translatable="false">overshoot ms min=%1$s p50=%2$s p90=%3$s p99=%4$s max=%5$s</string>
+    <string name="debug_stall_row" translatable="false">req=%1$sms act=%2$sms d=%3$sms (%4$s)</string>
+    <string name="debug_gate_outcome_row" translatable="false">%1$s  %2$s  %3$s</string>
+    <string name="debug_ledger_row" translatable="false">%1$s b%2$s %3$s %4$s %5$s</string>
+
+    <string name="debug_thresholds_band" translatable="false">rms&gt;%1$s  peaks&gt;=%2$s  %3$s-%4$s Hz</string>
+    <string name="debug_thresholds_cv" translatable="false">cv %1$s-%2$s (floor over %3$s s, &gt;=%4$s intervals)</string>
+    <string name="debug_thresholds_shape" translatable="false">vert&gt;=%1$s  peak&lt;%2$s  tilt&gt;%3$s deg</string>
+    <string name="debug_thresholds_window" translatable="false">window %1$s ms  refractory %2$s ms</string>
+
+    <string name="debug_field_samples" translatable="false">samples</string>
+    <string name="debug_field_accumulated" translatable="false">accumulated</string>
+    <string name="debug_field_tier_index" translatable="false">tierIndex</string>
+    <string name="debug_field_stall" translatable="false">stall</string>
+    <!-- The ignore breakdown, under the row it belongs to. %1$s is the count
+         dropped as our own package, %2$s as an untracked package. -->
+    <string name="debug_events_ignored_by" translatable="false">    own-pkg %1$s  not-target %2$s</string>
+    <string name="debug_field_leases_taken" translatable="false">leasesTaken</string>
+    <string name="debug_field_lease_until" translatable="false">leaseUntil</string>
+    <string name="debug_value_seconds" translatable="false">%1$s s</string>
+    <string name="debug_value_ms" translatable="false">%1$s ms</string>
+    <string name="debug_horizon_fmt" translatable="false">%1$s min, %2$s%%</string>
+    <string name="debug_horizon_terminal_fmt" translatable="false">%1$s min, %2$s%% (terminal)</string>
+    <string name="debug_field_horizon" translatable="false">horizon</string>
+    <string name="debug_value_stall" translatable="false">%1$s ms at %2$s%%</string>
+    <!-- Phase 1: Launcher Shell -->
+    <string name="launcher_title">Jitter Home</string>
+    <string name="launcher_empty_apps">No apps installed</string>
+    <string name="launcher_open_settings">Settings</string>
+    <!-- Terminal Launcher UI -->
+    <string name="launcher_terminal_prompt">&gt; init molasses_core</string>
+    <!--
+      The whole of prompt discovery, in one line that does not move. The
+      apostrophes are escaped because aapt rejects a bare one in a string
+      value. "?" sits on the STATE surface so it can never report itself
+      unavailable, which is what makes this safe to say unconditionally.
+    -->
+    <string name="launcher_search_placeholder">type \'?\' for commands</string>
+    <string name="launcher_status_ready">DAEMON: ACTIVE | CYCLE: 6H</string>
+    <string name="launcher_target_badge">[TRACKED]</string>
+    <!--
+      Discovery. The prompt is a blank line with a dollar in front of it, and
+      a blank line teaches nobody anything. These three are the only places a
+      command can be learned without reading the source: a rotating
+      suggestion, the manual, and what you have already typed.
+    -->
+    <string name="launcher_manual_title">COMMANDS</string>
+    <string name="launcher_manual_hint">Type any of these. Dimmed rows parse but cannot run yet.</string>
+    <!-- Launcher Telemetry & Quick Access -->
+    <string name="launcher_filter_label">NOTIF FILTER</string>
+    <string name="launcher_filter_active">MUTED</string>
+    <string name="launcher_filter_dormant">OPEN</string>
+    <!-- Favourites. Bracketed lowercase: in a zero-border layout the brackets
+         are the only tap-target affordance left, matching [CFG] and [DO IT].
+         Bare lowercase reads as ls output, something listed rather than
+         something pressable. -->
+    <string name="launcher_fav_phone">[phone]</string>
+    <string name="launcher_fav_messages">[messages]</string>
+    <string name="launcher_fav_calendar">[calendar]</string>
+    <string name="launcher_fav_calculator">[calculator]</string>
+    <string name="launcher_fav_clock">[clock]</string>
+    <!-- A quick-launch row for an app the user chose in CFG: its label,
+         lowercased at the call site. -->
+    <string name="launcher_fav_app_fmt" translatable="false">[%1$s]</string>
+    <!--
+      Said rather than swallowed. These rows used to wrap startActivity in a
+      runCatching and discard the result, so a device with no handler got a
+      row that did nothing, silently, every time.
+    -->
+    <string name="launcher_fav_none">Nothing on this device handles that.</string>
+    <string name="launcher_fav_none_messaging">No messaging app found. Try the drawer.</string>
+    <!-- The bar itself is drawn cell by cell so the charging cell can be
+         brightened individually, so the line is three pieces rather than one
+         template. All translatable="false": this is a fixed-width readout. -->
+    <!-- The bar is assembled per character in Kotlin so one cell can brighten
+         while charging, so these are the two ends of it. PowerBarResourcesTest
+         asserts they agree with PowerBar.readout, which is what the formatter
+         is actually tested against. -->
+    <string name="launcher_bat_label" translatable="false">BAT</string>
+    <string name="launcher_bat_suffix_fmt" translatable="false"> %1$s%%</string>
+    <string name="launcher_clock_fmt" translatable="false">%1$s  %2$s</string>
+    <string name="launcher_cursor" translatable="false">\u2588</string>
+    <string name="launcher_cfg">[CFG]</string>
+    <!-- Decorative glyphs. Shown on screen, never reworded or translated. -->
+    <string name="launcher_prompt_symbol" translatable="false">$ </string>
+    <string name="launcher_chevron_glyph" translatable="false">v</string>
+    <string name="ledger_screentime_label">TODAY\'S SCREEN TIME</string>
+    <string name="ledger_screentime_fmt">%1$s hr, %2$s min</string>
+    <!-- Rendered wherever a value is not known. Never a zero: a confident 0
+         is indistinguishable from a real idle day. -->
+    <string name="ledger_value_unknown" translatable="false">--</string>
+    <string name="ledger_distribution_empty">No app usage recorded today. Usage access may not be granted.</string>
+    <!--
+      Engine state, on the page that until now showed only the system's own
+      numbers. Not translatable: a fixed-width data line, and the labels are
+      the field names rather than prose. The double spaces are the column
+      gaps and aapt would collapse them in an unquoted value, so the
+      alignment is assembled in Kotlin and these carry only the shape.
+    -->
+    <string name="ledger_cycle_fmt" translatable="false">CYCLE %1$s  HORIZON %2$s  RESETS %3$s</string>
+    <!-- The ratchet, shown only when it has run. It modifies the cycle
+         figure, so it sits against it rather than in a column of its own. -->
+    <string name="ledger_cycle_penalty_fmt" translatable="false">CYCLE %1$s +%2$s  HORIZON %3$s  RESETS %4$s</string>
+    <string name="ledger_distribution">DISTRIBUTION METRICS</string>
+    <string name="ledger_app_minutes_fmt">%1$s min</string>
+    <string name="filter_allowed_badge">[ALLOWED]</string>
+    <string name="action_back">Back</string>
+    <!-- Extended Terminal & Telemetry Page -->
+    <string name="launcher_page_terminal">01 // CONSOLE</string>
+    <string name="launcher_page_screentime">02 // LEDGER</string>
+    <string name="launcher_screentime_title">SESSION USAGE &amp; CYCLE</string>
+    <string name="launcher_screentime_target_fmt">%1$s : %2$s min</string>
+    <string name="launcher_cycle_label">CYCLE WINDOW: 6H FIXED</string>
+    <!-- Ledger & Notification Filter UI -->
+    <string name="ledger_title">DIGITAL WELLBEING // CYCLE</string>
+    <string name="ledger_total_screentime">TODAY: %1$s hr, %2$s min</string>
+    <string name="ledger_metrics_fmt">%1$s UNLOCKS | %2$s NOTIFICATIONS</string>
+    <string name="ledger_view_details">[OPEN SYSTEM WELLBEING]</string>
+    <string name="filter_title">NOTIFICATION FILTER</string>
+    <string name="filter_status_active">FILTER ACTIVE: %1$s CLEARED</string>
+    <!-- Service and engine diagnostics. Field labels are shown on screen but
+         must not be reworded: they are read alongside adb output. -->
+    <string name="debug_field_penalty" translatable="false">penalty</string>
+    <string name="debug_field_effective" translatable="false">effective</string>
+    <string name="debug_section_service">SERVICE</string>
+    <string name="debug_field_bound" translatable="false">bound</string>
+    <string name="debug_field_enabled" translatable="false">enabled</string>
+    <string name="debug_field_heartbeat" translatable="false">heartbeat</string>
+    <string name="debug_field_scope" translatable="false">packageNames</string>
+    <string name="debug_field_open_session" translatable="false">open session</string>
+    <string name="debug_field_cycle_anchor" translatable="false">cycle anchor</string>
+    <string name="debug_field_resets_in" translatable="false">resets in</string>
+    <string name="debug_section_events">EVENTS BY PACKAGE</string>
+    <string name="debug_events_header" translatable="false">scroll / win / routed / ignored</string>
+    <string name="debug_events_row" translatable="false">%1$s / %2$s / %3$s / %4$s</string>
+    <string name="debug_events_none">No accessibility events received. The service is not seeing anything.</string>
+    <string name="debug_events_overflow" translatable="false">+%1$s more packages (capped)</string>
+    <string name="debug_warn_stuck">SERVICE STUCK STARTING. It is bound but never became ready, so every accessibility event is being dropped. Reconciliation is most likely blocked awaiting DataStore.</string>
+    <string name="debug_warn_all_ignored">Events are arriving and every one is being ignored. The target scope and the router disagree.</string>
+    <string name="debug_warn_target_fallback">Stored target list was empty. Using the shipped defaults instead of listening to every package.</string>
+    <string name="debug_never_connected">NOT BOUND. The service has never connected in this process.</string>
+    <string name="debug_ms_ago" translatable="false">%1$s ms ago</string>
+    <string name="debug_none" translatable="false">--</string>
+    <!-- Command REPL feedback. Every message names the offending token or
+         the usage shape, because "block <app> <duration>" alone does not tell
+         someone that 30mins is the wrong spelling. -->
+    <string name="cmd_ack_status">ACK: LEDGER</string>
+    <string name="cmd_ack_help">ACK: MANUAL</string>
+    <string name="cmd_ack_lock">ACK: LOCKED %1$s. There is no unlock.</string>
+    <string name="cmd_ack_focus">ACK: FOCUS %1$s across %2$s apps.</string>
+    <string name="cmd_ack_bedtime">ACK: BEDTIME. Locked for %1$s.</string>
+    <string name="cmd_ack_wifi_panel">ACK: WIFI PANEL</string>
+    <string name="cmd_ack_dnd_panel">ACK: DND SETTINGS</string>
+    <string name="cmd_ack_alarm">ACK: ALARM %1$s</string>
+    <string name="cmd_ack_timer">ACK: TIMER %1$s</string>
+    <!--
+      The three utilities. Each answers and leaves nothing behind, so there is
+      no ack in the "ACK: TIMER 30m" sense: the answer is the acknowledgement.
+      These are shown on Bit's line for five seconds rather than the usual one
+      and a half, because a number the user is about to use is read twice.
+    -->
+    <string name="cmd_ans_calc" translatable="false">= %1$s</string>
+    <string name="cmd_ans_conv" translatable="false">%1$s %2$s</string>
+    <!--
+      Two keys rather than one, picked by a plain function at the call site,
+      which is how this app maps state to copy everywhere else. English has
+      two forms and a language with more would need a plurals resource, which
+      is the thing to reach for if this is ever translated.
+    -->
+    <string name="cmd_ans_days">%1$s days</string>
+    <string name="cmd_ans_days_one">%1$s day</string>
+    <!--
+      The second line, and only where the input was turned into something.
+
+      Strict percent puts the whole surprise at one operator: 200 + 10% is
+      200.1 because 10% is 0.1. So the explanation is attached to that
+      operator and to nothing else. An echo of every expression would be a
+      line most inputs have not earned.
+
+      The date one is the same rule: an ISO date is already what it says, and
+      only a bare day and month or a relative word had a year chosen for it.
+      It is also what makes a seven day answer to "between 25 dec and 1 jan"
+      legible, because both years are then on screen.
+    -->
+    <string name="cmd_ans_percent">where %1$s</string>
+    <string name="cmd_ans_pair" translatable="false">%1$s = %2$s</string>
+    <string name="cmd_ans_span">%1$s to %2$s</string>
+    <!--
+      Utility refusals. Four for the calculator, three for conversion and six
+      for dates, because "that is not a date" and "write the year first" send
+      the reader to different places.
+    -->
+    <string name="cmd_err_calc_empty">Nothing to work out.</string>
+    <string name="cmd_err_calc_chars">Only digits and + - * / ( ) %%.</string>
+    <string name="cmd_err_calc_brackets">Unbalanced brackets.</string>
+    <string name="cmd_err_calc_operand">An operator with nothing to work on.</string>
+    <string name="cmd_err_calc_zero">Division by zero has no answer.</string>
+    <string name="cmd_err_conv_unit">Unknown unit. The manual lists every one.</string>
+    <string name="cmd_err_conv_dimension">Those units measure different things.</string>
+    <string name="cmd_err_conv_amount">Expected an amount and two units.</string>
+    <string name="cmd_err_days_empty">Type a date.</string>
+    <string name="cmd_err_days_verb">Expected until, since or between.</string>
+    <string name="cmd_err_days_date">Expected a date after that.</string>
+    <string name="cmd_err_days_range">Expected one date, then and, then another.</string>
+    <!--
+      Two refusals for two mistakes that look alike. 25/12 and 12/25 are the
+      same characters read two ways, so the numeric form is refused outright.
+      25 dec 2026 is not ambiguous at all, it is just a spelling this does not
+      take, and nobody guesses from a flat refusal that the fix is ISO.
+    -->
+    <string name="cmd_err_days_numeric">Ambiguous date. Write it as 2026-12-25.</string>
+    <string name="cmd_err_days_year">Write a year first, as 2026-12-25.</string>
+    <string name="cmd_err_days_unreadable">Not a date. Try 25 dec, or today.</string>
+    <string name="cmd_err_empty">Type a command or an app name.</string>
+    <string name="cmd_err_unknown">Unknown command: %1$s</string>
+    <string name="cmd_err_missing">Missing argument. Usage: %1$s</string>
+    <string name="cmd_err_surplus">Too many arguments. Usage: %1$s</string>
+    <string name="cmd_err_duration">Bad duration: %1$s. Try 30m, 2h, 1h30m, 3d.</string>
+    <string name="cmd_err_time">Bad time: %1$s. Try 6am, 18:30, 6:30pm.</string>
+    <string name="cmd_err_toggle">Expected on or off, got %1$s</string>
+    <!-- Held until the next keystroke, like calc's answer. -->
+    <string name="cmd_ans_rem_exact">REMINDER SET FOR %1$s. EXACT.</string>
+    <string name="cmd_ans_rem_inexact">REMINDER SET FOR %1$s. INEXACT: ANDROID MAY DELIVER IT LATE.</string>
+    <string name="cmd_ans_rem_list">PENDING, SOONEST FIRST. TAP ONE TO KILL IT.</string>
+    <string name="cmd_ans_rem_row" translatable="false">%1$s: %2$s</string>
+    <string name="cmd_ans_rem_none">NO PENDING REMINDERS</string>
+    <string name="cmd_ans_rem_not_armed">REMINDER SAVED FOR %1$s, NOT ARMED. IT ARMS WHEN THE SERVICE NEXT CONNECTS.</string>
+    <string name="cmd_err_rem_full">%1$s reminders are pending, the most there can be. Dismiss one first.</string>
+    <string name="cmd_err_when">Not a time, a duration or a date: %1$s. Try 6pm, 45m or 3 oct 9am.</string>
+    <string name="cmd_err_rem_needs_time">A date needs a time: %1$s 9am.</string>
+    <string name="cmd_err_deferred_timeout">No answer in 3 seconds. It may still have run; type rem to check.</string>
+    <string name="cmd_err_rem_past">That date and time has passed. Pick one ahead.</string>
+    <string name="cmd_err_unknown_app">No app matches %1$s</string>
+    <string name="cmd_err_ambiguous_app">%1$s matches %2$s apps. A wrong lock cannot be undone.</string>
+    <string name="cmd_err_no_targets">No tracked apps. Add some in settings first.</string>
+    <string name="cmd_err_lock_not_shortened">Already locked for %1$s. A lock can only be extended.</string>
+    <!--
+      Unavailable, not failed. The user cannot fix any of these by retyping,
+      which is why Bit shows a different face for them: a dry face the user
+      can act on teaches them to read it, and one they cannot teaches them to
+      ignore it.
+
+      These take no format arguments. A surface knows which command it is
+      answering about but not what the user typed, and echoing the parse back
+      on "no wifi panel" would be noise. The commands where seeing the parse
+      matters are the long locks, and those echo it in the confirmation.
+    -->
+    <string name="cmd_na_relief_while_locked">A lock is armed. Relief does not outrank a lock.</string>
+    <!-- Not "not yet". A sideloaded app cannot reboot or power off a device
+         at all, so this must not imply the feature is coming, and it must not
+         blame the service binding either. -->
+    <string name="cmd_na_privileged">Android does not let an app do that. Use the power button.</string>
+    <string name="cmd_na_no_panel">This device has no settings panel for that.</string>
+    <string name="cmd_na_no_clock_app">No clock app on this device handles that.</string>
+    <!--
+      Confirmations rather than refusals. The panel did open, so the command
+      did something; the modifier could not be honoured, so it is answered
+      rather than ignored. Two strings and not one because the reasons differ,
+      and claiming a platform limit for our own choice would be a lie the user
+      cannot check.
+    -->
+    <string name="cmd_ack_wifi_panel_no_toggle">ACK: WIFI PANEL (NO TOGGLE)</string>
+    <string name="cmd_ack_dnd_panel_no_toggle">ACK: DND SETTINGS (NO TOGGLE)</string>
+    <string name="cmd_na_relief_needs_monitor">The monitor is not running, so nothing would read the lease.</string>
+    <!-- A wiring bug rather than a condition the user is in. It has to render
+         as something rather than crash the launcher. -->
+    <string name="cmd_na_wiring">That command has no handler. This is a bug in Jitter.</string>
+    <!-- LockRegistry is extend-only, so a mistyped long lock is unfixable for
+         its whole duration. The echo is the canonical parse, so a duration
+         read differently than it was typed is visible before it is armed. -->
+    <string name="cmd_confirm_line">%1$s. Confirm it on the lock panel.</string>
+    <string name="cmd_hint_fmt">%1$s</string>
+    <!--
+      Usage shapes. Argument SHAPE only, never a value: one stray completion
+      must not be able to arm a real lock. Not translatable, because these are
+      the grammar itself and a translated verb would not parse.
+    -->
+    <string name="cmd_usage_block" translatable="false">block &lt;app&gt; &lt;duration&gt;</string>
+    <string name="cmd_usage_focus" translatable="false">focus &lt;duration&gt;</string>
+    <string name="cmd_usage_bedtime" translatable="false">bedtime</string>
+    <string name="cmd_usage_status" translatable="false">status</string>
+    <string name="cmd_usage_help" translatable="false">help</string>
+    <string name="cmd_usage_alarm" translatable="false">alarm &lt;time&gt;</string>
+    <string name="cmd_usage_timer" translatable="false">timer &lt;duration&gt;</string>
+    <string name="cmd_usage_reboot" translatable="false">reboot</string>
+    <string name="cmd_usage_poweroff" translatable="false">poweroff</string>
+    <string name="cmd_usage_wifi" translatable="false">wifi [on|off]</string>
+    <string name="cmd_usage_dnd" translatable="false">dnd [on|off]</string>
+    <string name="cmd_usage_calc" translatable="false">calc &lt;expression&gt;</string>
+    <string name="cmd_usage_conv" translatable="false">conv &lt;amount&gt; &lt;from&gt; &lt;to&gt;</string>
+    <string name="cmd_usage_days" translatable="false">days until|since|between &lt;date&gt;</string>
+    <string name="cmd_usage_rem" translatable="false">rem &lt;time|duration&gt; &lt;text&gt;</string>
+    <!-- One line each, for the manual the registry generates. -->
+    <string name="cmd_desc_block">Lock one app until the duration is up.</string>
+    <string name="cmd_desc_focus">Lock every tracked app and silence notifications.</string>
+    <string name="cmd_desc_bedtime">Lock until the configured wake time.</string>
+    <string name="cmd_desc_status">Show the ledger.</string>
+    <string name="cmd_desc_help">List every command. Also $ ?.</string>
+    <string name="cmd_desc_alarm">Set an alarm in the clock app.</string>
+    <string name="cmd_desc_timer">Start a timer in the clock app.</string>
+    <string name="cmd_desc_reboot">Restart the device.</string>
+    <string name="cmd_desc_poweroff">Power the device off.</string>
+    <!--
+      The conversion row lists every unit, because the manual is the only
+      place that could and a converter whose vocabulary is undiscoverable is
+      a converter nobody uses twice.
+    -->
+    <string name="cmd_desc_calc">Work out an expression. A percent sign always means a hundredth of what it follows.</string>
+    <string name="cmd_desc_conv">Convert between km mi, m ft, cm in, kg lb, g oz, kg st, c f, kph mph. Full names, plurals and a joining word all work: 5 kilometers to miles.</string>
+    <string name="cmd_desc_days">Count days until, since, or between two dates. Write a year as 2026-12-25.</string>
+    <string name="cmd_desc_rem">Remind yourself at a time or after a while: rem 6pm call mum, rem 45m tea, rem 3 oct 9am dentist. Up to 20. A bare rem lists the next five pending. Exact where Android allows it; otherwise inexact and possibly late, and the answer says which, or that it was saved but not armed. A tone plays unless the phone is silent, and the text waits here until you dismiss it.</string>
+    <!--
+      The manual carries the reason the ack no longer has room for, and the
+      two reasons stay different on purpose. Wifi is a platform limit binding
+      every app since API 29; DND is a permission Jitter chose not to request.
+      Claiming the first for the second would be a lie the user cannot check.
+    -->
+    <string name="cmd_desc_wifi">Open the wifi panel. No app has been able to switch wifi since Android 10, so wifi on and wifi off open the panel too.</string>
+    <string name="cmd_desc_dnd">Open do not disturb settings. Setting DND needs a permission Jitter does not request, so dnd on and dnd off open settings too.</string>
+    <!--
+      The lock screen. Field labels on a fixed-width terminal layout, like the
+      lease gate's, so not translatable: a longer word reflows the column. The
+      opening time under WILL BE OPEN BY is formatted in the device locale.
+    -->
+    <string name="lock_title" translatable="false">BLOCKED</string>
+    <string name="lock_target_fmt" translatable="false">TARGET // %1$s</string>
+    <string name="lock_opens_by" translatable="false">WILL BE OPEN BY</string>
+    <!--
+      The way out of the lock screen, and the only one now that the automatic
+      bounce is gone. Addressed the way the greeting addresses the user rather
+      than as a navigation instruction: this is the place the lock is sending
+      them back to, not a button on a form.
+    -->
+    <!--
+      The console's confirmation for a lock above a day. Fixed-width terminal
+      fields, like the lock screen's, so not translatable. There is no cancel
+      string because there is no cancel button: back aborts.
+    -->
+    <string name="lock_confirm_title" translatable="false">IMMUTABLE LOCK REQUEST</string>
+    <string name="lock_confirm_target_fmt" translatable="false">TARGET // %1$s</string>
+    <string name="lock_confirm_all_tracked" translatable="false">ALL TRACKED</string>
+    <string name="lock_confirm_duration_fmt" translatable="false">DURATION // %1$s</string>
+    <string name="lock_confirm_commit" translatable="false">[ COMMIT LOCK ]</string>
+    <string name="lock_exit" translatable="false">[ ARCHITECT\'S SPACE ]</string>
+    <!--
+      Bit's console speech. Past tense, deliberately: Bit only speaks on the
+      launcher, and the observation is made inside a target app, so the line
+      is always read after the fact. "You have been scrolling" would be a lie
+      by the time anyone saw it.
+    -->
+    <string name="console_scrolled">You scrolled %1$s in %2$s.</string>
+    <!--
+      Arrival, on the first launcher visit after an unlock. Lower case on
+      purpose: the rest of the console shouts in caps because it is reporting
+      state, and this is the one line that is not.
+    -->
+    <string name="console_greeting_morning">good morning, architect</string>
+    <string name="console_greeting_afternoon">afternoon, architect</string>
+    <string name="console_greeting_late">still up, architect</string>
+    <!-- $ rem, on the console. Stays until [OK]. -->
+    <string name="console_reminder_fmt" translatable="false">REMINDER // %1$s</string>
+    <string name="console_reminder_late_fmt" translatable="false">REMINDER // %1$s // LATE</string>
+    <string name="console_reminder_ok" translatable="false">[OK]</string>
+    <string name="console_reminder_kill" translatable="false">[kill]</string>
+    <string name="console_do_it">[DO IT]</string>
+    <string name="console_nah">[NAH]</string>
+    <!--
+      First-run flow, on the launcher. See core/setup/Onboarding. Commands in
+      brackets and the step markers are not reworded.
+    -->
+    <string name="onboarding_title">SETUP</string>
+    <string name="onboarding_needs">Jitter needs two permissions (accessibility, usage access) and your home app.</string>
+    <string name="onboarding_step_fmt">STEP %1$s OF %2$s</string>
+    <!--
+      The completed and open markers for a setup step, in the first-run flow
+      and in CFG's setup checklist. The tick lives here and nowhere else: if
+      it misaligns in the monospace font on a device, change this one value
+      to [+] and every screen follows.
+    -->
+    <string name="setup_mark_done" translatable="false">[✓]</string>
+    <string name="setup_mark_open" translatable="false">[ ]</string>
+    <string name="onboarding_mark_fmt" translatable="false">%1$s %2$s</string>
+    <string name="onboarding_a11y_name">ACCESSIBILITY</string>
+    <string name="onboarding_usage_name">USAGE ACCESS</string>
+    <string name="onboarding_home_name">HOME APP</string>
+    <string name="onboarding_targets_name">TARGETS</string>
+    <string name="onboarding_limits_name">KNOWN LIMITS</string>
+    <string name="onboarding_a11y_body">Jitter needs its accessibility service to see which app is in front and when you scroll. Nothing is gated without it.</string>
+    <string name="onboarding_a11y_sideload">On Android 13 and later, an app installed outside a store may show \"Restricted setting\" when you first try to enable it.</string>
+    <string name="onboarding_a11y_waiting">Enabled. Waiting for the service to start.</string>
+    <string name="onboarding_unlock_title">IF IT SAID RESTRICTED SETTING</string>
+    <string name="onboarding_unlock_1">1. Open App info below.</string>
+    <string name="onboarding_unlock_2">2. Tap the three-dot menu, top right.</string>
+    <string name="onboarding_unlock_3">3. Choose Allow restricted settings.</string>
+    <string name="onboarding_unlock_4">4. Come back here and enable accessibility again.</string>
+    <string name="onboarding_unlock_note">Android does not tell apps whether this is the block, so these steps show whenever the service is still off.</string>
+    <string name="onboarding_open_settings" translatable="false">[ OPEN SETTINGS ]</string>
+    <string name="onboarding_open_app_info" translatable="false">[ OPEN APP INFO ]</string>
+    <string name="onboarding_usage_body">Usage access lets Jitter rebuild your time if it is killed mid-session.</string>
+    <string name="onboarding_home_body">Set Jitter as your home app. Its console replaces your home screen.</string>
+    <string name="onboarding_home_fallback">No chooser appeared? Pick Jitter in the home app settings.</string>
+    <string name="onboarding_home_open" translatable="false">[ SET HOME APP ]</string>
+    <string name="onboarding_home_settings" translatable="false">[ OPEN HOME SETTINGS ]</string>
+    <string name="onboarding_targets_body">These apps are tracked. The defaults are fine, and CFG can change them any time.</string>
+    <string name="onboarding_targets_none">Nothing is tracked, so nothing will be gated.</string>
+    <string name="onboarding_targets_edit" translatable="false">[ EDIT IN CFG ]</string>
+    <string name="onboarding_next" translatable="false">[ NEXT ]</string>
+    <string name="onboarding_limit_paytm">Paytm blocks payments while Jitter is enabled. Use Disable for payments in CFG, Safety.</string>
+    <string name="onboarding_limit_youtube">YouTube sends no scroll events. It is gated by the lease timer only.</string>
+    <string name="onboarding_limit_locks">A lock has no unlock. It runs until it ends.</string>
+    <string name="onboarding_done" translatable="false">[ DONE ]</string>
+    <string name="onboarding_later" translatable="false">[ LATER ]</string>
+    <string name="settings_onboarding_title">First-run guide</string>
+    <string name="settings_onboarding_body">Walk through setup and the known limits again.</string>
+    <!-- App drawer -->
+    <string name="drawer_title">ALL APPS</string>
+    <string name="drawer_search_placeholder">filter...</string>
+    <string name="drawer_empty">No apps match.</string>
+    <!-- Appearance -->
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_font_scale_title">Text size</string>
+    <string name="settings_font_scale_body">Multiplies the system text size rather than replacing it. If you have already enlarged text system wide, that still applies.</string>
+    <string name="settings_font_very_small">Very small</string>
+    <string name="settings_font_small">Small</string>
+    <string name="settings_font_medium">Default</string>
+    <string name="settings_font_large">Large</string>
+    <string name="settings_font_very_large">Very large</string>
+    <!-- Notification Shade & Inbox -->
+</resources>

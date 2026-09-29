@@ -1,0 +1,126 @@
+package dev.molasses.core.lock
+
+import dev.molasses.core.command.CommandRegistry
+import dev.molasses.core.command.dummyCommandKeys
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class LockRequestTest {
+
+    private val day = 24L * 60 * 60 * 1000
+    private val threshold = CommandRegistry.CONFIRM_ABOVE_MS
+
+    private fun evaluate(
+        durationMs: Long,
+        standingMs: Long = 0L,
+        confirmed: Boolean = false,
+    ) = LockRequest.evaluate(durationMs, standingMs, threshold, confirmed)
+
+    @Test
+    fun `a short lock arms outright`() {
+        assertEquals(LockRequest.Verdict.Arm(60_000), evaluate(60_000))
+    }
+
+    @Test
+    fun `exactly a day arms, a millisecond over confirms`() {
+        assertTrue(evaluate(day) is LockRequest.Verdict.Arm)
+        assertTrue(evaluate(day + 1) is LockRequest.Verdict.Confirm)
+    }
+
+    @Test
+    fun `the second pass arms what the first echoed`() {
+        assertEquals(
+            LockRequest.Verdict.Arm(30 * day),
+            evaluate(30 * day, confirmed = true),
+        )
+    }
+
+    @Test
+    fun `too short is reported before confirmation is asked for`() {
+        // Asking someone to confirm thirty days and then telling them it
+        // changed nothing is two steps to an outcome knowable at the first.
+        val v = evaluate(30 * day, standingMs = 30 * day)
+        assertEquals(LockRequest.Verdict.TooShort(30 * day), v)
+    }
+
+    @Test
+    fun `an equal lock is too short, not an extension`() {
+        assertTrue(evaluate(day, standingMs = day) is LockRequest.Verdict.TooShort)
+    }
+
+    @Test
+    fun `a longer lock over a shorter one extends`() {
+        assertTrue(evaluate(7 * day, standingMs = day) is LockRequest.Verdict.Confirm)
+        assertTrue(evaluate(7 * day, standingMs = day, confirmed = true) is LockRequest.Verdict.Arm)
+    }
+
+    @Test
+    fun `a zero or negative duration is never an unlock`() {
+        assertEquals(LockRequest.Verdict.Invalid, evaluate(0))
+        assertEquals(LockRequest.Verdict.Invalid, evaluate(-1))
+        assertEquals(LockRequest.Verdict.Invalid, evaluate(-30 * day, standingMs = 30 * day))
+    }
+
+    @Test
+    fun `a null threshold disables the step rather than always asking`() {
+        assertTrue(
+            LockRequest.evaluate(30 * day, 0L, confirmAboveMs = null) is LockRequest.Verdict.Arm,
+        )
+    }
+
+    // ------------------------------------------------- the two paths agree
+
+    @Test
+    fun `the scrubber uses the same threshold as the typed path`() {
+        // The guard this whole file exists for. If a second way to arm a lock
+        // reads a different number, the confirmation step is decorative.
+        val registry = CommandRegistry(
+            dummyCommandKeys(),
+        )
+        assertEquals(
+            "the block row is the one source of the threshold",
+            CommandRegistry.CONFIRM_ABOVE_MS,
+            registry.specForVerb("block")?.requiresConfirmAboveMs,
+        )
+    }
+
+    @Test
+    fun `every ladder step splits the same way on both paths`() {
+        // The scrubber can only offer LockLadder steps, so this enumerates
+        // every duration it can actually produce.
+        for (step in LockLadder.STEPS_MS) {
+            val verdict = evaluate(step)
+            val expectConfirm = step > CommandRegistry.CONFIRM_ABOVE_MS
+            if (expectConfirm) {
+                assertTrue("$step should confirm", verdict is LockRequest.Verdict.Confirm)
+            } else {
+                assertTrue("$step should arm", verdict is LockRequest.Verdict.Arm)
+            }
+        }
+    }
+
+    @Test
+    fun `the ladder has steps on both sides of the threshold`() {
+        // A vacuous pass above would be worse than a failure: it would mean
+        // the confirmation step is never reachable from the scrubber.
+        assertTrue(LockLadder.STEPS_MS.any { it <= CommandRegistry.CONFIRM_ABOVE_MS })
+        assertTrue(LockLadder.STEPS_MS.any { it > CommandRegistry.CONFIRM_ABOVE_MS })
+    }
+
+    @Test
+    fun `confirmation is strictly above a day, so 1d arms and 3d confirms`() {
+        // CONFIRM_ABOVE_MS is a day and the comparison is strictly greater,
+        // which puts the 1d rung on the one-step side. Pinned by rung value
+        // so moving either the threshold or the comparison fails here.
+        assertEquals(24L * 60 * 60 * 1000, CommandRegistry.CONFIRM_ABOVE_MS)
+        val day = 24L * 60 * 60 * 1000
+        assertTrue(LockLadder.STEPS_MS.contains(day))
+        assertTrue("1d must arm in one step", evaluate(day) is LockRequest.Verdict.Arm)
+        assertTrue("3d must ask for confirmation", evaluate(3 * day) is LockRequest.Verdict.Confirm)
+        val below = LockLadder.STEPS_MS.filter { it <= day }
+        val above = LockLadder.STEPS_MS.filter { it > day }
+        assertEquals(listOf(1L, 4L, 12L, 24L).map { it * 60 * 60 * 1000 }, below)
+        assertEquals(listOf(3L, 7L, 14L, 30L).map { it * day }, above)
+    }
+}

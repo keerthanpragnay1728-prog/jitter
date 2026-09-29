@@ -1,0 +1,21 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+# Signing keys. Never tracked, the debug keystore included: ReleaseSigningTest
+# fails on any tracked key file.
+*.keystore
+*.jks
+*.p12
+
+# pure-verify harness build output
+tools/pure-verify/.gradle/
+tools/pure-verify/build/
+tools/pure-verify/.kotlin/

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The window background, which is what shows through before and around
+  anything Compose paints.
+
+  This was android:Theme.Material.Light.NoActionBar, which is why the settings
+  screen was white: MolassesTheme sets Compose colours but not the window, and
+  the launcher only looked correct because it wraps itself in a Surface that
+  covers the window entirely. SettingsActivity does not, so the platform theme
+  showed through.
+
+  Black rather than a token from Color.kt because this is resolved by the
+  platform before any Compose code runs. The two must be kept in step by hand;
+  JitterBackground is 0xFF000000 for exactly this reason.
+
+  ## statusBarColor and navigationBarColor do nothing on Android 15
+
+  They are kept, and they are not what is making the bars black on a modern
+  device. Window.setStatusBarColor and setNavigationBarColor are both
+  deprecated, and both carry the same sentence: if the app targets
+  VANILLA_ICE_CREAM (API 35) or above, the colour will be transparent and
+  cannot be changed. targetSdk is 35, so on Android 15 and later these two
+  lines are read and discarded.
+
+  They are still honoured on API 30 to 34, which minSdk 30 includes, so
+  deleting them would change the bars on every device below 15 to whatever
+  Theme.Material.NoActionBar defaults to. That is why they stay.
+
+  On 15 and later the bars are black for a different reason: the bar
+  backgrounds are transparent, both activities fill the window with a Surface
+  coloured JitterBackground, and JitterBackground is 0xFF000000. That is the
+  hand-kept pairing the note above describes, and on 15 it is the only thing
+  doing the work. A reader who changes JitterBackground and expects these two
+  lines to hold the bars will be wrong on every device that matters.
+
+  ## windowLightStatusBar is declared rather than defaulted
+
+  Unset, it defaults to false, which means light icons, which is correct on
+  black. That is correct by luck rather than by statement, and it stops being
+  correct on the first screen with a light background. Declared, the pairing
+  with the black window background is visible in one place, and a future light
+  theme has to change it deliberately.
+
+  windowLightNavigationBar is set for the same reason. Leaving it implicit
+  while fixing its neighbour would reproduce the exact fault being fixed.
+-->
+<resources>
+    <style name="Theme.Molasses" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
