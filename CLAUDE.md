@@ -710,6 +710,14 @@ and pushes nothing. The clean-tree rule is there because the checks read the
 working tree and the push sends commits, and the two are the same only when
 nothing is uncommitted. `PushGateTest` pins all three conditions.
 
+**Never create or push a tag.** Tagging is the owner's manual step in
+RELEASE.md, taken only after `./gradlew testDebugUnitTest` and the signed
+release build have both passed on the owner's machine. A green check-all is
+not that: it compiles neither the Android layer nor the app module's tests
+under the Compose compiler. `push-if-green.sh` pushes the current branch and
+nothing else, and the `git push origin vX.Y.Z` in RELEASE.md is the owner's
+command, not an exception to the rule above.
+
 ## History
 
 Do not rewrite history that has already been pushed. No amend, squash, or
