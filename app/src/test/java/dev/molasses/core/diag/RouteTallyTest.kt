@@ -122,7 +122,7 @@ class RouteTallyTest {
 class RouteTallyReasonTest {
 
     private val ig = "com.instagram.android"
-    private val own = "dev.molasses"
+    private val own = "org.jitteros.app"
 
     private fun event(pkg: String, kind: WindowEvent.Kind) =
         WindowEvent(pkg, null, 1, kind)

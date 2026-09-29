@@ -8,13 +8,13 @@ import org.junit.Test
 /**
  * The collision created by adding our own package to `packageNames`.
  *
- * Every overlay this app shows belongs to `dev.molasses`. If those events are
+ * Every overlay this app shows belongs to our own package (`org.jitteros.app`). If those events are
  * not filtered, showing the movement gate is indistinguishable from the user
  * going home, and the service closes the session it is gating.
  */
 class ForegroundEventRouterTest {
 
-    private val own = "dev.molasses"
+    private val own = "org.jitteros.app"
     private val ig = "com.instagram.android"
     private val yt = "com.google.android.youtube"
     private val targets = setOf(ig, yt)
@@ -235,7 +235,7 @@ class ForegroundEventRouterTest {
  */
 class WindowsChangedProbeTest {
 
-    private val own = "dev.molasses"
+    private val own = "org.jitteros.app"
     private val ig = "com.instagram.android"
     private val yt = "com.google.android.youtube"
     private val targets = setOf(ig, yt)

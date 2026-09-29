@@ -1547,7 +1547,7 @@ class MolassesAccessibilityService : AccessibilityService() {
     // ------------------------------------------------------------- teardown
 
     /**
-     * `adb shell dumpsys activity service dev.molasses/.monitor.MolassesAccessibilityService`
+     * `adb shell dumpsys activity service org.jitteros.app/dev.molasses.monitor.MolassesAccessibilityService`
      *
      * Per-package, per-segment percentile tables. Percentiles rather than a
      * mean: latency distributions are right-skewed and a mean hides exactly

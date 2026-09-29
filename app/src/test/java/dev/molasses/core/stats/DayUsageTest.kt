@@ -109,15 +109,15 @@ class DayUsageTest {
     fun `an excluded package contributes nothing`() {
         val r = DayUsage.replay(
             listOf(
-                on("dev.molasses", midnight + hour),
-                off("dev.molasses", midnight + 3 * hour),
+                on("org.jitteros.app", midnight + hour),
+                off("org.jitteros.app", midnight + 3 * hour),
                 on("a", midnight + 3 * hour),
                 off("a", midnight + 3 * hour + minute),
             ),
-            midnight, now, exclude = setOf("dev.molasses"),
+            midnight, now, exclude = setOf("org.jitteros.app"),
         )
         assertEquals(minute, r.totalMs)
-        assertTrue(r.apps.none { it.pkg == "dev.molasses" })
+        assertTrue(r.apps.none { it.pkg == "org.jitteros.app" })
     }
 
     @Test

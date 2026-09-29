@@ -9,7 +9,7 @@ package dev.molasses.core.stats
  * Digital Wellbeing's for the same day. Three reasons, and only the first is
  * obvious:
  *
- *  1. It counts every package, including `dev.molasses`. Jitter is the home
+ *  1. It counts every package, including our own. Jitter is the home
  *     screen, so its own foreground time is most of the gap between one app
  *     and the next. Counting it inflates the day by however long the user
  *     spent looking at the launcher.

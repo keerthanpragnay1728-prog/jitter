@@ -148,7 +148,7 @@ octal escapes. An earlier version wrote U+FFFD literally and flagged itself.
 `AndroidManifest.xml` as text and asserts the load-bearing attributes, because
 two of them were silently reverted once inside a commit about something else.
 Neither revert broke a visible feature, which is why neither was noticed:
-dropping `dev.molasses` from `packageNames` stops the session ever closing, and
+dropping our own package from `packageNames` stops the session ever closing, and
 the ladder just goes quietly wrong.
 
 ## A guard with no caller is worse than no guard
@@ -500,8 +500,10 @@ enabled service and refuse to run, or warn loudly, based on what they find.
 Three attributes in `accessibility_service_config.xml` are therefore load
 bearing and are not to be changed casually:
 
-- `android:packageNames` stays scoped to the monitored targets plus
-  `dev.molasses`.
+- `android:packageNames` stays scoped to the monitored targets plus the
+  applicationId, `org.jitteros.app`. The code namespace is `dev.molasses` and
+  is not a package on the device; `AccessibilityConfigTest` reads the
+  applicationId from `app/build.gradle.kts` rather than a literal.
 - `android:canRetrieveWindowContent` stays `false`.
 - `android:accessibilityFlags` does not include `flagRetrieveInteractiveWindows`.
 

@@ -33,7 +33,7 @@ class SensitivePackagesTest {
     fun `target apps are not sensitive`() {
         assertFalse(SensitivePackages.isSensitive("com.instagram.android"))
         assertFalse(SensitivePackages.isSensitive("com.google.android.youtube"))
-        assertFalse(SensitivePackages.isSensitive("dev.molasses"))
+        assertFalse(SensitivePackages.isSensitive("org.jitteros.app"))
     }
 
     @Test

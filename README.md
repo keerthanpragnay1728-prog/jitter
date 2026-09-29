@@ -5,9 +5,18 @@ A progressive-friction focus tool for Android.
 Instagram, X and YouTube are never blocked. Instead, the longer you use them
 inside a six-hour cycle, the more the phone *feels* like it is failing.
 
-The package id is `dev.molasses` and the class names still say Molasses. That
-was the working name and renaming the package would orphan every existing
-install for no user-visible gain, so it stays.
+The applicationId, the package the device knows the app by, is
+`org.jitteros.app`. The code namespace, and so every class name, is still
+`dev.molasses`, the working name. The two are separate settings in
+`app/build.gradle.kts`: the applicationId is what installs, updates and
+permissions are keyed on, and the namespace is only where the code lives.
+
+The applicationId changed from `dev.molasses` before the first public
+release, which was the last point at which that was cheap. Android treats a
+new applicationId as a different app, so an install of `dev.molasses` is not
+updated by `org.jitteros.app`: it has to be uninstalled, and its data goes
+with it. See RELEASE.md. Renaming the namespace as well would touch every
+file for no user-visible gain, so it stays.
 
 Two systems do this, and they share no state.
 
@@ -69,7 +78,7 @@ check and buys nothing on its own. So the response is in the declared profile
 and in what we draw.
 
 **Declared profile.** `packageNames` is scoped to the monitored targets plus
-`dev.molasses`, `canRetrieveWindowContent` is `false`, and
+`org.jitteros.app`, `canRetrieveWindowContent` is `false`, and
 `flagRetrieveInteractiveWindows` has been removed. That last one is the flag
 that reads as "this service can enumerate and inspect every window on screen",
 and it is the one worth giving up.
@@ -144,7 +153,7 @@ The Phase 0.1 overlay collision guard also used it, to enumerate our own
 windows up front. It now learns those window ids from events instead, which
 means the set is **empty for the first event from any new overlay window**. In
 that window the guard is carried entirely by the package-name check in
-`ForegroundEventRouter`: an event wearing `dev.molasses` that is not the
+`ForegroundEventRouter`: an event wearing `org.jitteros.app` that is not the
 launcher activity is dropped.
 
 **This is weaker than the token set it replaced and needs device
@@ -321,7 +330,7 @@ an `eventTime` earlier than the scroll.
 STALL_LATENCY: [TARGET: com.instagram.android] A=34 B=2 C=18 D=71 | p50(D)=68 p95(D)=112 n=50
 
 adb shell dumpsys activity service \
-    dev.molasses/.monitor.MolassesAccessibilityService
+    org.jitteros.app/dev.molasses.monitor.MolassesAccessibilityService
 ```
 
 **The central feasibility question remains open until someone runs that on

@@ -12,12 +12,12 @@ import org.junit.Test
  *
  * ## Why a test and not a code review
  * Every attribute checked here has already been changed by a commit that
- * meant to do something else. `dev.molasses` was dropped from `packageNames`
+ * meant to do something else. Our own package was dropped from `packageNames`
  * and `flagRetrieveInteractiveWindows` was re-added, both inside a commit
  * whose message described fixing an XML comment. Neither breaks a visible
  * feature, which is exactly why neither was noticed:
  *
- *  * Without `dev.molasses` in `packageNames`, no accessibility event arrives
+ *  * Without our own package in `packageNames`, no accessibility event arrives
  *    when the user leaves a target app. The session never closes, and time
  *    keeps accruing against an app that is no longer on screen. Nothing looks
  *    wrong; the ladder is just silently wrong.
@@ -38,6 +38,12 @@ class AccessibilityConfigTest {
     private val text: String by lazy { configFile().readText() }
     private val bytes: ByteArray by lazy { configFile().readBytes() }
 
+    /** `applicationId` from app/build.gradle.kts, the one place it is written. */
+    private fun applicationId(): String =
+        Regex("""applicationId\s*=\s*"([^"]+)"""").find(repoFile("app/build.gradle.kts").readText())
+            ?.groupValues?.get(1)
+            ?: error("no applicationId in app/build.gradle.kts")
+
     /** Attribute value, or null when the attribute is absent. */
     private fun attr(name: String): String? =
         Regex("""android:$name\s*=\s*"([^"]*)"""").find(text)?.groupValues?.get(1)
@@ -49,12 +55,22 @@ class AccessibilityConfigTest {
             ?.map { it.trim() }
             ?: error("packageNames attribute is missing entirely")
 
+        // The applicationId, read from the build rather than written here,
+        // so a rename that misses this file fails instead of passing on a
+        // stale literal. The code namespace is not a package on the device.
+        val own = applicationId()
         assertTrue(
-            "dev.molasses must stay in packageNames, or no event arrives when " +
-                "the user leaves a target app and the session never closes. " +
+            "$own (the applicationId) must be in packageNames, or no event arrives " +
+                "when the user leaves a target app and the session never closes. " +
                 "Found: $packages",
-            "dev.molasses" in packages,
+            own in packages,
         )
+        assertEquals("our own package is listed once", 1, packages.count { it == own })
+        val namespace = Regex("""namespace\s*=\s*"([^"]+)"""").find(repoFile("app/build.gradle.kts").readText())
+            ?.groupValues?.get(1) ?: error("no namespace in app/build.gradle.kts")
+        if (namespace != own) {
+            assertFalse("the namespace $namespace is not a package on the device", namespace in packages)
+        }
     }
 
     @Test

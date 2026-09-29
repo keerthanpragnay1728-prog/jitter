@@ -13,7 +13,7 @@ class TargetScopeTest {
         "com.twitter.android",
         "com.google.android.youtube",
     )
-    private val own = "dev.molasses"
+    private val own = "org.jitteros.app"
 
     /** An install that has never been configured. */
     private fun fresh(vararg stored: String) = Selection(stored.toList(), chosen = false)
