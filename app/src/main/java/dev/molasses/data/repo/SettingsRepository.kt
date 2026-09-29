@@ -11,6 +11,7 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import dev.molasses.CycleState
 import dev.molasses.core.model.AppSnapshot
+import dev.molasses.core.diag.ServiceComponent
 import dev.molasses.core.bit.BitStatus
 import dev.molasses.core.console.ConsoleLine
 import dev.molasses.core.console.ConsoleSpeech
@@ -331,12 +332,13 @@ class SettingsRepository(
      * the user disables the service while the settings screen is open.
      */
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val expected = "${appContext.packageName}/${MolassesAccessibilityService::class.java.name}"
         val enabled = Settings.Secure.getString(
             appContext.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
         ) ?: return false
-        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+        // Either flattened form, as ComponentName.unflattenFromString reads
+        // them. See ServiceComponent.
+        return ServiceComponent.isEnabled(enabled, appContext.packageName, MolassesAccessibilityService::class.java.name)
     }
 
     private fun hasUsageAccess(): Boolean {
