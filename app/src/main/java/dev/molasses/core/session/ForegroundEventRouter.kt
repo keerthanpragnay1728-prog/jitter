@@ -7,7 +7,7 @@ package dev.molasses.core.session
  * `accessibility_service_config.xml` scopes `packageNames` to the target apps,
  * so no event arrives when the user leaves one and the session is never
  * closed. Adding our own package to that list fixes the gap and creates a
- * collision: every overlay this app shows belongs to `dev.molasses` and emits
+ * collision: every overlay this app shows belongs to our own package and emits
  * `TYPE_WINDOW_STATE_CHANGED`. Unfiltered, showing the movement gate looks
  * exactly like the user going home, and the service closes the session it is
  * in the middle of gating.

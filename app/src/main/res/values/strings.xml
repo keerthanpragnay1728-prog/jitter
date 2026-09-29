@@ -288,7 +288,7 @@
       Shown on screen but never reworded or localised: commands, field labels
       and format templates.
     -->
-    <string name="debug_dumpsys_cmd" translatable="false">adb shell dumpsys activity service dev.molasses/.monitor.MolassesAccessibilityService</string>
+    <string name="debug_dumpsys_cmd" translatable="false">adb shell dumpsys activity service org.jitteros.app/dev.molasses.monitor.MolassesAccessibilityService</string>
     <string name="debug_date_format" translatable="false">MM-dd HH:mm:ss.SSS</string>
 
     <string name="debug_stall_overshoot" translatable="false">overshoot ms min=%1$s p50=%2$s p90=%3$s p99=%4$s max=%5$s</string>

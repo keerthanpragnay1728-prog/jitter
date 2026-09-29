@@ -15,7 +15,7 @@ class YouTubeRouteTest {
     private val ig = "com.instagram.android"
     private val yt = "com.google.android.youtube"
     private val router = ForegroundEventRouter(
-        ownPackage = "dev.molasses",
+        ownPackage = "org.jitteros.app",
         launcherClassName = ForegroundEventRouter.LAUNCHER_CLASS_NAME,
     )
 

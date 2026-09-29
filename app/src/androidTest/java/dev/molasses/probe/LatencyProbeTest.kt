@@ -36,9 +36,9 @@ import org.junit.runner.RunWith
  * `SYSTEM_ALERT_WINDOW` granted:
  *
  * ```
- * adb shell appops set dev.molasses SYSTEM_ALERT_WINDOW allow
+ * adb shell appops set org.jitteros.app SYSTEM_ALERT_WINDOW allow
  * adb shell am instrument -w -e class dev.molasses.probe.LatencyProbeTest \
- *     dev.molasses.test/androidx.test.runner.AndroidJUnitRunner
+ *     org.jitteros.app.test/androidx.test.runner.AndroidJUnitRunner
  * ```
  *
  * The window type differs from production; the arming path measured

@@ -19,7 +19,7 @@ class HomeFirstWatchTest {
     @Test
     fun `another app coming to the front changes nothing`() {
         assertEquals(Action.Nothing, on("com.google.android.apps.maps"))
-        assertEquals(Action.Nothing, on("dev.molasses"))
+        assertEquals(Action.Nothing, on("org.jitteros.app"))
     }
 
     @Test

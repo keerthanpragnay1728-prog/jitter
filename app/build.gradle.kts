@@ -57,7 +57,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.molasses"
+        applicationId = "org.jitteros.app"
         minSdk = 30
         targetSdk = 35
         versionCode = versionCodeOf(appVersion)

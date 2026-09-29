@@ -22,6 +22,21 @@ reproducible and it publishes the developer signature instead. An F-Droid
 install and a GitHub install are otherwise not updatable from each other.
 Decide which before submitting to F-Droid, not after.
 
+## Anyone on dev.molasses
+
+The applicationId changed from `dev.molasses` to `org.jitteros.app`. Android
+treats that as a different app, whatever key signed it. A device with
+`dev.molasses` installed gets a second app, not an update, and nothing moves
+across: cycle, leases, locks, reminders, settings, and every grant
+(accessibility, usage access, home app, restricted settings) start fresh.
+
+Worse, both installs can run at once, with two accessibility services gating
+the same apps and the old one's alarms still firing. So everyone on
+`dev.molasses`, debug or not, uninstalls it before installing
+`org.jitteros.app`, and loses that data. Tell them before, not after. Step 5
+has no previous release to install over for the first `org.jitteros.app`
+build; start its data-survival check from the second.
+
 ## Testers on debug builds
 
 A debug build is signed with the SDK's debug key, not the release key. A tester
