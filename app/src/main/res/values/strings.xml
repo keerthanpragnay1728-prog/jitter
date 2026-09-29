@@ -202,7 +202,6 @@
     <string name="settings_safety_extra_save">Save excluded apps</string>
     <string name="settings_section_try">Try it</string>
 
-    <string name="settings_checklist_done">OK</string>
     <string name="settings_checklist_step">%1$s.</string>
 
     <string name="settings_perm_a11y_title">Accessibility service</string>
@@ -664,8 +663,15 @@
     <string name="onboarding_title">SETUP</string>
     <string name="onboarding_needs">Jitter needs two permissions (accessibility, usage access) and your home app.</string>
     <string name="onboarding_step_fmt">STEP %1$s OF %2$s</string>
-    <string name="onboarding_mark_done_fmt" translatable="false">[x] %1$s</string>
-    <string name="onboarding_mark_open_fmt" translatable="false">[ ] %1$s</string>
+    <!--
+      The completed and open markers for a setup step, in the first-run flow
+      and in CFG's setup checklist. The tick lives here and nowhere else: if
+      it misaligns in the monospace font on a device, change this one value
+      to [+] and every screen follows.
+    -->
+    <string name="setup_mark_done" translatable="false">[✓]</string>
+    <string name="setup_mark_open" translatable="false">[ ]</string>
+    <string name="onboarding_mark_fmt" translatable="false">%1$s %2$s</string>
     <string name="onboarding_a11y_name">ACCESSIBILITY</string>
     <string name="onboarding_usage_name">USAGE ACCESS</string>
     <string name="onboarding_home_name">HOME APP</string>

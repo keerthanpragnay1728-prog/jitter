@@ -1066,7 +1066,7 @@ private fun ChecklistRow(
         ) {
             Text(
                 if (satisfied) {
-                    stringResource(R.string.settings_checklist_done)
+                    stringResource(R.string.setup_mark_done)
                 } else {
                     stringResource(R.string.settings_checklist_step, index)
                 },

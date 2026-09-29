@@ -98,12 +98,12 @@ fun OnboardingScreen(
             for (step in Step.entries) {
                 val name = stringResource(onboardingStepName(step))
                 val mark = if (Onboarding.satisfied(step, facts)) {
-                    R.string.onboarding_mark_done_fmt
+                    R.string.setup_mark_done
                 } else {
-                    R.string.onboarding_mark_open_fmt
+                    R.string.setup_mark_open
                 }
                 Line(
-                    stringResource(mark, name),
+                    stringResource(R.string.onboarding_mark_fmt, stringResource(mark), name),
                     if (step == current) PhosphorGreen else PhosphorDim,
                     bold = step == current,
                 )
