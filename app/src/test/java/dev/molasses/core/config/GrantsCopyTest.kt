@@ -18,7 +18,7 @@ class GrantsCopyTest {
     private val places = listOf(
         "README.md",
         "fastlane/metadata/android/en-US/full_description.txt",
-        "fastlane/metadata/android/en-US/changelogs/200.txt",
+        "fastlane/metadata/android/en-US/changelogs/10000.txt",
         "app/src/main/res/values/strings.xml",
     )
 
