@@ -2322,7 +2322,7 @@ fun TextualWellbeingView(
                 stringResource(
                     R.string.ledger_cycle_fmt,
                     fields.cycle,
-                    fields.tier,
+                    fields.horizon,
                     fields.resets,
                 )
             } else {
@@ -2330,7 +2330,7 @@ fun TextualWellbeingView(
                     R.string.ledger_cycle_penalty_fmt,
                     fields.cycle,
                     penalty,
-                    fields.tier,
+                    fields.horizon,
                     fields.resets,
                 )
             },

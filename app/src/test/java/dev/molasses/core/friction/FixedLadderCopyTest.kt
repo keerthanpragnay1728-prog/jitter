@@ -84,6 +84,22 @@ class FixedLadderCopyTest {
     }
 
     @Test
+    fun `every CycleLine field the ledger reads exists on CycleLine Fields`() {
+        // O2 renamed Fields.tier to horizon and left the launcher reading
+        // fields.tier, which nothing here compiles, so it reached the owner's
+        // compiler first. Reflection over the real type closes that gap for
+        // any later rename too.
+        val launcher = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
+        val read = Regex("""\bfields\.(\w+)""").findAll(launcher).map { it.groupValues[1] }.toSet()
+        val declared = dev.molasses.core.ui.CycleLine.Fields::class.java.declaredFields
+            .filterNot { it.isSynthetic || it.name.startsWith("$") }
+            .map { it.name }.toSet()
+        assertTrue("the launcher reads no CycleLine fields; the ledger line has moved", read.isNotEmpty())
+        assertTrue("the launcher reads fields CycleLine.Fields does not have: ${read - declared}", declared.containsAll(read))
+        assertTrue("the ledger line must show the horizon CycleLine computes", "horizon" in read)
+    }
+
+    @Test
     fun `the walking gate shows the engine's own reading, so its label agrees with isTerminal`() {
         val engine = repoFile("app/src/main/java/dev/molasses/engine/FrictionEngine.kt").readText()
         assertTrue(engine.contains("fun isTerminal(pkg: String, nowMs: Long): Boolean = horizonReading(pkg, nowMs).terminal"))
