@@ -41,7 +41,13 @@ installs over the previous one normally. Tell them before, not after.
 2. **Run the checks.** `tools/check-all.sh`, and read the last line. It must be
    `check-all: PASS`. The exit code is not enough once anything is piped.
 
-3. **Build release with the release key.** The four `JITTER_*` properties set in
+3. **Run the app module's unit tests.** `./gradlew testDebugUnitTest` must pass.
+   check-all does not run it. check-all compiles the tests without the Compose
+   compiler, on its own checkout's line endings, so a test can pass there and
+   fail here (CLAUDE.md, "What check-all does not run"). A failure here blocks
+   the tag.
+
+4. **Build release with the release key.** The four `JITTER_*` properties set in
    `~/.gradle/gradle.properties` or the environment (README, Building), then:
 
    ```
@@ -61,7 +67,7 @@ installs over the previous one normally. Tell them before, not after.
    Release certificate SHA-256: not yet recorded. Record it here from the
    first release build, and never edit it afterwards.
 
-4. **Install over the previous release on a test device, and confirm data
+5. **Install over the previous release on a test device, and confirm data
    survives.** The device has the previous release installed and in use:
    tracked apps edited, a lease taken, a lock armed, a reminder pending.
 
@@ -73,9 +79,9 @@ installs over the previous one normally. Tell them before, not after.
    the cycle readout are all still there, that the accessibility service is
    still enabled and bound (CFG, Setup, service state), and that the first-run
    guide does not appear. An install that fails with a signature mismatch
-   means step 3 used the wrong key.
+   means step 4 used the wrong key.
 
-5. **Check the merged manifest.**
+6. **Check the merged manifest.**
 
    ```
    apkanalyzer manifest print app/build/outputs/apk/release/app-release.apk
@@ -87,13 +93,13 @@ installs over the previous one normally. Tell them before, not after.
    without any change in this repository, and this is the only step that sees
    it.
 
-6. **Commit the Room schema if it changed.** The build writes
+7. **Commit the Room schema if it changed.** The build writes
    `app/schemas/dev.molasses.data.db.MolassesDatabase/<version>.json`. If
    `git status` shows it new or modified, commit it with the release. A schema
    version bump also needs its migration. No schema JSON has been committed
    yet, so the first release commits version 1.
 
-7. **Tag on main.** Merge the release branch into `main` first. Then:
+8. **Tag on main.** Merge the release branch into `main` first. Then:
 
    ```
    git tag vX.Y.Z
@@ -103,7 +109,7 @@ installs over the previous one normally. Tell them before, not after.
    The tag is the commit the APK was built from. If anything was committed
    after the build, rebuild from the tag.
 
-8. **Publish on GitHub Releases.** Rename the APK to `jitter-vX.Y.Z.apk`, then:
+9. **Publish on GitHub Releases.** Rename the APK to `jitter-vX.Y.Z.apk`, then:
 
    ```
    sha256sum jitter-vX.Y.Z.apk > jitter-vX.Y.Z.apk.sha256

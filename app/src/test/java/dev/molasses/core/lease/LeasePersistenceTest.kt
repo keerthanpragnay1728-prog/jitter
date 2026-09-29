@@ -172,9 +172,16 @@ class LeasePersistenceTest {
         return proto.substring(start, end)
     }
 
+    /**
+     * The model's own properties. Compiler-generated fields are not: the
+     * synthetic ones, and anything named with a leading `$`, which is how the
+     * Compose compiler names the `$stable` field it adds to every class in the
+     * app module. pure-verify does not apply that compiler, so this passed
+     * there and failed in `testDebugUnitTest`.
+     */
     private fun propertiesOf(type: Class<*>): List<String> =
         type.declaredFields
-            .filterNot { it.isSynthetic }
+            .filterNot { it.isSynthetic || it.name.startsWith("$") }
             .map { it.name }
             .filterNot { it == "Companion" || it == "UNSET" }
 
