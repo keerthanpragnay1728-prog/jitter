@@ -53,4 +53,16 @@ class ReleaseSigningTest {
         for (p in listOf("*.jks", "*.keystore")) assertTrue(p, p in ignore)
         assertFalse("no exception that lets a key back in", ignore.any { it.startsWith("!") && (it.endsWith(".keystore") || it.endsWith(".jks")) })
     }
+
+    @Test
+    fun `RELEASE md records the one signing certificate fingerprint, unchanged`() {
+        // The key never changes, so neither does this. A different value here
+        // is either a typo or a new key, and a new key strands every install.
+        val release = repoFile("RELEASE.md").readText()
+        val fingerprint = "876cbba2c4cdab9f0020ab8fdb6bc66dc28c991158a776b28911f26ff40152ec"
+        assertTrue(release.contains("Release signing certificate fingerprint (SHA-256)"))
+        assertTrue(release.contains(fingerprint))
+        val recorded = Regex("""\b[0-9a-f]{64}\b""").findAll(release).map { it.value }.toSet()
+        assertEquals("exactly one 64-hex digest is recorded", setOf(fingerprint), recorded)
+    }
 }
