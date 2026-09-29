@@ -125,7 +125,9 @@ LF is pinned by `.gitattributes` (`* text=auto eol=lf`), not by habit. A
 Windows checkout with `core.autocrlf=true` made every source CRLF, and two
 wiring tests that match across a line break failed on correct code with
 messages that read as regressions. `LineEndingsTest` now fails first, naming
-the cause and the fix.
+the cause and the fix. It checks only what git tracks (`git ls-files`) and
+skips only what git calls `-text` (`git check-attr`): an untracked
+`local.properties` or diagnostic dump is not the repository's to govern.
 
 The encoding check covers **every tracked file under `app/src` and `tools`**,
 not just resource XML, because the file that was actually damaged was Kotlin.
