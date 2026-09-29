@@ -76,11 +76,20 @@ installs over the previous one normally. Tell them before, not after.
    apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
    ```
 
-   The SHA-256 certificate digest must match the one recorded below. If it
-   does not, stop.
+   The certificate's SHA-256 digest must match the fingerprint recorded below.
+   If it does not, stop.
 
-   Release certificate SHA-256: not yet recorded. Record it here from the
-   first release build, and never edit it afterwards.
+   **Release signing certificate fingerprint (SHA-256):**
+
+   ```
+   876cbba2c4cdab9f0020ab8fdb6bc66dc28c991158a776b28911f26ff40152ec
+   ```
+
+   This identifies the signing key, and it is the same for every release,
+   because the key never changes. Recorded from the first release build of
+   `org.jitteros.app`; never edit it. It is not the APK checksum: the
+   `.sha256` published with each GitHub release (step 9) is a hash of that
+   one APK file and differs every release.
 
 5. **Install over the previous release on a test device, and confirm data
    survives.** The device has the previous release installed and in use:
@@ -111,8 +120,7 @@ installs over the previous one normally. Tell them before, not after.
 7. **Commit the Room schema if it changed.** The build writes
    `app/schemas/dev.molasses.data.db.MolassesDatabase/<version>.json`. If
    `git status` shows it new or modified, commit it with the release. A schema
-   version bump also needs its migration. No schema JSON has been committed
-   yet, so the first release commits version 1.
+   version bump also needs its migration. Version 1 is committed (f279034).
 
 8. **Tag on main.** Merge the release branch into `main` first. Then:
 
