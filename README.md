@@ -1298,6 +1298,30 @@ did would be malware.
 
 ---
 
+## License
+
+Jitter is free software, licensed under the GNU General Public License,
+version 3 or (at your option) any later version: **GPL-3.0-or-later**. The
+full text is in [LICENSE](LICENSE).
+
+Copyright Keerthan Pragnay.
+
+The libraries that ship inside the APK, and their licences:
+
+- AndroidX (Core, Activity, Compose, Lifecycle, Room, DataStore, Hilt
+  Navigation), the Kotlin standard library, kotlinx.coroutines, and
+  Dagger/Hilt: Apache-2.0.
+- protobuf-javalite: BSD-3-Clause.
+- desugar_jdk_libs, which backports Java library APIs to older Android:
+  GPL-2.0 with the Classpath Exception.
+
+All three are compatible with distributing the whole under GPL-3.0-or-later:
+Apache-2.0 and BSD-3-Clause code may be combined into a GPLv3 work, and the
+Classpath Exception allows linking regardless of the licence of the rest.
+Test-only dependencies (JUnit, AndroidX Test) are not in the APK.
+
+---
+
 ## DESIGN HISTORY
 
 **Nothing under this heading describes the app as it is.** It records

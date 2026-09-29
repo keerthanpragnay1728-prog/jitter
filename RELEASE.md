@@ -22,6 +22,11 @@ reproducible and it publishes the developer signature instead. An F-Droid
 install and a GitHub install are otherwise not updatable from each other.
 Decide which before submitting to F-Droid, not after.
 
+F-Droid reads the licence from its own recipe for the app, not from the
+fastlane metadata in this repository: set `License: GPL-3.0-or-later` there,
+matching README and `LICENSE`. F-Droid also checks that the repository
+carries a `LICENSE` file, which it does.
+
 ## Anyone on dev.molasses
 
 The applicationId changed from `dev.molasses` to `org.jitteros.app`. Android
