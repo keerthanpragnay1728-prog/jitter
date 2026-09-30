@@ -1,7 +1,10 @@
 # Store images
 
-None of these are generated. Each is a real capture from a release build, taken
-by hand. File names and sizes follow the fastlane layout that F-Droid reads.
+The screenshots are not generated. Each is a real capture from a release build,
+taken by hand. The icon is the one exception: `tools/gen-icon.py` writes it
+from the same shapes as the launcher icon's vector layers, so rerun the script
+rather than editing the PNG. File names and sizes follow the fastlane layout
+that F-Droid reads.
 
 Before capturing: a test profile with no personal notifications, messages or
 account names on screen, and the default font size.
@@ -10,7 +13,8 @@ account names on screen, and the default font size.
 
 The repository README shows 1, 2 and 4, in that order.
 
-- `icon.png`: 512 x 512, the launcher icon on a transparent background.
+- `icon.png`: 512 x 512, the launcher icon masked to a circle on a transparent
+  background. Generated; see above.
 - `phoneScreenshots/1.png`: the console, fresh, with the quick-launch rows and
   Bit visible.
 - `phoneScreenshots/2.png`: the ledger page, with today's screen time and the

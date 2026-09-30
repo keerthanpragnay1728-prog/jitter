@@ -8,5 +8,9 @@
          the crossing rather than a state. Must equal TerminalAlert in
          ui/theme/Color.kt; ShutterTellTest asserts that. -->
     <color name="molasses_tell_terminal">#FFFF5555</color>
-    <color name="ic_launcher_background">#FF3A2E22</color>
+    <!-- The launcher icon. Must equal JitterBackground and PhosphorGreen in
+         ui/theme/Color.kt; LauncherIconTest asserts both. The icon's shapes
+         come from tools/gen-icon.py, which uses the same two values. -->
+    <color name="ic_launcher_background">#FF000000</color>
+    <color name="phosphor_green">#FF50FA7B</color>
 </resources>
