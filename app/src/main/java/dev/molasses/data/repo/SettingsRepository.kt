@@ -20,6 +20,7 @@ import dev.molasses.core.remind.Reminder
 import dev.molasses.core.remind.ReminderBook
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.session.TargetScope
+import dev.molasses.core.settings.UntrackSunset
 import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.lease.GatePolicy
@@ -224,9 +225,27 @@ class SettingsRepository(
     /**
      * Remove [pkg] from the tracked set, at the end of the untrack
      * cooling-off. The same single writer and the same lock guard as
-     * [toggleTarget], restricted to removing.
+     * [toggleTarget], restricted to removing. A social app gets a seven-day
+     * re-arm in the same write: see [sunsetInScope].
      */
-    suspend fun untrackTarget(pkg: String) = store.toggleTarget(pkg, nowStamped(), onlyIfTracked = true)
+    suspend fun untrackTarget(pkg: String) =
+        store.toggleTarget(pkg, nowStamped(), onlyIfTracked = true, grantsSunset = sunsetInScope(pkg))
+
+    /**
+     * Whether untracking [pkg] is temporary. The one reading of the category,
+     * used both by the cooling-off panel that states it and by the write that
+     * acts on it, so the two cannot disagree. A package this app cannot see
+     * reads as no category and falls to the named list.
+     */
+    fun sunsetInScope(pkg: String): Boolean {
+        val social = runCatching {
+            appContext.packageManager.getApplicationInfo(pkg, 0).category == ApplicationInfo.CATEGORY_SOCIAL
+        }.getOrDefault(false)
+        return UntrackSunset.inScope(pkg, categorySocial = social)
+    }
+
+    /** Pending re-arms. See [UntrackSunset]. */
+    val untrackSunsets: Flow<List<UntrackSunset.Sunset>> = store.untrackSunsets
     suspend fun setGateMode(mode: GatePolicy.GateMode) = store.setGateMode(mode)
 
     /** The user's declared horizon per package. See [CycleStateStore.appHorizons]. */

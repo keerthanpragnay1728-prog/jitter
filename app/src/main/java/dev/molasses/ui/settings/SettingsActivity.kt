@@ -11,8 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
@@ -72,6 +73,32 @@ class SettingsActivity : ComponentActivity() {
     private var targetsDetour by mutableStateOf(false)
     private var detourFinishes = false
 
+    /**
+     * [DBG] is showing in place of CFG.
+     *
+     * A field, and not `rememberSaveable`, so nothing restores it: not a
+     * saved instance state and not a process death. It was saveable once,
+     * and together with a missing back handler that put DBG in front of every
+     * later visit. Back left the screen instead of leaving DBG, and since
+     * Android 12 Back on a launcher task's root moves the task back rather
+     * than finishing it, so the same instance, still in DBG, is what the next
+     * visit found.
+     *
+     * Not cleared in onStop, because DBG's ledger export opens the system
+     * file picker, which stops this activity, and the export's result
+     * callback lives in DBG's composition: clearing it there would drop the
+     * file. A new visit arrives through onNewIntent, which clears it.
+     */
+    private var showDebug by mutableStateOf(false)
+
+    /**
+     * Bumped on every new visit, and CFG is keyed on it, so each visit starts
+     * at the root: sections as `CfgAccordion.initial` has them, nothing
+     * expanded, no search text. The same Android 12 behaviour that kept DBG
+     * kept these too, which the accordion's own doc says must not happen.
+     */
+    private var cfgVisit by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -90,7 +117,6 @@ class SettingsActivity : ComponentActivity() {
                 .collectAsState(initial = FontScale.DEFAULT)
 
             MolassesTheme(fontScale = fontScale.multiplier) {
-                var showDebug by rememberSaveable { mutableStateOf(false) }
                 // The Surface the launcher has and this screen did not. Without
                 // it the platform window background shows through everywhere
                 // Compose does not paint.
@@ -115,17 +141,23 @@ class SettingsActivity : ComponentActivity() {
                         if (detourFinishes) finish() else targetsDetour = false
                     }
                     if (showDebug) {
+                        // Back returns to CFG's root, the same as DBG's own
+                        // back button. Composed after the detour's handler,
+                        // so it wins while DBG is up.
+                        BackHandler { showDebug = false }
                         DebugScreen(onBack = { showDebug = false })
                     } else {
-                        SettingsScreen(
-                            onOpenAccessibility = { open(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
-                            onOpenUsageAccess = { open(Settings.ACTION_USAGE_ACCESS_SETTINGS) },
-                            onRequestActivityRecognition = { requestActivityRecognition() },
-                            onOpenDebug = { showDebug = true },
-                            onOpenOnboarding = { SetupSession.update(Onboarding::request) },
-                            openSection = openSection,
-                            onSectionOpened = { openSection = null },
-                        )
+                        key(cfgVisit) {
+                            SettingsScreen(
+                                onOpenAccessibility = { open(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
+                                onOpenUsageAccess = { open(Settings.ACTION_USAGE_ACCESS_SETTINGS) },
+                                onRequestActivityRecognition = { requestActivityRecognition() },
+                                onOpenDebug = { showDebug = true },
+                                onOpenOnboarding = { SetupSession.update(Onboarding::request) },
+                                openSection = openSection,
+                                onSectionOpened = { openSection = null },
+                            )
+                        }
                     }
                 }
                 }
@@ -136,6 +168,9 @@ class SettingsActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // A new visit starts at CFG's root. See [showDebug] and [cfgVisit].
+        showDebug = false
+        cfgVisit++
         sectionFrom(intent)?.let { openSection = it }
         detourFrom(intent)
     }

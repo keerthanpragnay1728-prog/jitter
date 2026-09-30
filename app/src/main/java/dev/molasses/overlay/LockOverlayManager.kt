@@ -7,7 +7,7 @@ import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.lock.LockReason
 import dev.molasses.core.model.EventType
-import dev.molasses.core.safety.HomeFirst
+import dev.molasses.core.safety.OverlayKind
 import dev.molasses.engine.FrictionLedger
 import dev.molasses.ui.lock.LockScreen
 import dev.molasses.ui.lock.lockOpensAtText
@@ -74,11 +74,6 @@ class LockOverlayManager(
 
     val isShowing: Boolean get() = host?.isShowing == true
 
-    /** Raised mid-session: it sent the app home, so leaving the app must not take it down. See [HomeFirst]. */
-    val homeFirst: Boolean get() = isShowing && homeFirstNow
-
-    private var homeFirstNow = false
-
     /** The package this window is up for, or null when it is not showing. */
     val showingFor: String? get() = if (isShowing) currentPkg else null
 
@@ -99,9 +94,9 @@ class LockOverlayManager(
      * event, must not stack two windows.
      *
      * @param atEntry raised as the locked app opens, rather than over a
-     *   session already running. Mid-session it sends the app home after the
+     *   session already running. Either way it sends the app home after the
      *   first draw and stays over the launcher until [ ARCHITECT'S SPACE ];
-     *   see `HomeFirst`. At entry it is unchanged.
+     *   see `OverlayKind`. The flag names the kind for the log line.
      */
     fun flash(
         pkg: String,
@@ -114,8 +109,7 @@ class LockOverlayManager(
         if (isShowing) return
 
         currentPkg = pkg
-        val kind = HomeFirst.lock(atEntry)
-        homeFirstNow = HomeFirst.sendsHome(kind)
+        val kind = OverlayKind.lock(atEntry)
         val h = OverlayHost(service, windowManager)
         host = h
 
@@ -124,26 +118,22 @@ class LockOverlayManager(
         val remainingText = CommandRender.duration(remainingMs)
         val opensAtText = lockOpensAtText(service, opensAtWallMs)
 
-        // Mid-session, home goes after the first draw, never from this call:
-        // sending home from the call that added the window meant the frame
-        // never composited, so the user was thrown to the launcher with no
-        // explanation and it read as a crash. At entry there is no home here
-        // at all; the user presses the way out, by which time the frame has
-        // demonstrably been composited.
+        // Home goes after the first draw, never from this call: sending home
+        // from the call that added the window meant the frame never
+        // composited, so the user was thrown to the launcher with no
+        // explanation and it read as a crash. At entry as well as
+        // mid-session, since an app opening behind a lock is resumed and can
+        // start its own playback.
         //
         // The settle hold on the way out is a different thing and survives:
         // it is about not revealing the locked app for a frame during the
         // transition, and that is still true however home was triggered.
         h.show(
-            onFirstDraw = if (homeFirstNow) {
-                {
-                    if (currentPkg == pkg) {
-                        goHome()
-                        Log.i(TAG, "overlay=$kind home sent for $pkg")
-                    }
+            onFirstDraw = {
+                if (currentPkg == pkg) {
+                    goHome()
+                    Log.i(TAG, "overlay=$kind home sent for $pkg")
                 }
-            } else {
-                null
             },
         ) {
             MolassesTheme(fontScale = fontScale()) {
@@ -230,7 +220,6 @@ class LockOverlayManager(
         callJob?.cancel()
         callJob = null
         val h = host ?: return
-        homeFirstNow = false
         host = null
         currentPkg = null
         Log.i(TAG, "lock flash down ($reason)")

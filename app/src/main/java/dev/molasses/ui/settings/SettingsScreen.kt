@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -58,6 +59,7 @@ import dev.molasses.core.settings.CfgAccordion.Section
 import dev.molasses.core.settings.CfgRowKey
 import dev.molasses.core.settings.TargetGrouping
 import dev.molasses.core.settings.UntrackCoolingOff
+import dev.molasses.core.settings.UntrackSunset
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.lock.LockLadder
@@ -70,6 +72,7 @@ import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.ui.AlphaIndex
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.repo.InstalledApp
+import dev.molasses.ui.lock.lockOpensAtText
 import kotlinx.coroutines.launch
 
 /**
@@ -145,6 +148,8 @@ fun SettingsScreen(
     // The scrubber. One app open at a time: eight steps and a confirm button
     // per row, across eighty apps, is a wall.
     val locks by vm.locks.collectAsStateWithLifecycle()
+    // Pending re-arms, so an untracked social app's row says when it comes back.
+    val sunsets by vm.untrackSunsets.collectAsStateWithLifecycle()
     var scrubbing by rememberSaveable { mutableStateOf<String?>(null) }
     // Saved as the duration the bar points at, not its position on the
     // ladder. Saved state can outlive the process, and a position restored
@@ -422,6 +427,11 @@ fun SettingsScreen(
                     label = app.label,
                     pkg = app.pkg,
                     tracked = app.pkg in targets,
+                    resumesAtWallMs = if (app.pkg in targets) {
+                        null
+                    } else {
+                        sunsets.firstOrNull { it.pkg == app.pkg }?.let(vm::resumesAtWallMs)
+                    },
                     // A locked app cannot be untracked, because unticking it
                     // would take it out of packageNames and stop the lock
                     // being enforced at all. See TargetLock.
@@ -757,11 +767,15 @@ fun SettingsScreen(
                         "isLast=$lastTarget",
                 )
             }
+            // Read once per panel, through the same function the write uses,
+            // so what the panel promises is what the store does.
+            val sunsetScope = remember(state.pkg) { vm.sunsetInScope(state.pkg) }
             UntrackCoolingOffPanel(
                 state = state,
                 // From the live sets, so it stays true to the store if they
                 // change while the countdown runs. See TargetScope.gateable.
                 lastTarget = lastTarget,
+                sunsetDays = if (sunsetScope) UntrackSunset.GRACE_DAYS else null,
                 onConfirmRemove = {
                     coolingOff = null
                     vm.untrackTarget(state.pkg)
@@ -1695,6 +1709,8 @@ private fun TargetRow(
     label: String,
     pkg: String,
     tracked: Boolean,
+    /** An untracked social app's re-arm, on the wall clock, or null. See `UntrackSunset`. */
+    resumesAtWallMs: Long?,
     /** Tracked with a lock standing, so the toggle is held. See [TargetLock]. */
     pinned: Boolean,
     remainingMs: Long,
@@ -1780,6 +1796,21 @@ private fun TargetRow(
                         if (pinned) Modifier else Modifier.clickable(onClick = onToggleTarget),
                     )
                     .padding(vertical = 6.dp, horizontal = 4.dp),
+            )
+        }
+
+        // On the row itself rather than in the expanded part, because it is
+        // the one thing about an untracked app that will change without the
+        // user touching anything.
+        if (!tracked && resumesAtWallMs != null) {
+            Text(
+                stringResource(
+                    R.string.settings_target_sunset_fmt,
+                    lockOpensAtText(LocalContext.current, resumesAtWallMs),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(bottom = 4.dp),
             )
         }
 

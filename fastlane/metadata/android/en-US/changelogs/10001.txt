@@ -1,0 +1,9 @@
+Fixes from device testing.
+
+- The entry gate sends the app to the background, so its audio stops.
+- [ ARCHITECT'S SPACE ] is on every gate from the first frame. Back does the same.
+- Untracking a social app lasts 7 days, sooner after a restart. CFG shows the date.
+- The Ledger refreshes when shown and counts the apps it hides.
+- Back in DBG returns to CFG, and CFG always opens at the top.
+
+YouTube picture-in-picture can keep playing after a gate. Turn it off in Android settings.
