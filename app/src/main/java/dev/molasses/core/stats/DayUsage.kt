@@ -69,6 +69,12 @@ object DayUsage {
         val opens: Int = 0,
     )
 
+    /**
+     * @param underFloor apps with some time today, all of it under the floor.
+     * @param pastCap apps over the floor that did not fit in the rows.
+     */
+    data class Distribution(val rows: List<Entry>, val underFloor: Int, val pastCap: Int)
+
     data class Result(
         /** Every package with a non-zero interval, longest first. */
         val apps: List<Entry>,
@@ -85,9 +91,21 @@ object DayUsage {
          * It is a bar chart with a fixed number of rows, so it takes the
          * leaders and applies a floor: a row reading `0m` carries no
          * information and pushes a real one off the screen.
+         *
+         * What the floor and the cap leave out is counted rather than
+         * dropped. A list that silently omits an app the user just used
+         * reads as the app not having been counted at all, which is the
+         * report that brought this in: Chess, opened briefly, was missing
+         * with nothing on the page to say why.
          */
-        fun top(count: Int, minMs: Long): List<Entry> =
-            apps.filter { it.foregroundMs >= minMs }.take(count)
+        fun distribution(count: Int, minMs: Long): Distribution {
+            val above = apps.filter { it.foregroundMs >= minMs }
+            return Distribution(
+                rows = above.take(count),
+                underFloor = apps.size - above.size,
+                pastCap = (above.size - count).coerceAtLeast(0),
+            )
+        }
 
         /** One package's row, or null when it had no foreground time. */
         fun entry(pkg: String): Entry? = apps.firstOrNull { it.pkg == pkg }

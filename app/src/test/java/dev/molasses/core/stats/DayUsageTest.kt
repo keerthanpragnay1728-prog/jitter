@@ -131,8 +131,11 @@ class DayUsageTest {
         val r = DayUsage.replay(events, midnight, now)
         assertEquals(15, r.apps.size)
         assertEquals(30 * minute, r.totalMs)
-        assertEquals(5, r.top(5, minMs = minute).size)
-        assertEquals(10 * minute, r.top(5, minMs = minute).sumOf { it.foregroundMs })
+        val d = r.distribution(5, minMs = minute)
+        assertEquals(5, d.rows.size)
+        assertEquals(10 * minute, d.rows.sumOf { it.foregroundMs })
+        assertEquals("the ten that did not fit are counted", 10, d.pastCap)
+        assertEquals(0, d.underFloor)
     }
 
     @Test
@@ -145,7 +148,47 @@ class DayUsageTest {
             midnight, now,
         )
         assertEquals(30 * minute + 20_000L, r.totalMs)
-        assertEquals(listOf("long"), r.top(5, minMs = minute).map { it.pkg })
+        val d = r.distribution(5, minMs = minute)
+        assertEquals(listOf("long"), d.rows.map { it.pkg })
+        assertEquals("the brief app is hidden, and counted", 1, d.underFloor)
+        assertEquals(0, d.pastCap)
+    }
+
+    @Test
+    fun `a two-minute app is listed, and a sub-minute one is counted, not dropped`() {
+        // The device report: Instagram for about two minutes and a brief
+        // Chess, after Settings. The rule lists the first and counts the
+        // second; neither is ever silently missing.
+        val r = DayUsage.replay(
+            listOf(
+                on("settings", midnight + hour), off("settings", midnight + hour + 3 * minute),
+                on("instagram", midnight + 2 * hour), off("instagram", midnight + 2 * hour + 2 * minute),
+                on("chess", midnight + 3 * hour), off("chess", midnight + 3 * hour + 25_000L),
+            ),
+            midnight, now,
+        )
+        val d = r.distribution(5, minMs = minute)
+        assertEquals(listOf("settings", "instagram"), d.rows.map { it.pkg })
+        assertEquals(1, d.underFloor)
+        assertEquals(0, d.pastCap)
+    }
+
+    @Test
+    fun `exactly the floor is listed, and a day of only short apps still says there were some`() {
+        val atFloor = DayUsage.replay(listOf(on("a", midnight), off("a", midnight + minute)), midnight, now)
+        assertEquals(listOf("a"), atFloor.distribution(5, minMs = minute).rows.map { it.pkg })
+        val onlyShort = DayUsage.replay(listOf(on("a", midnight), off("a", midnight + 10_000L)), midnight, now)
+        val d = onlyShort.distribution(5, minMs = minute)
+        assertEquals(emptyList<DayUsage.Entry>(), d.rows)
+        assertEquals(1, d.underFloor)
+    }
+
+    @Test
+    fun `an app still in front at the moment of reading is counted up to then`() {
+        // Rules out cause (c): an open interval is credited to the window end.
+        val r = DayUsage.replay(listOf(on("instagram", now - 2 * minute)), midnight, now)
+        assertEquals(listOf("instagram"), r.distribution(5, minMs = minute).rows.map { it.pkg })
+        assertEquals(2 * minute, r.entry("instagram")!!.foregroundMs)
     }
 
     @Test
