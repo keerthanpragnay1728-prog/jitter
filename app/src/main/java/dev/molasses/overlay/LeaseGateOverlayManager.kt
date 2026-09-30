@@ -56,8 +56,8 @@ data class GateStats(
  * real seconds whatever the device did with them.
  *
  * ## Every way out goes home, and goes home the same way
- * `[ TAKE ME OUT ]`, the back key and the safety timeout all run the same
- * path: fire the home action, then hold the window up across the transition
+ * `[ ARCHITECT'S SPACE ]`, the back key and the safety timeout all run the
+ * same path: fire the home action, then hold the window up across the transition
  * exactly as the lock flash does. Dismissing first would reveal the target app
  * for a frame or leave it resumed underneath, which is the half-resumed state
  * that makes a user tap back into it without meaning to.
@@ -212,12 +212,11 @@ class LeaseGateOverlayManager(
             },
             onBackPressed = {
                 // Back from the rung row returns to the gate; it does not
-                // answer it. On the expired gate back is the exit, the same
-                // handler as [ ARCHITECT'S SPACE ].
+                // answer it. Otherwise back is the exit, on either gate, the
+                // same handler as [ ARCHITECT'S SPACE ].
                 when {
                     blockPickerOpen -> blockPickerOpen = false
-                    expired -> exit()
-                    else -> decline("back")
+                    else -> exit()
                 }
             },
         ) {
@@ -234,7 +233,6 @@ class LeaseGateOverlayManager(
                     nextScroll = nextScroll,
                     controls = GateControls.visible(expired, remaining),
                     onTakeLease = { ms -> takeLease(ms) },
-                    onTakeMeOut = { decline("take me out") },
                     onExit = { exit() },
                     blockPickerOpen = blockPickerOpen,
                     onOpenBlock = { blockPickerOpen = true },
@@ -342,7 +340,7 @@ class LeaseGateOverlayManager(
     }
 
     /**
-     * [ ARCHITECT'S SPACE ], and back, on the expired gate: one handler.
+     * [ ARCHITECT'S SPACE ], and back, on either gate: one handler.
      *
      * Leaving is never relief. It grants nothing, clears nothing, and does
      * not move the countdown escalation, which counts leases taken. Home is

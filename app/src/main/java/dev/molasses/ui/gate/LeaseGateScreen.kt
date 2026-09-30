@@ -75,9 +75,7 @@ fun LeaseGateScreen(
     /** What is on screen at this point of the countdown. See `GateControls`. */
     controls: GateControls.Visible,
     onTakeLease: (durationMs: Long) -> Unit,
-    /** [ TAKE ME OUT ], the entry gate's way out, in the panel at zero. */
-    onTakeMeOut: () -> Unit,
-    /** [ ARCHITECT'S SPACE ], the expired gate's way out, from the first frame. */
+    /** [ ARCHITECT'S SPACE ], the way out on either gate, from the first frame. */
     onExit: () -> Unit,
     blockPickerOpen: Boolean,
     onOpenBlock: () -> Unit,
@@ -130,10 +128,7 @@ fun LeaseGateScreen(
             Spacer(Modifier.height(20.dp))
 
             if (controls.leases) {
-                DecisionPanel(
-                    onTakeLease = onTakeLease,
-                    onTakeMeOut = if (controls.exit == GateControls.Exit.TAKE_ME_OUT) onTakeMeOut else null,
-                )
+                DecisionPanel(onTakeLease = onTakeLease)
             } else {
                 Text(
                     text = fields.countdown,
@@ -298,20 +293,17 @@ private fun StatRow(label: String, value: String) {
 }
 
 /**
- * Three durations and, on the entry gate, the way out.
+ * Three durations. The way out is not in here: it is [ ARCHITECT'S SPACE ],
+ * outside the panel and up from the first frame, on both gates.
  *
- * `[ TAKE ME OUT ]` is a peer of the lease buttons, not a dismissal tucked in
- * a corner, because leaving is one of the four answers and the only one that
- * costs nothing. Making it smaller or dimmer than the others would be the
- * screen arguing for a lease, which is the one thing it must not do.
- *
- * Null [onTakeMeOut] on the expired gate, whose way out is
- * [ ARCHITECT'S SPACE ] outside the panel: one exit, not two.
+ * It is drawn at the same size and weight as the lease buttons, not tucked
+ * in a corner, because leaving is one of the answers and the only one that
+ * costs nothing. Making it smaller or dimmer would be the screen arguing for
+ * a lease, which is the one thing it must not do.
  */
 @Composable
 private fun DecisionPanel(
     onTakeLease: (durationMs: Long) -> Unit,
-    onTakeMeOut: (() -> Unit)?,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
@@ -337,19 +329,6 @@ private fun DecisionPanel(
                         .padding(vertical = 10.dp, horizontal = 6.dp),
                 )
             }
-        }
-        if (onTakeMeOut != null) {
-            Spacer(Modifier.height(24.dp))
-            Text(
-                text = stringResource(R.string.lease_gate_out),
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = PhosphorGreen,
-                modifier = Modifier
-                    .clickable { onTakeMeOut() }
-                    .padding(vertical = 10.dp, horizontal = 6.dp),
-            )
         }
     }
 }
