@@ -29,7 +29,6 @@ import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.FrictionDecision
-import dev.molasses.core.safety.HomeFirst
 import dev.molasses.core.safety.HomeFirstWatch
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.safety.SensitivePackages
@@ -301,11 +300,9 @@ class MolassesAccessibilityService : AccessibilityService() {
             // a lease lasts.
             //
             // The walking gate sent the app home, so this panel runs over the
-            // launcher too, and a lease taken on it relaunches the app:
-            // homeFirst = true. The default for an entry gate says the same
-            // now; this stays explicit because here it is a fact about where
-            // the app already is, not a policy that could change.
-            onCleared = { pkg -> if (ready) showLeaseGate(pkg, countdownMs = 0, expired = false, homeFirst = true) },
+            // launcher too, and a lease taken on it relaunches the app, as on
+            // every lease gate.
+            onCleared = { pkg -> if (ready) showLeaseGate(pkg, countdownMs = 0, expired = false) },
             // Nothing. No lease was taken, so the next scroll in this package
             // gates again, which is the whole reason the launch check also
             // runs on scroll.
@@ -929,7 +926,6 @@ class MolassesAccessibilityService : AccessibilityService() {
         pkg: String,
         countdownMs: Long,
         expired: Boolean,
-        homeFirst: Boolean = HomeFirst.sendsHome(HomeFirst.leaseGate(expired)),
     ): Boolean {
         // Nothing of ours behind a full-screen window. An armed sink under a
         // gate absorbs nothing and would still be armed when the gate came
@@ -958,7 +954,6 @@ class MolassesAccessibilityService : AccessibilityService() {
                 opensToday = null,
             ),
             nextScroll = nextScroll,
-            homeFirst = homeFirst,
         )
         if (!attached) {
             // The app is uncovered. Put the sink back, or the fall-through to
@@ -1388,21 +1383,21 @@ class MolassesAccessibilityService : AccessibilityService() {
         shutter.release("left target ($reason)")
         shutter.detach()
         shutter.setCurrentPackage(null)
-        // A home-first overlay sent this app home itself, so this exit is
-        // its own doing and it stays up over the launcher. Everything above
-        // (the session, accumulation, the ledger row) has still happened.
-        // See HomeFirst.
-        if (gate.isShowing) {
-            if (gate.homeFirst) logSurvived("walk gate", pkg, reason) else gate.abandon("left target")
-        }
-        if (leaseGate.homeFirst) logSurvived("lease gate", pkg, reason) else leaseGate.dismiss("left target")
+        // Every overlay sends its app home itself, so this exit is its own
+        // doing and a showing overlay stays up over the launcher. Everything
+        // above (the session, accumulation, the ledger row) has still
+        // happened. See OverlayKind.
+        if (gate.isShowing) logSurvived("walk gate", pkg, reason)
+        if (leaseGate.isShowing) logSurvived("lease gate", pkg, reason) else leaseGate.dismiss("left target")
         // The lock message goes too, and it did not have to before. It used
         // to take itself down 1.8 s after it appeared, so by the time any of
         // this ran it was already gone. It now stays until the user acts, and
         // a user who presses home themselves, or switches to another app,
         // would otherwise arrive at the launcher with a full-screen lock
-        // notice still over it. Unless it sent the app home itself.
-        if (lockOverlay.homeFirst) logSurvived("lock overlay", pkg, reason) else lockOverlay.dismiss("left target")
+        // notice still over it. Unless it sent the app home itself, which
+        // every lock now does, so only a window that is not showing is
+        // tidied here.
+        if (lockOverlay.isShowing) logSurvived("lock overlay", pkg, reason) else lockOverlay.dismiss("left target")
         // A new visit gets a fresh set of attempts. See gateAttachFailures.
         gateAttachFailures = 0
     }
@@ -1507,8 +1502,8 @@ class MolassesAccessibilityService : AccessibilityService() {
     private var homeFirstWatchJob: Job? = null
 
     private fun repaceHomeFirstWatch() {
-        val anyHomeFirst = gate.homeFirst || leaseGate.homeFirst || lockOverlay.homeFirst
-        if (!anyHomeFirst) {
+        val anyShowing = gate.isShowing || leaseGate.isShowing || lockOverlay.isShowing
+        if (!anyShowing) {
             homeFirstWatchJob?.cancel()
             homeFirstWatchJob = null
             return
@@ -1558,13 +1553,9 @@ class MolassesAccessibilityService : AccessibilityService() {
     /** When the watch last sent a gated app home again. Main thread only. See HomeFirstWatch. */
     private var lastRehomeMs: Long? = null
 
-    /** The package the home-first overlay now up is for, or null. Main thread only. */
-    private fun homeFirstGatedPkg(): String? = when {
-        leaseGate.homeFirst -> leaseGate.showingFor
-        gate.homeFirst -> gate.showingFor
-        lockOverlay.homeFirst -> lockOverlay.showingFor
-        else -> null
-    }
+    /** The package the overlay now up is for, or null. Main thread only. */
+    private fun homeFirstGatedPkg(): String? =
+        leaseGate.showingFor ?: gate.showingFor ?: lockOverlay.showingFor
 
     /**
      * Restart the watchdog at the interval the current screen state calls for.
