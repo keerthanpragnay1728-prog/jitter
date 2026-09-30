@@ -401,6 +401,9 @@
          figure, so it sits against it rather than in a column of its own. -->
     <string name="ledger_cycle_penalty_fmt" translatable="false">CYCLE %1$s +%2$s  HORIZON %3$s  RESETS %4$s</string>
     <string name="ledger_distribution">DISTRIBUTION METRICS</string>
+    <!-- Apps the distribution list leaves out, counted rather than dropped. -->
+    <string name="ledger_distribution_under_floor_fmt">+ %1$s more under a minute</string>
+    <string name="ledger_distribution_past_cap_fmt">+ %1$s more past the top %2$s</string>
     <string name="ledger_app_minutes_fmt">%1$s min</string>
     <string name="filter_allowed_badge">[ALLOWED]</string>
     <string name="action_back">Back</string>
