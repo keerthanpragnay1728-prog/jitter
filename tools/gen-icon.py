@@ -17,17 +17,19 @@ regenerating and diffing. Change a shape here, rerun, commit all four files.
 The design, on the 108 x 108 adaptive canvas: ">_" and nothing else. No
 frame, because a rounded outline read as a card and a lone "$" as money.
 
-    chevron     a 90 degree ">" stroked at 5*sqrt(2) = 7.07 thick, with flat
-                ends cut square to each arm and a mitred tip. Its centre line
-                runs 35.5,42 -> 47.5,54 -> 35.5,66, and the outline is the
-                six points in CHEVRON below: x 33..52.5, y 39.5..68.5.
-    underscore  a bar x 57..75, y 61.5..68.5, 7 thick. Its bottom is the
-                chevron's bottom, 68.5: the baseline they share.
+    chevron     a 90 degree ">" stroked at 3.5*sqrt(2) = 4.95 thick, with
+                flat ends cut square to each arm and a mitred tip. Its centre
+                line runs 35.25,41 -> 48.25,54 -> 35.25,67, and the outline is
+                the six points in CHEVRON below: x 33.5..51.75,
+                y 39.25..68.75.
+    underscore  a bar x 56.5..74.5, y 63.75..68.75, 5 thick. Its bottom is
+                the chevron's bottom, 68.75: the baseline they share.
 
-The pair spans x 33..75 (42 wide) and y 39.5..68.5, so the group's box is
-centred on 54,54. Its farthest point from the centre is the underscore's
-bottom right corner, about 25.5 away, well inside the 66dp safe zone (a
-circle of radius 33). Nothing is thinner than 7, so it survives 48dp.
+The pair spans x 33.5..74.5 (41 wide) and y 39.25..68.75, so the group's box
+is centred on 54,54. Its farthest point from the centre is the underscore's
+bottom right corner, about 25.3 away, well inside the 66dp safe zone (a
+circle of radius 33). Both shapes are 4.95 to 5 thick: thinned from 7 on
+device, where 7 read as heavy, and still bold enough for 48dp.
 LauncherIconTest checks all of this from the XML.
 
 The PNG is what a launcher shows: the 72dp visible region (x and y 18..90)
@@ -50,19 +52,19 @@ PNG_PATH = os.path.join(ROOT, "fastlane", "metadata", "android", "en-US", "image
 GREEN = (0x50, 0xFA, 0x7B)
 BLACK = (0x00, 0x00, 0x00)
 
-# The ">" as the outline of a stroke: offset 2.5 each side of the centre
-# line along the arm's normal (so 5*sqrt(2) thick), flat ends square to each
-# arm, and a mitred tip where the two outer edges meet.
+# The ">" as the outline of a stroke: offset 1.75 each side of the centre
+# line along the arm's normal (so 3.5*sqrt(2) = 4.95 thick), flat ends square
+# to each arm, and a mitred tip where the two outer edges meet.
 CHEVRON = [
-    (33.0, 44.5),  # top end, inner
-    (38.0, 39.5),  # top end, outer
-    (52.5, 54.0),  # tip, outer (mitre)
-    (38.0, 68.5),  # bottom end, outer
-    (33.0, 63.5),  # bottom end, inner
-    (42.5, 54.0),  # tip, inner (mitre)
+    (33.5, 42.75),  # top end, inner
+    (37.0, 39.25),  # top end, outer
+    (51.75, 54.0),  # tip, outer (mitre)
+    (37.0, 68.75),  # bottom end, outer
+    (33.5, 65.25),  # bottom end, inner
+    (44.75, 54.0),  # tip, inner (mitre)
 ]
 # (x0, y0, x1, y1)
-UNDERSCORE = (57.0, 61.5, 75.0, 68.5)
+UNDERSCORE = (56.5, 63.75, 74.5, 68.75)
 
 SIZE = 512
 VISIBLE = (18.0, 90.0)

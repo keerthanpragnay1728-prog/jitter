@@ -9,9 +9,9 @@
     <path
         android:name="chevron"
         android:fillColor="@color/phosphor_green"
-        android:pathData="M33,44.5 L38,39.5 L52.5,54 L38,68.5 L33,63.5 L42.5,54 Z"/>
+        android:pathData="M33.5,42.75 L37,39.25 L51.75,54 L37,68.75 L33.5,65.25 L44.75,54 Z"/>
     <path
         android:name="underscore"
         android:fillColor="@color/phosphor_green"
-        android:pathData="M57,61.5 H75 V68.5 H57 Z"/>
+        android:pathData="M56.5,63.75 H74.5 V68.75 H56.5 Z"/>
 </vector>

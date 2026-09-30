@@ -128,29 +128,40 @@ class LauncherIconTest {
     }
 
     @Test
-    fun `the pair is 40 to 44 wide, centred as a group, on one baseline`() {
+    fun `the pair is 40 to 42 wide, centred as a group, on one baseline`() {
         val all = chevron + underscore
         val minX = all.minOf { it.first }
         val maxX = all.maxOf { it.first }
         val minY = all.minOf { it.second }
         val maxY = all.maxOf { it.second }
-        assertTrue("group width ${maxX - minX}", maxX - minX in 40.0..44.0)
+        assertTrue("group width ${maxX - minX}", maxX - minX in 40.0..42.0)
         assertEquals(54.0, (minX + maxX) / 2, 0.5)
         assertEquals(54.0, (minY + maxY) / 2, 0.5)
         assertEquals("the underscore sits on the chevron's baseline", chevron.maxOf { it.second }, underscore.maxOf { it.second }, 0.0)
         assertTrue("the underscore is to the right of the chevron", underscore.minOf { it.first } > chevron.maxOf { it.first })
     }
 
+    /**
+     * 4.5 to 5 on the 108 canvas. 7 read as heavy on device; below 4.5 the
+     * strokes start to break up at 48dp. Both shapes are held to the same
+     * range so the chevron and the underscore read as one weight.
+     */
+    private val weight = 4.5..5.0
+
     @Test
-    fun `nothing is thinner than 6 on the 108 canvas`() {
+    fun `both shapes are 4 and a half to 5 thick, one weight`() {
         val w = underscore.maxOf { it.first } - underscore.minOf { it.first }
         val h = underscore.maxOf { it.second } - underscore.minOf { it.second }
-        assertTrue("underscore is $w by $h", minOf(w, h) >= 6.0)
+        assertTrue("underscore is $h thick", h in weight)
+        assertTrue("the underscore is a bar, not a block", w > 3 * h)
         // Each arm's thickness: from its inner end corner to its outer edge.
         // Vertices in order: top end inner, top end outer, tip outer,
         // bottom end outer, bottom end inner, tip inner.
-        assertTrue(distance(chevron[0], chevron[1], chevron[2]) >= 6.0)
-        assertTrue(distance(chevron[4], chevron[2], chevron[3]) >= 6.0)
+        val top = distance(chevron[0], chevron[1], chevron[2])
+        val bottom = distance(chevron[4], chevron[2], chevron[3])
+        assertTrue("upper arm is $top thick", top in weight)
+        assertTrue("lower arm is $bottom thick", bottom in weight)
+        assertEquals("the arms match", top, bottom, 1e-9)
     }
 
     @Test
