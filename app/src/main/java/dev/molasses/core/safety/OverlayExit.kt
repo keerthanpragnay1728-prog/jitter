@@ -20,7 +20,7 @@ import dev.molasses.core.lease.GateControls
  */
 object OverlayExit {
 
-    enum class Control { ARCHITECTS_SPACE, TAKE_ME_OUT }
+    enum class Control { ARCHITECTS_SPACE }
 
     /**
      * @param remainingMs the countdown left, for the lease gates; the other
@@ -36,6 +36,5 @@ object OverlayExit {
 
     private fun of(exit: GateControls.Exit): Control = when (exit) {
         GateControls.Exit.ARCHITECTS_SPACE -> Control.ARCHITECTS_SPACE
-        GateControls.Exit.TAKE_ME_OUT -> Control.TAKE_ME_OUT
     }
 }

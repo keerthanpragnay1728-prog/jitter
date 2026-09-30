@@ -47,10 +47,13 @@ class HomeFirstWiringTest {
     }
 
     @Test
-    fun `ARCHITECT'S SPACE and back share one handler on the expired gate`() {
+    fun `ARCHITECT'S SPACE and back share one handler on both lease gates`() {
         val show = functionBody(overlay("LeaseGateOverlayManager"), "fun show(")
-        assertTrue(show.contains("expired -> exit()"))
+        val back = show.substring(show.indexOf("onBackPressed = {")).substringBefore("},")
+        assertTrue(back.contains("else -> exit()"))
+        assertFalse("back no longer has an entry-gate answer of its own", back.contains("decline(\"back\")") || back.contains("expired ->"))
         assertTrue(show.contains("onExit = { exit() },"))
+        assertFalse(show.contains("onTakeMeOut"))
         val exit = functionBody(overlay("LeaseGateOverlayManager"), "private fun exit()")
         assertTrue("ledger reason=exit, through the one decline path", exit.contains("decline(\"exit\")"))
         val decline = functionBody(overlay("LeaseGateOverlayManager"), "private fun decline(")
@@ -73,13 +76,17 @@ class HomeFirstWiringTest {
     }
 
     @Test
-    fun `TAKE ME OUT no longer appears on the expired gate`() {
+    fun `TAKE ME OUT is gone from both gates, and the exit sits outside the lease panel`() {
         val body = functionBody(screen, "fun LeaseGateScreen(")
-        assertTrue(body.contains("onTakeMeOut = if (controls.exit == GateControls.Exit.TAKE_ME_OUT) onTakeMeOut else null"))
-        val panel = functionBody(screen, "private fun DecisionPanel(")
-        assertTrue(panel.indexOf("if (onTakeMeOut != null) {") in 0 until panel.indexOf("R.string.lease_gate_out"))
-        assertTrue(body.contains("if (controls.exit == GateControls.Exit.ARCHITECTS_SPACE) {"))
-        assertEquals(1, Regex("""R\.string\.lease_gate_out""").findAll(screen).count())
+        val exit = body.indexOf("if (controls.exit == GateControls.Exit.ARCHITECTS_SPACE) {")
+        assertTrue(exit >= 0 && body.indexOf("R.string.lock_exit", exit) > exit)
+        // After the leases branch has closed, so it is up before zero.
+        val leases = body.indexOf("if (controls.leases) {")
+        val between = body.substring(leases, exit)
+        assertEquals("the exit is outside the leases branch", between.count { it == '{' }, between.count { it == '}' })
+        assertFalse(screen.contains("onTakeMeOut"))
+        val strings = repoFile("app/src/main/res/values/strings.xml").readText()
+        assertFalse(strings.contains("name=\"lease_gate_out\""))
     }
 
     @Test

@@ -31,8 +31,18 @@ class OverlayExitTest {
     }
 
     @Test
-    fun `the entry gate is unchanged, its exit is TAKE ME OUT at zero only`() {
-        assertEquals(null, OverlayExit.shown(HomeFirst.Overlay.ENTRY_GATE, 8_000L))
-        assertEquals(OverlayExit.Control.TAKE_ME_OUT, OverlayExit.shown(HomeFirst.Overlay.ENTRY_GATE, 0L))
+    fun `the entry gate shows ARCHITECT'S SPACE in every state, not only at zero`() {
+        for (ms in states) {
+            assertEquals("entry gate at ${ms}ms", OverlayExit.Control.ARCHITECTS_SPACE, OverlayExit.shown(HomeFirst.Overlay.ENTRY_GATE, ms))
+        }
+    }
+
+    @Test
+    fun `every overlay, home-first or not, shows an exit in every state`() {
+        for (overlay in HomeFirst.Overlay.entries) {
+            for (ms in states) {
+                assertNotNull("$overlay at ${ms}ms has no way out", OverlayExit.shown(overlay, ms))
+            }
+        }
     }
 }

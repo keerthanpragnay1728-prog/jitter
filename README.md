@@ -75,8 +75,9 @@ and there is no sentence on the screen telling you what to think about the
 numbers.
 
 **Then you choose how long you are staying.** At zero the countdown is replaced
-by four answers: 5m, 10m, 15m, or TAKE ME OUT, which sends you home. There is
-no unlimited option, and pressing back does the same thing as TAKE ME OUT.
+by three answers: 5m, 10m or 15m. There is no unlimited option. You do not have
+to wait for zero to leave: [ ARCHITECT'S SPACE ] is on the gate from the first
+frame and sends you home, and pressing back does the same.
 
 **When a lease runs out, the app goes home under the gate.** The gate
 checks your lease at its deadline, without waiting for you to touch anything,
