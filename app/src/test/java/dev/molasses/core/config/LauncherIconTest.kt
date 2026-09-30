@@ -8,7 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import kotlin.math.hypot
-import kotlin.math.sqrt
 
 /**
  * The launcher icon: one adaptive icon, three layers, two colours that are
@@ -61,71 +60,97 @@ class LauncherIconTest {
     fun `the monochrome layer has the foreground's shapes`() {
         fun paths(xml: String) = Regex("""android:pathData="([^"]+)"""").findAll(xml).map { it.groupValues[1] }.toList()
         assertEquals(paths(foreground), paths(monochrome))
+        // Fully opaque: the system tints the monochrome layer by its alpha, so
+        // anything translucent would come out faint on a themed home screen.
+        // Its fill is phosphor_green, alpha FF (pinned above), and nothing
+        // lowers it.
+        assertFalse(Regex("""[Aa]lpha""").containsMatchIn(monochrome))
     }
 
-    /** Every point a command in [path] moves to or ends at. M, H, V and the end point of A; all absolute. */
-    private fun points(path: String): List<Pair<Double, Double>> {
+    /** A named path's data from the foreground layer. */
+    private fun pathData(name: String): String =
+        Regex("""android:name="$name"[\s\S]*?android:pathData="([^"]+)"""").find(foreground)!!.groupValues[1]
+
+    /**
+     * Every vertex of [path], which may use only absolute straight commands:
+     * M, L, H, V and Z. A curve would put a point of the outline between
+     * vertices, and the safe-zone check below would then be checking the
+     * wrong points.
+     */
+    private fun vertices(path: String): List<Pair<Double, Double>> {
         val out = mutableListOf<Pair<Double, Double>>()
         var x = 0.0
         var y = 0.0
-        for (m in Regex("""([MHVAZ])([^MHVAZ]*)""").findAll(path)) {
+        for (m in Regex("""([A-Za-z])([^A-Za-z]*)""").findAll(path)) {
             val n = m.groupValues[2].trim().split(Regex("""[\s,]+""")).filter { it.isNotEmpty() }.map { it.toDouble() }
             when (m.groupValues[1]) {
-                "M" -> { x = n[0]; y = n[1] }
+                "M", "L" -> { x = n[0]; y = n[1] }
                 "H" -> x = n[0]
                 "V" -> y = n[0]
-                "A" -> { x = n[5]; y = n[6] }
                 "Z" -> continue
+                else -> throw AssertionError("unexpected path command ${m.groupValues[1]} in $path")
             }
             out += x to y
         }
         return out
     }
 
-    /** The rectangles in [path] written as `Mx0,y0 Hx1 Vy1 Hx0 Z`. */
-    private fun rects(path: String): List<DoubleArray> =
-        Regex("""M([\d.]+),([\d.]+) H([\d.]+) V([\d.]+) H([\d.]+) Z""").findAll(path).map {
-            val v = it.groupValues.drop(1).map(String::toDouble)
-            doubleArrayOf(v[0], v[1], v[2], v[3])
-        }.toList()
+    private val chevron by lazy { vertices(pathData("chevron")) }
+    private val underscore by lazy { vertices(pathData("underscore")) }
 
-    @Test
-    fun `every shape is inside the 66dp safe zone, frame corners included`() {
-        val all = Regex("""android:pathData="([^"]+)"""").findAll(foreground).flatMap { points(it.groupValues[1]) }.toList()
-        assertTrue(all.isNotEmpty())
-        for ((x, y) in all) assertTrue("($x,$y) outside 21..87", x in 21.0..87.0 && y in 21.0..87.0)
-        // The frame's outer edge, and its rounded corner's farthest point,
-        // against a circle of radius 33 about the centre.
-        val frame = Regex("""android:name="frame"[\s\S]*?android:pathData="([^"]+)"""").find(foreground)!!.groupValues[1]
-        val outer = points(frame.substringBefore(" Z"))
-        val minX = outer.minOf { it.first }
-        val minY = outer.minOf { it.second }
-        val maxX = outer.maxOf { it.first }
-        val maxY = outer.maxOf { it.second }
-        val r = Regex("""A([\d.]+),""").find(frame)!!.groupValues[1].toDouble()
-        val inset = r * (1 - 1 / sqrt(2.0))
-        for ((cx, cy) in listOf(minX to minY, maxX to minY, minX to maxY, maxX to maxY)) {
-            val px = if (cx < 54) cx + inset else cx - inset
-            val py = if (cy < 54) cy + inset else cy - inset
-            assertTrue("frame corner at ${hypot(px - 54, py - 54)} from centre", hypot(px - 54, py - 54) <= 33.0)
-        }
-        // Edges are straight, so the edge midpoints must be inside too.
-        for (d in listOf(54 - minX, maxX - 54, 54 - minY, maxY - 54)) assertTrue(d <= 33.0)
+    /** Perpendicular distance from [p] to the line through [a] and [b]. */
+    private fun distance(p: Pair<Double, Double>, a: Pair<Double, Double>, b: Pair<Double, Double>): Double {
+        val dx = b.first - a.first
+        val dy = b.second - a.second
+        return kotlin.math.abs((p.first - a.first) * dy - (p.second - a.second) * dx) / hypot(dx, dy)
     }
 
     @Test
-    fun `nothing is thinner than 4 on the 108 canvas`() {
-        val frame = Regex("""android:name="frame"[\s\S]*?android:pathData="([^"]+)"""").find(foreground)!!.groupValues[1]
-        val outer = points(frame.substringBefore(" Z"))
-        val inner = rects(frame).single()
-        assertTrue(inner[0] - outer.minOf { it.first } >= 4)
-        assertTrue(outer.maxOf { it.first } - inner[2] >= 4)
-        assertTrue(inner[1] - outer.minOf { it.second } >= 4)
-        assertTrue(outer.maxOf { it.second } - inner[3] >= 4)
-        val prompt = Regex("""android:name="prompt"[\s\S]*?android:pathData="([^"]+)"""").find(foreground)!!.groupValues[1]
-        val bars = rects(prompt)
-        assertEquals("every subpath of the prompt is a plain rectangle", prompt.count { it == 'M' }, bars.size)
-        for (b in bars) assertTrue("${b.toList()} is thinner than 4", minOf(b[2] - b[0], b[3] - b[1]) >= 4)
+    fun `the icon is a chevron and an underscore, with no frame`() {
+        val names = Regex("""android:name="([^"]+)"""").findAll(foreground).map { it.groupValues[1] }.toList()
+        assertEquals(listOf("chevron", "underscore"), names)
+        assertFalse(foreground.contains("frame"))
+        assertFalse("no curves, so every corner is sharp", Regex("""pathData="[^"]*[AaCcQqSsTt]""").containsMatchIn(foreground))
+        assertFalse("no even-odd hole, which is how the frame was cut", foreground.contains("fillType"))
+        // A mitred chevron: six points, and the tip is a single sharp vertex
+        // on each side rather than a cut or a bevel.
+        assertEquals(6, chevron.size)
+        assertEquals(4, underscore.size)
+    }
+
+    @Test
+    fun `every point is inside the 66dp safe circle`() {
+        // Straight edges only, so the farthest point of each shape from the
+        // centre is one of its vertices.
+        for ((x, y) in chevron + underscore) {
+            assertTrue("($x,$y) is ${hypot(x - 54, y - 54)} from the centre", hypot(x - 54, y - 54) <= 33.0)
+        }
+    }
+
+    @Test
+    fun `the pair is 40 to 44 wide, centred as a group, on one baseline`() {
+        val all = chevron + underscore
+        val minX = all.minOf { it.first }
+        val maxX = all.maxOf { it.first }
+        val minY = all.minOf { it.second }
+        val maxY = all.maxOf { it.second }
+        assertTrue("group width ${maxX - minX}", maxX - minX in 40.0..44.0)
+        assertEquals(54.0, (minX + maxX) / 2, 0.5)
+        assertEquals(54.0, (minY + maxY) / 2, 0.5)
+        assertEquals("the underscore sits on the chevron's baseline", chevron.maxOf { it.second }, underscore.maxOf { it.second }, 0.0)
+        assertTrue("the underscore is to the right of the chevron", underscore.minOf { it.first } > chevron.maxOf { it.first })
+    }
+
+    @Test
+    fun `nothing is thinner than 6 on the 108 canvas`() {
+        val w = underscore.maxOf { it.first } - underscore.minOf { it.first }
+        val h = underscore.maxOf { it.second } - underscore.minOf { it.second }
+        assertTrue("underscore is $w by $h", minOf(w, h) >= 6.0)
+        // Each arm's thickness: from its inner end corner to its outer edge.
+        // Vertices in order: top end inner, top end outer, tip outer,
+        // bottom end outer, bottom end inner, tip inner.
+        assertTrue(distance(chevron[0], chevron[1], chevron[2]) >= 6.0)
+        assertTrue(distance(chevron[4], chevron[2], chevron[3]) >= 6.0)
     }
 
     @Test
