@@ -56,7 +56,7 @@ MOJIBAKE = [
 ]
 
 REPLACEMENT = _seq(0xFFFD)
-SKIP = (".png", ".jpg", ".jpeg", ".webp", ".ttf", ".otf", ".jar", ".keystore",
+SKIP = (".jpg", ".jpeg", ".webp", ".ttf", ".otf", ".jar", ".keystore",
         ".zip", ".so", ".ico", ".pb", ".bin", ".gz")
 
 
@@ -64,6 +64,22 @@ SKIP = (".png", ".jpg", ".jpeg", ".webp", ".ttf", ".otf", ".jar", ".keystore",
 # same single directory tools/check-encoding.sh allows, and ScanAllowanceTest
 # pins both.
 RAW_BINARY_DIR = "app/src/main/res/raw/"
+
+# PNG by path only, never by extension: the store icon made by
+# tools/gen-icon.py by its exact path, and PNGs in the store screenshot
+# directory as a directory, so a new capture needs no line of its own. A PNG
+# anywhere else is still read as text and still fails. The same three rules
+# as tools/check-encoding.sh; ScanAllowanceTest pins both.
+ICON_PNG = "fastlane/metadata/android/en-US/images/icon.png"
+SHOTS_PNG_DIR = "fastlane/metadata/android/en-US/images/phoneScreenshots/"
+
+
+def binary_by_path(path):
+    return (
+        path.startswith(RAW_BINARY_DIR)
+        or path == ICON_PNG
+        or (path.startswith(SHOTS_PNG_DIR) and path.lower().endswith(".png"))
+    )
 
 
 def scan(data):
@@ -113,7 +129,7 @@ def main():
         print("\n===== %s =====" % ref)
         hits = 0
         for path in files_in(ref):
-            if path.lower().endswith(SKIP) or path.startswith(RAW_BINARY_DIR):
+            if path.lower().endswith(SKIP) or binary_by_path(path):
                 continue
             data = blob(ref, path)
             if data is None:
