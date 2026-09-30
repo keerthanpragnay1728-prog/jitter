@@ -28,7 +28,7 @@ class CfgRowKeyTest {
     )
 
     private fun everyKey(): List<String> =
-        listOf("masthead").map { CfgRowKey.chrome(it) } +
+        listOf("masthead", "report-problem").map { CfgRowKey.chrome(it) } +
             Section.entries.map { CfgRowKey.section(it) } +
             Section.entries.flatMap { s ->
                 listOf("title", "body", "hint", "count").map { CfgRowKey.body(s, it) }

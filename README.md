@@ -6,7 +6,7 @@ Jitter is a home screen and a set of speed bumps for Android. Instagram, X and
 YouTube are never blocked: the longer you stay in one inside a six-hour cycle,
 the more the phone feels like it is failing.
 
-![Release](https://img.shields.io/badge/release-v1.0.1-blue)
+![Release](https://img.shields.io/badge/release-v1.0.2-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 ![Android](https://img.shields.io/badge/Android-11%2B-3DDC84)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.21-7F52FF)
@@ -161,9 +161,9 @@ APK yourself.
    Check the file is the one that was published: the release page lists its
    SHA-256, and yours should match exactly.
 
-   - Windows: `certutil -hashfile jitter-v1.0.1.apk SHA256`
-   - macOS: `shasum -a 256 jitter-v1.0.1.apk`
-   - Linux: `sha256sum jitter-v1.0.1.apk`
+   - Windows: `certutil -hashfile jitter-v1.0.2.apk SHA256`
+   - macOS: `shasum -a 256 jitter-v1.0.2.apk`
+   - Linux: `sha256sum jitter-v1.0.2.apk`
 
 2. **Allow the install.** Android asks the first time you open an APK from your
    browser or file manager. Allow that app to install unknown apps.
@@ -406,7 +406,7 @@ published on each release page. To check that an APK was signed with this
 key:
 
 ```
-apksigner verify --print-certs jitter-v1.0.1.apk
+apksigner verify --print-certs jitter-v1.0.2.apk
 ```
 
 The line `Signer #1 certificate SHA-256 digest` must show the fingerprint
@@ -443,6 +443,9 @@ pass `tools/check-all.sh` (read its last line, `check-all: PASS`) and
 `./gradlew testDebugUnitTest`. Sources are UTF-8 and LF; `.gitattributes`
 enforces LF, and `LineEndingsTest` fails on a CRLF checkout. CLAUDE.md has the
 rest, including commit message style and the prose rules this file follows.
+
+In the app, [ REPORT A PROBLEM ] at the end of CFG opens that same issue
+tracker in your browser.
 
 ---
 

@@ -1,0 +1,2 @@
+- [ REPORT A PROBLEM ] at the end of CFG opens the issue tracker in your browser. The row appears only when a browser can open it, and Jitter still has no internet permission.
+- A new launcher icon: a minimalist >_ terminal prompt in the console's green on pitch black. It follows your launcher's icon shape, and supports themed icons on Android 13 and later.

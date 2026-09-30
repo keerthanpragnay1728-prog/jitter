@@ -131,6 +131,17 @@
         <intent>
             <action android:name="android.settings.DIGITAL_WELLBEING_SETTINGS"/>
         </intent>
+        <!--
+          [ REPORT A PROBLEM ] in CFG opens the issue tracker in a browser.
+          Without this entry resolveActivity finds no browser on API 30+ and
+          the row stays hidden on every device. Declaring the query is not a
+          permission: nothing here reads the page, and INTERNET stays out.
+        -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 
     <application
@@ -139,6 +150,7 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Molasses">
