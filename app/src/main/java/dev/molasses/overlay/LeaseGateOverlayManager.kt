@@ -62,15 +62,17 @@ data class GateStats(
  * for a frame or leave it resumed underneath, which is the half-resumed state
  * that makes a user tap back into it without meaning to.
  *
- * ## The LEASE EXPIRED gate sends the app home under itself
- * See `HomeFirst`. After its first draw it fires home, so the target goes to
- * the background and stops its own playback, and the gate stays up over the
- * launcher with the countdown running. The session closes on that launcher
- * exit as it always did, but the gate survives it: [homeFirst] tells the
- * service's leaveTarget to leave this window alone. Its way out is
- * [ ARCHITECT'S SPACE ], from the first frame, and back does the same. A
- * lease taken here is granted first, then the target is relaunched, which
- * restores its task, then the gate comes down.
+ * ## Both lease gates send the app home under themselves
+ * See `HomeFirst`. After its first draw the gate fires home, so the target
+ * goes to the background and stops its own playback, and the gate stays up
+ * over the launcher with the countdown running. That is the entry gate as
+ * much as the LEASE EXPIRED one: an app under an overlay is resumed, and
+ * Instagram started a Reel with sound behind the entry gate. The session
+ * closes on that launcher exit as it always did, but the gate survives it:
+ * [homeFirst] tells the service's leaveTarget to leave this window alone.
+ * Its way out is [ ARCHITECT'S SPACE ], from the first frame, and back does
+ * the same. A lease taken here is granted first, then the target is
+ * relaunched, which restores its task, then the gate comes down.
  */
 class LeaseGateOverlayManager(
     private val service: Context,
@@ -179,9 +181,9 @@ class LeaseGateOverlayManager(
         nextScroll: NextScroll.Reading,
         /**
          * Send the app home after the first draw, and relaunch it on a lease.
-         * `HomeFirst.sendsHome` for the expired gate; also true for the
-         * lease panel that follows a walking gate, whose app is already in
-         * the background.
+         * `HomeFirst.sendsHome`, which is true for both gates; the lease
+         * panel that follows a walking gate passes true as well, since its
+         * app is already in the background.
          */
         homeFirst: Boolean = HomeFirst.sendsHome(HomeFirst.leaseGate(expired)),
     ): Boolean {

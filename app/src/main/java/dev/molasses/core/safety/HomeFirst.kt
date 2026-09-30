@@ -18,10 +18,24 @@ package dev.molasses.core.safety
  * the mute are gone.
  *
  * ## Which ones
- * The overlays raised over a session already in progress: the LEASE EXPIRED
- * gate, the walking gate, and a lock shown mid-session. Not the entry gate
- * and not a lock raised as the app opens: at entry nothing of the target's
- * has started yet, and those two are unchanged.
+ * All five. The entry gate and a lock raised as the app opens were left out
+ * once, on the reasoning that at entry nothing of the target's has started
+ * yet. On device that was wrong: Instagram's first Reel autoplays with sound
+ * behind the entry gate, because the app under an overlay is resumed and
+ * starts its own playback. Taking no audio focus at entry did not stop that
+ * and was never going to, so autoplay behind the entry gate is now stopped
+ * by going home, the same as everywhere else, and not by focus.
+ *
+ * Nothing here touches audio, so background music from an app that is not
+ * behind the overlay plays on untouched, at entry and mid-session alike.
+ *
+ * What home does not stop is playback the target keeps alive outside its
+ * own activity: YouTube's picture-in-picture window, and Premium background
+ * play. Neither is visible to this service's profile. See the README's known
+ * limits.
+ *
+ * The `when` stays exhaustive although every branch answers true, so a new
+ * overlay kind has to be decided here rather than inherit an answer.
  */
 object HomeFirst {
 
@@ -43,8 +57,12 @@ object HomeFirst {
     }
 
     fun sendsHome(overlay: Overlay): Boolean = when (overlay) {
-        Overlay.EXPIRED_GATE, Overlay.WALK_GATE, Overlay.LOCK_MID_SESSION -> true
-        Overlay.ENTRY_GATE, Overlay.LOCK_AT_ENTRY -> false
+        Overlay.ENTRY_GATE,
+        Overlay.EXPIRED_GATE,
+        Overlay.WALK_GATE,
+        Overlay.LOCK_AT_ENTRY,
+        Overlay.LOCK_MID_SESSION,
+        -> true
     }
 
     /** The lease gate's kind, from the flag it is shown with. */
