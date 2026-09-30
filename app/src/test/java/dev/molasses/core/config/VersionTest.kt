@@ -18,8 +18,8 @@ import org.junit.Test
 class VersionTest {
 
     private companion object {
-        /** 0.1.0-feasibility shipped as versionCode 1. */
-        const val LAST_SHIPPED_CODE = 1
+        /** 1.0.0 shipped as versionCode 10000, the first org.jitteros.app release. */
+        const val LAST_SHIPPED_CODE = 10000
     }
 
     private fun appVersion(): String {

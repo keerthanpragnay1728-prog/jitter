@@ -6,7 +6,7 @@ Jitter is a home screen and a set of speed bumps for Android. Instagram, X and
 YouTube are never blocked: the longer you stay in one inside a six-hour cycle,
 the more the phone feels like it is failing.
 
-![Release](https://img.shields.io/badge/release-v1.0.0-blue)
+![Release](https://img.shields.io/badge/release-v1.0.1-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 ![Android](https://img.shields.io/badge/Android-11%2B-3DDC84)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.21-7F52FF)
@@ -107,8 +107,9 @@ gate → What the gate asks for. That replaces the countdown with the movement
 gate: about twelve steps, or eight seconds of walking-shaped motion if your
 phone has no step sensor. **If walking is not something you can or should
 do,** the same setting offers a short untimed typing task in its place. No
-sensors run in that mode. You can always leave with HOME or RECENTS; that takes
-the gate down without buying anything, and it comes back when you next scroll.
+sensors run in that mode. You can always leave with [ ARCHITECT'S SPACE ] or
+back; that sends you home without buying anything, and the gate comes back
+when you next scroll.
 
 **The counter resets six hours after the cycle started.** The cycle starts
 the first time you open one of your target apps from a clean state, and ends
@@ -160,9 +161,9 @@ APK yourself.
    Check the file is the one that was published: the release page lists its
    SHA-256, and yours should match exactly.
 
-   - Windows: `certutil -hashfile jitter-v1.0.0.apk SHA256`
-   - macOS: `shasum -a 256 jitter-v1.0.0.apk`
-   - Linux: `sha256sum jitter-v1.0.0.apk`
+   - Windows: `certutil -hashfile jitter-v1.0.1.apk SHA256`
+   - macOS: `shasum -a 256 jitter-v1.0.1.apk`
+   - Linux: `sha256sum jitter-v1.0.1.apk`
 
 2. **Allow the install.** Android asks the first time you open an APK from your
    browser or file manager. Allow that app to install unknown apps.
@@ -405,7 +406,7 @@ published on each release page. To check that an APK was signed with this
 key:
 
 ```
-apksigner verify --print-certs jitter-v1.0.0.apk
+apksigner verify --print-certs jitter-v1.0.1.apk
 ```
 
 The line `Signer #1 certificate SHA-256 digest` must show the fingerprint
