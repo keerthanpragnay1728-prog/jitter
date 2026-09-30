@@ -207,6 +207,25 @@ message CycleState {
   // once, which is harmless: its steps read as already satisfied. See
   // core/setup/Onboarding.
   bool onboarding_complete = 41;
+
+  // Social apps untracked through the cooling-off, each with the instant
+  // tracking resumes. One entry per package; the service re-adds a due one to
+  // target_packages and removes its entry in the same transaction, on connect
+  // and at each 15 s checkpoint. Empty on every existing install, which is
+  // correct: nothing untracked before this field existed has a sunset. See
+  // core/settings/UntrackSunset.
+  repeated UntrackSunsetEntry untrack_sunsets = 42;
+}
+
+// One pending re-arm. The deadline is stamped on all three clocks at the
+// moment the untrack is confirmed, each moved on by seven days, the same
+// due_* shape as ReminderEntry. It is read with the RELIEF clamp, and a
+// changed boot id ends it.
+message UntrackSunsetEntry {
+  string pkg = 1;
+  int64 due_wall_ms = 2;
+  int64 due_elapsed_ms = 3;
+  int32 due_boot_id = 4;
 }
 
 // One $ rem. The due instant is stamped on all three clocks when it is set,

@@ -96,6 +96,8 @@
     <string name="untrack_title" translatable="false">UNTRACK COOLING-OFF</string>
     <string name="untrack_target_fmt" translatable="false">TARGET // %1$s</string>
     <string name="untrack_last_target" translatable="false">LAST TARGET. UNTRACKING IT LEAVES NOTHING GATED.</string>
+    <!-- Social apps only, before confirming. See core/settings/UntrackSunset. -->
+    <string name="untrack_sunset_fmt" translatable="false">SOCIAL APP. TRACKING RESUMES IN %1$s DAYS, OR AT THE NEXT RESTART.</string>
     <string name="untrack_confirm" translatable="false">[ CONFIRM REMOVE ]</string>
     <string name="untrack_keep" translatable="false">[ KEEP TRACKING ]</string>
     <string name="settings_section_quick">Quick launch</string>
@@ -163,6 +165,8 @@
     <string name="settings_lock_confirm_fmt">Confirm %1$s</string>
     <!-- Shown on an expanded row whose toggle a standing lock is holding. -->
     <string name="settings_target_pinned">A locked app stays tracked. Untracking it would stop the lock.</string>
+    <!-- An untracked social app's row, until its re-arm. %1$s is a date and time. -->
+    <string name="settings_target_sunset_fmt">Untracked. Tracking resumes %1$s.</string>
     <string name="settings_lock_no_unlock">A lock can only be extended. There is no unlock, and nothing here will cancel one.</string>
     <string name="settings_gate_unavoidable_title">The gate cannot be skipped</string>
     <string name="settings_gate_unavoidable_body">Opening a target app puts a countdown in front of it. When it reaches zero you choose how long you are staying, or you leave. Taking a lease buys time and nothing else: scroll delays run exactly as they would have, and staying past the lease you took makes them arrive sooner. There is no setting that turns friction off.</string>

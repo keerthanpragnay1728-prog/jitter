@@ -27,6 +27,7 @@ import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.session.TargetScope
+import dev.molasses.core.settings.UntrackSunset
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.FontScale
 import dev.molasses.engine.TierPolicy
@@ -210,7 +211,17 @@ class CycleStateStore(context: Context) {
      * that twice. There is no way to write the target list that does not come
      * through here.
      */
-    suspend fun toggleTarget(pkg: String, now: StampedInstant, onlyIfTracked: Boolean = false) {
+    suspend fun toggleTarget(
+        pkg: String,
+        now: StampedInstant,
+        onlyIfTracked: Boolean = false,
+        /**
+         * The cooling-off's confirm, for an app in `UntrackSunset.inScope`:
+         * store its seven-day deadline in this same transaction, so there is
+         * never a moment where the app is untracked with no re-arm pending.
+         */
+        grantsSunset: Boolean = false,
+    ) {
         store.updateData { state ->
             val selection = TargetScope.Selection(
                 stored = state.targetPackagesList,
@@ -225,6 +236,15 @@ class CycleStateStore(context: Context) {
             val locks = LockRegistry.of(state.locksList.map { it.toLock() })
             val next = TargetLock.toggled(current, pkg, locks.remainingMs(pkg, now))
                 ?: return@updateData state
+            // Tracked again by hand clears a pending re-arm; an untrack in
+            // scope starts one. See UntrackSunset.afterToggle.
+            val sunsets = UntrackSunset.afterToggle(
+                sunsets = state.untrackSunsetsList.map { it.toSunset() },
+                pkg = pkg,
+                trackedAfter = pkg in next,
+                grantsSunset = grantsSunset && onlyIfTracked,
+                now = now,
+            )
             // Set on every write, including the one that empties the list.
             // That write is the whole point: it is how "I turned everything
             // off" becomes a sentence the store can hold rather than a state
@@ -233,8 +253,51 @@ class CycleStateStore(context: Context) {
                 .clearTargetPackages()
                 .addAllTargetPackages(next)
                 .setTargetsChosen(true)
+                .clearUntrackSunsets()
+                .addAllUntrackSunsets(sunsets.map { it.toProto() })
                 .build()
         }
+    }
+
+    /** Pending re-arms, for CFG's rows. See [UntrackSunset]. */
+    val untrackSunsets: Flow<List<UntrackSunset.Sunset>> =
+        store.data.map { s -> s.untrackSunsetsList.map { it.toSunset() } }
+
+    /**
+     * Put every social app whose grace has run out back on the target list.
+     *
+     * Decided inside the transaction on the state being written, never on a
+     * snapshot the caller read, because the settings screen writes the same
+     * two fields. When nothing is due the transform returns the state it was
+     * given and DataStore writes nothing, so calling this every checkpoint
+     * costs a comparison. The list it adds to is resolved, not raw: see
+     * CLAUDE.md, "The stored target list is not the tracked set".
+     *
+     * @return the packages re-armed, empty when none were.
+     */
+    suspend fun rearmSunsets(now: StampedInstant): List<String> {
+        var rearmed = emptyList<String>()
+        store.updateData { state ->
+            rearmed = emptyList()
+            val selection = TargetScope.Selection(
+                stored = state.targetPackagesList,
+                chosen = state.targetsChosen,
+            )
+            val current = TargetScope.resolve(selection, DEFAULT_TARGETS).toList()
+            val r = UntrackSunset.rearm(current, state.untrackSunsetsList.map { it.toSunset() }, now)
+                ?: return@updateData state
+            rearmed = r.rearmed
+            // targets_chosen stays true: a re-arm onto a chosen-empty list
+            // leaves that state for a one-app list, which is data either way.
+            state.toBuilder()
+                .clearTargetPackages()
+                .addAllTargetPackages(r.targets)
+                .setTargetsChosen(true)
+                .clearUntrackSunsets()
+                .addAllUntrackSunsets(r.remaining.map { it.toProto() })
+                .build()
+        }
+        return rearmed
     }
 
     /**

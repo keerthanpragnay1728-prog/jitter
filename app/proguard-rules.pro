@@ -51,7 +51,8 @@
 -keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { <fields>; }
 
 # The generated messages and enums in this app, by name: CycleState, AppState,
-# ConsoleQueued, ConsoleBudget, LockEntry, LeaseEntry, ReminderEntry, and the two proto enums
+# ConsoleQueued, ConsoleBudget, LockEntry, LeaseEntry, ReminderEntry,
+# UntrackSunsetEntry, and the two proto enums
 # (LockReasonProto, CycleResetPolicyProto), all in package dev.molasses from
 # cycle_state.proto. The enums resolve by number through Internal.EnumLite.
 -keep class dev.molasses.CycleState { *; }
@@ -61,6 +62,7 @@
 -keep class dev.molasses.LockEntry { *; }
 -keep class dev.molasses.LeaseEntry { *; }
 -keep class dev.molasses.ReminderEntry { *; }
+-keep class dev.molasses.UntrackSunsetEntry { *; }
 -keep enum dev.molasses.LockReasonProto { *; }
 -keep enum dev.molasses.CycleResetPolicyProto { *; }
 
