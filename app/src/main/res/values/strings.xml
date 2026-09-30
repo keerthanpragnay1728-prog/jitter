@@ -253,6 +253,9 @@
       the title.
     -->
     <string name="settings_debug_short" translatable="false">[DBG]</string>
+    <!-- CFG's last row. Opens the issue tracker in the browser. -->
+    <string name="settings_report_problem" translatable="false">[ REPORT A PROBLEM ]</string>
+    <string name="settings_report_problem_failed">No browser could open the issue tracker.</string>
 
     <!-- Debug screen -->
     <string name="debug_title">Debug</string>

@@ -60,6 +60,7 @@ import dev.molasses.core.settings.CfgRowKey
 import dev.molasses.core.settings.TargetGrouping
 import dev.molasses.core.settings.UntrackCoolingOff
 import dev.molasses.core.settings.UntrackSunset
+import dev.molasses.core.support.ReportProblem
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.lock.LockLadder
@@ -72,6 +73,7 @@ import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.ui.AlphaIndex
 import dev.molasses.core.ui.FontScale
 import dev.molasses.data.repo.InstalledApp
+import dev.molasses.ui.canResolve
 import dev.molasses.ui.lock.lockOpensAtText
 import kotlinx.coroutines.launch
 
@@ -222,6 +224,16 @@ fun SettingsScreen(
     // in the order it is drawn. Built once per composition so an app's index
     // is its position in a list rather than a sum over which sections
     // happen to be open. See CfgRow.
+    // [ REPORT A PROBLEM ]. Resolved once per visit (CFG is keyed on each
+    // visit), through the shared check and the shared Intent, so a browser
+    // installed since the last visit is picked up on the next one.
+    val context = LocalContext.current
+    val reportResolvable = remember {
+        context.packageManager.canResolve(ReportProblem.spec().toIntent())
+    }
+    var reportFailed by remember { mutableStateOf(false) }
+    val reportRow = ReportProblem.row(resolvable = reportResolvable, launchFailed = reportFailed)
+
     val cfgRows = buildCfgRows {
         item(CfgRowKey.chrome("masthead")) {
             Row(
@@ -696,6 +708,31 @@ fun SettingsScreen(
             item(CfgRowKey.body(Section.TRY, "debug")) {
                 OutlinedButton(onClick = onOpenDebug, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.settings_debug))
+                }
+            }
+        }
+
+        // Its own row after the last section, in the masthead's [DBG] style:
+        // a link out of the app, not a setting, so it belongs to no section.
+        if (reportRow is ReportProblem.Row.Shown) {
+            item(CfgRowKey.chrome("report-problem")) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(
+                        stringResource(R.string.settings_report_problem),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { reportFailed = !launchReportProblem(context) }
+                            .padding(vertical = 6.dp, horizontal = 8.dp),
+                    )
+                    if (reportRow.failureNote) {
+                        Text(
+                            stringResource(R.string.settings_report_problem_failed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    }
                 }
             }
         }
