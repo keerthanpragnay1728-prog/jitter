@@ -101,6 +101,6 @@ class UntrackSunsetWiringTest {
         assertTrue(note >= 0 && body.indexOf("R.string.untrack_sunset_fmt", note) > note)
         assertTrue("stated while the answer can still be KEEP TRACKING", note < body.indexOf("R.string.untrack_confirm"))
         val strings = repoFile("app/src/main/res/values/strings.xml").readText()
-        assertTrue(strings.contains(">Untracked. Tracking resumes %1\$s.</string>"))
+        assertTrue(strings.contains(">Untracked. Tracking resumes %1\$s, or sooner after a restart.</string>"))
     }
 }
