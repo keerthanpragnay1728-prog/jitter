@@ -24,8 +24,10 @@
 #                   so iconv passes it, but the text is wrong. Catching this
 #                   needs a pattern, not a decoder.
 #
-# Scope is every file under app/src and tools, not just res/ XML, because the
-# file that was actually damaged was Kotlin.
+# Scope is every file under app/src, tools and fastlane, not just res/ XML,
+# because the file that was actually damaged was Kotlin. fastlane holds the
+# store copy a user reads first, and the store images the allowances below
+# name.
 #
 # This script is kept pure ASCII. The byte sequences it searches for are built
 # with printf octal escapes rather than written literally, so the checker does
@@ -55,14 +57,28 @@ is_binary() {
 # still read as text and still fails. ScanAllowanceTest pins this line.
 RAW_BINARY_DIR="app/src/main/res/raw/"
 #
-# PNG is not binary by extension either. The one tracked PNG, the store icon
-# made by tools/gen-icon.py, is under fastlane/ and outside this scan's scope;
-# tools/scan-encoding-history.py reads every path and allows it by exact path.
+# PNG is not binary by extension either, only by path: the store icon made by
+# tools/gen-icon.py, by its exact path, and PNGs in the store screenshot
+# directory, which is a directory so each new capture needs no line of its
+# own. A PNG anywhere else is still read as text and still fails. The same
+# three rules are in tools/scan-encoding-history.py; ScanAllowanceTest pins
+# both.
+ICON_PNG="fastlane/metadata/android/en-US/images/icon.png"
+SHOTS_PNG_DIR="fastlane/metadata/android/en-US/images/phoneScreenshots/"
+
+binary_by_path() {
+    case "$1" in
+        "$RAW_BINARY_DIR"*) return 0 ;;
+        "$ICON_PNG") return 0 ;;
+        "$SHOTS_PNG_DIR"*.png) return 0 ;;
+    esac
+    return 1
+}
 
 text_files() {
-    git ls-files -- app/src tools | sort | while read -r f; do
+    git ls-files -- app/src tools fastlane | sort | while read -r f; do
         [ -f "$f" ] || continue
-        case "$f" in "$RAW_BINARY_DIR"*) continue ;; esac
+        binary_by_path "$f" && continue
         is_binary "$f" || printf '%s\n' "$f"
     done
 }
@@ -123,4 +139,4 @@ if [ "$status" -ne 0 ]; then
     exit 1
 fi
 
-echo "All files under app/src and tools are valid UTF-8, no BOM, no mojibake."
+echo "All files under app/src, tools and fastlane are valid UTF-8, no BOM, no mojibake."
