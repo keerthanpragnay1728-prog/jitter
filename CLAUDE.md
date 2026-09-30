@@ -129,8 +129,10 @@ the cause and the fix. It checks only what git tracks (`git ls-files`) and
 skips only what git calls `-text` (`git check-attr`): an untracked
 `local.properties` or diagnostic dump is not the repository's to govern.
 
-The encoding check covers **every tracked file under `app/src` and `tools`**,
-not just resource XML, because the file that was actually damaged was Kotlin.
+The encoding check covers **every tracked file under `app/src`, `tools` and
+`fastlane`**, not just resource XML, because the file that was actually
+damaged was Kotlin. Binary files are allowed by path, never by extension:
+`res/raw`, the store icon, and PNGs in the store screenshot directory.
 It runs over `git ls-files` rather than `find`, so it skips Gradle's build
 output and checks exactly the set that reaches another machine.
 
