@@ -65,7 +65,7 @@ class GateBlockTest {
         val manager = repoFile("app/src/main/java/dev/molasses/overlay/LeaseGateOverlayManager.kt").readText()
         // The rung row closes first; only then is back the gate's own answer.
         val back = manager.substring(manager.indexOf("onBackPressed = {")).substringBefore("},")
-        assertTrue(back.indexOf("blockPickerOpen -> blockPickerOpen = false") in 0 until back.indexOf("expired -> exit()"))
+        assertTrue(back.indexOf("blockPickerOpen -> blockPickerOpen = false") in 0 until back.indexOf("else -> exit()"))
         assertTrue(manager.contains("controls = GateControls.visible(expired, remaining),"))
     }
 

@@ -25,5 +25,6 @@ Jitter has no network permission. Nothing leaves the device: no telemetry, no ac
 <ul>
 <li><b>Paytm blocks payments while Jitter is enabled.</b> It checks for any enabled accessibility service. Use Disable for payments in Settings, Safety, then re-enable Jitter afterwards. Google Pay and PhonePe work normally.</li>
 <li><b>YouTube is gated by the lease only.</b> Its home feed and Shorts send no scroll events, so scroll stalls do not apply there.</li>
+<li><b>YouTube can keep playing in a floating window.</b> When a gate sends YouTube to the background, a playing video can move into picture-in-picture, which Jitter cannot see or close. Turn it off: Android Settings, Apps, Special app access, Picture-in-picture, YouTube. YouTube Premium's background play keeps the sound going the same way; turn that off in YouTube's own settings.</li>
 <li>Tested on a small number of devices. Timing was measured on one.</li>
 </ul>

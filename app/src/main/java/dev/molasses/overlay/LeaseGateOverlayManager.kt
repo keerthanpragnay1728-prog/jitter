@@ -10,7 +10,7 @@ import androidx.compose.runtime.setValue
 import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateControls
 import dev.molasses.core.lease.GateReadout
-import dev.molasses.core.safety.HomeFirst
+import dev.molasses.core.safety.OverlayKind
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.model.EventType
 import dev.molasses.engine.FrictionLedger
@@ -56,21 +56,23 @@ data class GateStats(
  * real seconds whatever the device did with them.
  *
  * ## Every way out goes home, and goes home the same way
- * `[ TAKE ME OUT ]`, the back key and the safety timeout all run the same
- * path: fire the home action, then hold the window up across the transition
+ * `[ ARCHITECT'S SPACE ]`, the back key and the safety timeout all run the
+ * same path: fire the home action, then hold the window up across the transition
  * exactly as the lock flash does. Dismissing first would reveal the target app
  * for a frame or leave it resumed underneath, which is the half-resumed state
  * that makes a user tap back into it without meaning to.
  *
- * ## The LEASE EXPIRED gate sends the app home under itself
- * See `HomeFirst`. After its first draw it fires home, so the target goes to
- * the background and stops its own playback, and the gate stays up over the
- * launcher with the countdown running. The session closes on that launcher
- * exit as it always did, but the gate survives it: [homeFirst] tells the
- * service's leaveTarget to leave this window alone. Its way out is
- * [ ARCHITECT'S SPACE ], from the first frame, and back does the same. A
- * lease taken here is granted first, then the target is relaunched, which
- * restores its task, then the gate comes down.
+ * ## Both lease gates send the app home under themselves
+ * See `OverlayKind`. After its first draw the gate fires home, so the target
+ * goes to the background and stops its own playback, and the gate stays up
+ * over the launcher with the countdown running. That is the entry gate as
+ * much as the LEASE EXPIRED one: an app under an overlay is resumed, and
+ * Instagram started a Reel with sound behind the entry gate. The session
+ * closes on that launcher exit as it always did, but the gate survives it:
+ * The service's leaveTarget leaves a showing gate alone.
+ * Its way out is [ ARCHITECT'S SPACE ], from the first frame, and back does
+ * the same. A lease taken here is granted first, then the target is
+ * relaunched, which restores its task, then the gate comes down.
  */
 class LeaseGateOverlayManager(
     private val service: Context,
@@ -90,8 +92,8 @@ class LeaseGateOverlayManager(
      */
     private val onBlock: (pkg: String, durationMs: Long) -> Unit,
     /**
-     * Bring [pkg] back after a lease is taken on a home-first gate, which
-     * sent it to the background. True when the launch was started.
+     * Bring [pkg] back after a lease is taken. The gate sent it to the
+     * background. True when the launch was started.
      */
     private val relaunch: (pkg: String) -> Boolean,
     /**
@@ -146,11 +148,6 @@ class LeaseGateOverlayManager(
 
     val isShowing: Boolean get() = host?.isShowing == true
 
-    /** This window sent its app home, so leaving the app must not take it down. See [HomeFirst]. */
-    val homeFirst: Boolean get() = isShowing && homeFirstNow
-
-    private var homeFirstNow = false
-
     /** The package this window is up for, or null when it is not showing. */
     val showingFor: String? get() = if (isShowing) currentPkg else null
 
@@ -177,13 +174,6 @@ class LeaseGateOverlayManager(
          * this screen that changes.
          */
         nextScroll: NextScroll.Reading,
-        /**
-         * Send the app home after the first draw, and relaunch it on a lease.
-         * `HomeFirst.sendsHome` for the expired gate; also true for the
-         * lease panel that follows a walking gate, whose app is already in
-         * the background.
-         */
-        homeFirst: Boolean = HomeFirst.sendsHome(HomeFirst.leaseGate(expired)),
     ): Boolean {
         if (isShowing && currentPkg == pkg) return true
         if (isShowing) dismissInternal()
@@ -191,8 +181,7 @@ class LeaseGateOverlayManager(
         currentPkg = pkg
         resolved = false
         blockPickerOpen = false
-        homeFirstNow = homeFirst
-        val kind = HomeFirst.leaseGate(expired)
+        val kind = OverlayKind.leaseGate(expired)
 
         this.stats = stats
         val deadline = monotonicMs() + countdownMs
@@ -205,19 +194,14 @@ class LeaseGateOverlayManager(
         host = h
 
         h.show(
-            onFirstDraw = if (homeFirst) {
-                { sendHome(pkg, kind) }
-            } else {
-                null
-            },
+            onFirstDraw = { sendHome(pkg, kind) },
             onBackPressed = {
                 // Back from the rung row returns to the gate; it does not
-                // answer it. On the expired gate back is the exit, the same
-                // handler as [ ARCHITECT'S SPACE ].
+                // answer it. Otherwise back is the exit, on either gate, the
+                // same handler as [ ARCHITECT'S SPACE ].
                 when {
                     blockPickerOpen -> blockPickerOpen = false
-                    expired -> exit()
-                    else -> decline("back")
+                    else -> exit()
                 }
             },
         ) {
@@ -234,7 +218,6 @@ class LeaseGateOverlayManager(
                     nextScroll = nextScroll,
                     controls = GateControls.visible(expired, remaining),
                     onTakeLease = { ms -> takeLease(ms) },
-                    onTakeMeOut = { decline("take me out") },
                     onExit = { exit() },
                     blockPickerOpen = blockPickerOpen,
                     onOpenBlock = { blockPickerOpen = true },
@@ -316,33 +299,30 @@ class LeaseGateOverlayManager(
         // onLeaseGranted along with the accounting it changes. Logging it
         // here too would put two rows in the ledger for one decision, the
         // same reason GateOverlayManager does not write GATE_PASSED.
-        if (homeFirstNow) {
-            // Grant, then relaunch, then come down. Granted first so the
-            // enter event the relaunch produces finds the lease and passes;
-            // the gate stays up until the launch is started so the launcher
-            // is never shown bare between the two.
-            onLeaseTaken(pkg, durationMs)
-            val launched = relaunch(pkg)
-            Log.i(TAG, "relaunch on lease: pkg=$pkg success=$launched")
-            dismissInternal()
-        } else {
-            dismissInternal()
-            onLeaseTaken(pkg, durationMs)
-        }
+        //
+        // The app is in the background under this gate, so: grant, then
+        // relaunch, then come down. Granted first so the enter event the
+        // relaunch produces finds the lease and passes; the gate stays up
+        // until the launch is started so the launcher is never shown bare
+        // between the two.
+        onLeaseTaken(pkg, durationMs)
+        val launched = relaunch(pkg)
+        Log.i(TAG, "relaunch on lease: pkg=$pkg success=$launched")
+        dismissInternal()
     }
 
     /**
      * After the first draw: send the app home under this window. The frame
      * has composited by then, so the user sees the gate rather than a bounce.
      */
-    private fun sendHome(pkg: String, kind: HomeFirst.Overlay) {
+    private fun sendHome(pkg: String, kind: OverlayKind) {
         if (currentPkg != pkg || resolved) return
         goHome()
         Log.i(TAG, "overlay=$kind home sent for $pkg")
     }
 
     /**
-     * [ ARCHITECT'S SPACE ], and back, on the expired gate: one handler.
+     * [ ARCHITECT'S SPACE ], and back, on either gate: one handler.
      *
      * Leaving is never relief. It grants nothing, clears nothing, and does
      * not move the countdown escalation, which counts leases taken. Home is
@@ -406,7 +386,6 @@ class LeaseGateOverlayManager(
     }
 
     private fun dismissInternal() {
-        homeFirstNow = false
         ticker?.cancel(); ticker = null
         holdJob?.cancel(); holdJob = null
         val h = host

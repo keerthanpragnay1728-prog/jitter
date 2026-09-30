@@ -108,6 +108,6 @@ class UntrackCoolingOffWiringTest {
         val lock = body.indexOf("TargetLock.toggled(")
         assertTrue("remove-only and the lock guard both inside updateData, in that order", update in 0 until onlyIf && onlyIf < lock)
         val repo = repoFile("app/src/main/java/dev/molasses/data/repo/SettingsRepository.kt").readText()
-        assertTrue(repo.contains("store.toggleTarget(pkg, nowStamped(), onlyIfTracked = true)"))
+        assertTrue(repo.contains("store.toggleTarget(pkg, nowStamped(), onlyIfTracked = true, grantsSunset = sunsetInScope(pkg))"))
     }
 }

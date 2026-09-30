@@ -11,7 +11,7 @@ import android.util.Log
  * The build before this muted STREAM_MUSIC under the silencing overlays and
  * persisted a "Jitter muted it" flag so a process death could not leave the
  * phone silent. The mute is gone (the Bluetooth absolute-volume sync undid
- * it within seconds on device, and home-first replaced it; see `HomeFirst`),
+ * it within seconds on device, and home-first replaced it; see `OverlayKind`),
  * but a tester who updates with that flag set would have a stream still
  * muted by us and nothing left that would ever unmute it. So on service
  * connect this reads the flag, unmutes if it is set, and clears it.

@@ -48,10 +48,15 @@ import kotlinx.coroutines.delay
  *     UNTRACK COOLING-OFF
  *     TARGET // <app label>
  *     LAST TARGET. UNTRACKING IT LEAVES NOTHING GATED.
+ *     SOCIAL APP. TRACKING RESUMES IN 7 DAYS, OR AT THE NEXT RESTART.
  *     <seconds>
  * ```
  *
  * The fourth line only when [lastTarget]: see [UntrackCoolingOff.isLastTarget].
+ * The fifth only when [sunsetDays] is set, which is before the user confirms
+ * and for the apps `UntrackSunset.inScope` names: the untrack they are about
+ * to confirm is temporary, and they are told so while the answer can still
+ * be KEEP TRACKING.
  *
  * and at zero, [ CONFIRM REMOVE ] and [ KEEP TRACKING ] in place of the
  * number. See [UntrackCoolingOff] for the rules; this only draws them.
@@ -65,6 +70,8 @@ import kotlinx.coroutines.delay
 fun UntrackCoolingOffPanel(
     state: UntrackCoolingOff.State,
     lastTarget: Boolean,
+    /** Days until tracking resumes, for a social app; null when the untrack is permanent. */
+    sunsetDays: Int?,
     onConfirmRemove: () -> Unit,
     onKeepTracking: () -> Unit,
     onLeave: (UntrackCoolingOff.Leave) -> Unit,
@@ -134,6 +141,15 @@ fun UntrackCoolingOffPanel(
             if (lastTarget) {
                 Text(
                     text = stringResource(R.string.untrack_last_target),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 14.sp,
+                    color = PhosphorGreen,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            if (sunsetDays != null) {
+                Text(
+                    text = stringResource(R.string.untrack_sunset_fmt, sunsetDays.toString()),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 14.sp,
                     color = PhosphorGreen,

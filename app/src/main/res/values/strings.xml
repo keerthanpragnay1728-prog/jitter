@@ -37,7 +37,6 @@
     <string name="lease_gate_cycle" translatable="false">THIS CYCLE</string>
     <string name="lease_gate_opens" translatable="false">OPENS TODAY</string>
     <string name="lease_gate_select" translatable="false">SELECT LEASE</string>
-    <string name="lease_gate_out" translatable="false">[ TAKE ME OUT ]</string>
     <!-- LEASE EXPIRED gate only. The rungs reuse lease_gate_button_fmt. -->
     <string name="lease_gate_block" translatable="false">[ BLOCK THIS APP ]</string>
     <string name="lease_gate_block_select" translatable="false">BLOCK FOR</string>
@@ -97,6 +96,8 @@
     <string name="untrack_title" translatable="false">UNTRACK COOLING-OFF</string>
     <string name="untrack_target_fmt" translatable="false">TARGET // %1$s</string>
     <string name="untrack_last_target" translatable="false">LAST TARGET. UNTRACKING IT LEAVES NOTHING GATED.</string>
+    <!-- Social apps only, before confirming. See core/settings/UntrackSunset. -->
+    <string name="untrack_sunset_fmt" translatable="false">SOCIAL APP. TRACKING RESUMES IN %1$s DAYS, OR AT THE NEXT RESTART.</string>
     <string name="untrack_confirm" translatable="false">[ CONFIRM REMOVE ]</string>
     <string name="untrack_keep" translatable="false">[ KEEP TRACKING ]</string>
     <string name="settings_section_quick">Quick launch</string>
@@ -127,7 +128,7 @@
     <!--
       The tracking toggle, in place of a checkbox. Bracketed because in a
       zero-border layout the brackets are the whole affordance: they are what
-      tells [CFG], [DO IT] and [ TAKE ME OUT ] apart from a label that merely
+      tells [CFG], [DO IT] and [ ARCHITECT'S SPACE ] apart from a label that merely
       sits there. translatable="false" for the same reason those are: this is
       terminal chrome on a character grid, and a two-letter word replaced by a
       six-letter one moves the column.
@@ -164,6 +165,12 @@
     <string name="settings_lock_confirm_fmt">Confirm %1$s</string>
     <!-- Shown on an expanded row whose toggle a standing lock is holding. -->
     <string name="settings_target_pinned">A locked app stays tracked. Untracking it would stop the lock.</string>
+    <!--
+      An untracked social app's row, until its re-arm. %1$s is a date and
+      time. "Or sooner" because a restart ends the grace early, which errs
+      toward friction; the row must not promise a date the phone can beat.
+    -->
+    <string name="settings_target_sunset_fmt">Untracked. Tracking resumes %1$s, or sooner after a restart.</string>
     <string name="settings_lock_no_unlock">A lock can only be extended. There is no unlock, and nothing here will cancel one.</string>
     <string name="settings_gate_unavoidable_title">The gate cannot be skipped</string>
     <string name="settings_gate_unavoidable_body">Opening a target app puts a countdown in front of it. When it reaches zero you choose how long you are staying, or you leave. Taking a lease buys time and nothing else: scroll delays run exactly as they would have, and staying past the lease you took makes them arrive sooner. There is no setting that turns friction off.</string>
@@ -394,6 +401,9 @@
          figure, so it sits against it rather than in a column of its own. -->
     <string name="ledger_cycle_penalty_fmt" translatable="false">CYCLE %1$s +%2$s  HORIZON %3$s  RESETS %4$s</string>
     <string name="ledger_distribution">DISTRIBUTION METRICS</string>
+    <!-- Apps the distribution list leaves out, counted rather than dropped. -->
+    <string name="ledger_distribution_under_floor_fmt">+ %1$s more under a minute</string>
+    <string name="ledger_distribution_past_cap_fmt">+ %1$s more past the top %2$s</string>
     <string name="ledger_app_minutes_fmt">%1$s min</string>
     <string name="filter_allowed_badge">[ALLOWED]</string>
     <string name="action_back">Back</string>

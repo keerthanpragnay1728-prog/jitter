@@ -924,6 +924,7 @@ fun MainLauncherWorkspace(
                     onLaunchLadder = onLaunchLadder,
                 )
                 PAGE_LEDGER -> TextualWellbeingView(
+                    shown = pagerState.settledPage == PAGE_LEDGER,
                     cycle = cycle,
                     nowStamped = nowStamped,
                     onOpenWellbeing = onOpenWellbeingSettings,
@@ -2182,6 +2183,8 @@ private fun ManualRow(row: Manual.Row, onPick: (String) -> Unit) {
 
 @Composable
 fun TextualWellbeingView(
+    /** The pager has settled on this page. Each change re-reads the day. */
+    shown: Boolean,
     cycle: CycleReadout,
     nowStamped: () -> StampedInstant,
     onOpenWellbeing: () -> Unit,
@@ -2193,8 +2196,27 @@ fun TextualWellbeingView(
     var screenTimeMs by remember { mutableStateOf<Long?>(null) }
     var unlockCount by remember { mutableStateOf<Int?>(null) }
     var usageRecords by remember { mutableStateOf(emptyList<AppUsageRecord>()) }
+    // What the floor and the cap left out, so the page can say so.
+    var underFloor by remember { mutableIntStateOf(0) }
+    var pastCap by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    // Bumped on every resume. The launcher is never sent back to the console
+    // on home, so a user who left from this page comes back to it with the
+    // page still composed, and a query keyed on nothing kept the day as it
+    // was when the page was first drawn. That is how Instagram, used after
+    // the page was opened, was missing while Settings, used before, was not.
+    var resumes by remember { mutableIntStateOf(0) }
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumes++
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+
+    // Re-read on every show of this page and on every resume.
+    LaunchedEffect(shown, resumes) {
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
             ?: return@LaunchedEffect
         val startOfDay = Calendar.getInstance().apply {
@@ -2217,12 +2239,20 @@ fun TextualWellbeingView(
         val day = withContext(Dispatchers.Default) {
             readDayUsage(usm, startOfDay, now, exclude = setOf(context.packageName))
         }
-        if (day != null && day.apps.isNotEmpty()) {
+        // Every value is assigned on every read, so a refresh can clear a
+        // row as well as add one. Null (no grant, failed query) and an empty
+        // day both read as unknown, as they did before.
+        screenTimeMs = day?.takeIf { it.apps.isNotEmpty() }?.totalMs
+        val distribution = day?.distribution(DISTRIBUTION_ROWS, DISTRIBUTION_MIN_MS)
+        underFloor = distribution?.underFloor ?: 0
+        pastCap = distribution?.pastCap ?: 0
+        usageRecords = if (day == null || distribution == null || day.apps.isEmpty()) {
+            emptyList()
+        } else {
             // The headline is every app. The list below it is the leaders,
             // which is a different question and must not decide the total.
-            screenTimeMs = day.totalMs
             val pm = context.packageManager
-            usageRecords = day.top(DISTRIBUTION_ROWS, DISTRIBUTION_MIN_MS).map { entry ->
+            distribution.rows.map { entry ->
                 val label = try {
                     pm.getApplicationLabel(pm.getApplicationInfo(entry.pkg, 0)).toString()
                 } catch (e: Exception) {
@@ -2351,7 +2381,10 @@ fun TextualWellbeingView(
 
         Spacer(Modifier.height(8.dp))
 
-        if (usageRecords.isEmpty()) {
+        // Only when there is truly nothing. A day of apps all under the floor
+        // is not "no usage recorded", and saying so blamed the grant for a
+        // rule of this page.
+        if (usageRecords.isEmpty() && underFloor == 0) {
             Text(
                 text = stringResource(R.string.ledger_distribution_empty),
                 fontFamily = FontFamily.Monospace,
@@ -2390,6 +2423,30 @@ fun TextualWellbeingView(
                     color = PhosphorDim,
                 )
             }
+        }
+
+        // What the cap and the floor left out, counted. See DayUsage.distribution.
+        if (pastCap > 0) {
+            Text(
+                text = stringResource(
+                    R.string.ledger_distribution_past_cap_fmt,
+                    pastCap.toString(),
+                    DISTRIBUTION_ROWS.toString(),
+                ),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = PhosphorDim,
+                modifier = Modifier.padding(vertical = 2.dp),
+            )
+        }
+        if (underFloor > 0) {
+            Text(
+                text = stringResource(R.string.ledger_distribution_under_floor_fmt, underFloor.toString()),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = PhosphorDim,
+                modifier = Modifier.padding(vertical = 2.dp),
+            )
         }
 
         Spacer(Modifier.height(20.dp))

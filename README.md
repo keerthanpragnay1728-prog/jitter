@@ -1,9 +1,274 @@
 # Jitter
 
-A progressive-friction focus tool for Android.
+**Makes your most distracting apps slower the longer you use them.**
 
-Instagram, X and YouTube are never blocked. Instead, the longer you use them
-inside a six-hour cycle, the more the phone *feels* like it is failing.
+Jitter is a home screen and a set of speed bumps for Android. Instagram, X and
+YouTube are never blocked: the longer you stay in one inside a six-hour cycle,
+the more the phone feels like it is failing.
+
+![Release](https://img.shields.io/badge/release-v1.0.1-blue)
+![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
+![Android](https://img.shields.io/badge/Android-11%2B-3DDC84)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.1.21-7F52FF)
+![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)
+
+**[Download the latest release](https://github.com/keerthanpragnay1728-prog/visceral/releases/latest)**
+
+---
+
+## What is Jitter
+
+**Friction instead of blocking.** Nothing slams shut on a timer. Each app you
+track has a horizon, the length of session it is for. Partway into it, a scroll
+starts to cause short stalls where the app ignores your finger, and they get
+longer and more frequent the further in you go. By default that starts ten
+minutes in and reaches its worst at twenty five.
+
+**A gate at the door.** Opening a tracked app shows a short countdown first,
+then you choose how long you are staying: 5, 10 or 15 minutes, or leave. When
+that time runs out, the app goes to the background and you are back at the
+home screen.
+
+**The rest of it:**
+
+- **Locks you cannot undo.** Lock an app, or every tracked app, for a set time.
+  There is no unlock. It runs until it ends.
+- **Reminders.** `rem 45m tea` on the console, and a short tone when it is due.
+- **A console launcher.** A plain text home screen with a few commands that
+  answer once: `calc` for arithmetic, `conv` for unit conversion, `days` for
+  dates.
+- **Bit**, the small face on the console that reacts to what you do.
+
+**What it is not.** Jitter is not a parental control and it is not
+unbreakable. You can always turn off its accessibility service or uninstall
+it, and nothing in it tries to stop you. It is built to beat the impulse to
+open an app, not a determined decision to use it.
+
+### In more detail
+
+In plain language, because an app that deliberately makes a phone feel broken
+owes you this.
+
+**It will make your phone ignore your finger.** Once you are 40% of the way
+into an app's horizon (ten minutes at the default of twenty five), a scroll
+can cause a blackout during which touches in that app do nothing. Blackouts
+get longer and more likely the further in you are, up to five seconds on
+every scroll at the default horizon. It looks and feels like the phone
+has frozen. That is the intended effect.
+
+**So you can always tell it is us.** While a blackout is active, a thin grey
+bar is drawn along the top edge of the screen. There is no setting that
+removes it, because without it you could not distinguish a deliberate stall
+from a failing touchscreen.
+
+**Four escape hatches, always available.** Tap the top-left corner of the screen
+four times within 1.5 seconds and the blackout releases immediately. It also
+releases when the screen turns off, when you leave the app, and when a phone
+call arrives. And it is never armed for more than eight continuous seconds,
+no matter how much you scroll.
+
+**It will stop you at the door.** Opening one of your target apps puts a
+full-screen black page in front of it: a face, the app's name, how long you
+have spent in it today, how long this cycle, how many times you have opened it,
+and a countdown. Eight seconds the first time. There is nothing to do but wait
+or leave, and there is no sentence on the screen telling you what to think
+about the numbers. The app goes to the background as the gate appears, so a
+video or Reel that starts on its own does not play behind the gate, and taking
+a lease reopens it.
+
+**Then you choose how long you are staying.** At zero the countdown is replaced
+by three answers: 5m, 10m or 15m. There is no unlimited option. You do not have
+to wait for zero to leave: [ ARCHITECT'S SPACE ] is on the gate from the first
+frame and sends you home, and pressing back does the same.
+
+**When a lease runs out, the app goes home under the gate.** The gate
+checks your lease at its deadline, without waiting for you to touch anything,
+and the LEASE EXPIRED gate sends the app to the background as it appears, so
+a video stops because its app stopped, not because anything argued with its
+sound. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
+from the start and leaves (back does the same), [ BLOCK THIS APP ] is there
+from the start, and the lease options appear at zero; taking one reopens the
+app where you left it. Leaving grants nothing and resets nothing. The walking
+gate and the lock screen send the app home the same way.
+
+**Each lease makes the next gate longer.** Eight seconds, then twelve, sixteen,
+twenty, up to thirty, for as long as the cycle lasts. Backing out costs nothing
+extra: only leases you actually take lengthen it. The count resets when the
+cycle does.
+
+**A lease buys time and nothing else.** It does not reset your accumulated
+time and does not make the blackouts shorter. Staying in the app past the
+lease you took makes them arrive sooner. Within a cycle the friction only ever
+increases.
+
+**It can ask you to get up and walk instead,** but only if you turn that on,
+and only once an app is past its horizon in the current cycle. Settings → The
+gate → What the gate asks for. That replaces the countdown with the movement
+gate: about twelve steps, or eight seconds of walking-shaped motion if your
+phone has no step sensor. **If walking is not something you can or should
+do,** the same setting offers a short untimed typing task in its place. No
+sensors run in that mode. You can always leave with [ ARCHITECT'S SPACE ] or
+back; that sends you home without buying anything, and the gate comes back
+when you next scroll.
+
+**The counter resets six hours after the cycle started.** The cycle starts
+the first time you open one of your target apps from a clean state, and ends
+six hours later whether you kept using the apps or not. There is no setting
+for it.
+
+**Untracking a social app is temporary.** Turning an app off in CFG waits two
+and a half minutes before it lets you confirm. For Instagram, Facebook (and
+Facebook Lite), X, TikTok, Snapchat and any app Android lists as social,
+tracking comes back on by itself after seven days, or at the next restart if
+that is sooner, and CFG shows the date on the app's row. YouTube and every
+other app stay untracked until you turn them back on.
+
+**Battery.** Motion sensors run only while a gate is open on screen, and are
+unregistered the moment it passes, is abandoned, or times out after 90 seconds.
+Nothing samples in the background. No wake locks are ever held.
+
+---
+
+## Screens
+
+<!--
+  Screenshots are not taken yet. Each line below names the file the images
+  README asks for. Move a line out of this comment once its file exists, and
+  ReadmeScreenshotsTest checks that the path is real.
+
+![The console, Jitter's home screen](fastlane/metadata/android/en-US/images/phoneScreenshots/1.png)
+![The ledger: today's screen time and the current cycle](fastlane/metadata/android/en-US/images/phoneScreenshots/2.png)
+![The lease gate: a countdown, then 5, 10 or 15 minutes](fastlane/metadata/android/en-US/images/phoneScreenshots/4.png)
+-->
+
+- **The console.** Jitter's home screen: a prompt, a few app rows you choose,
+  and Bit.
+- **The ledger.** Swipe across from the console for today's screen time per
+  app and the current cycle: how far into its horizon the deepest app is, and
+  when the cycle resets.
+- **The lease gate.** What stands in front of a tracked app: the countdown,
+  then 5, 10 or 15 minutes.
+
+---
+
+## Install
+
+Jitter needs Android 11 or later. It is not on the Play Store; you install the
+APK yourself.
+
+1. **Download the APK** from the
+   [latest release](https://github.com/keerthanpragnay1728-prog/visceral/releases/latest).
+   Check the file is the one that was published: the release page lists its
+   SHA-256, and yours should match exactly.
+
+   - Windows: `certutil -hashfile jitter-v1.0.1.apk SHA256`
+   - macOS: `shasum -a 256 jitter-v1.0.1.apk`
+   - Linux: `sha256sum jitter-v1.0.1.apk`
+
+2. **Allow the install.** Android asks the first time you open an APK from your
+   browser or file manager. Allow that app to install unknown apps.
+
+3. **If Play Protect warns you,** it is because the app is from outside the
+   Play Store. Tap "More details", then "Install anyway". If Play Protect blocks
+   the install outright on your phone, there is no in-app way around that.
+   What you can check yourself is the checksum above and the
+   [source code](https://github.com/keerthanpragnay1728-prog/visceral).
+
+4. **Restricted settings (Android 13 and later).** The first time you try to
+   turn on Jitter's accessibility service, Android shows "Restricted setting".
+   Open App info for Jitter, tap the three-dot menu, choose "Allow restricted
+   settings", then turn accessibility on again. Jitter's setup guide walks you
+   through this too.
+
+5. **Finish setup in the app.** Open Jitter. The setup guide asks for what it
+   needs: two permissions (accessibility, usage access) and your home app.
+
+**Moving from the old tester build (`dev.molasses`)?** Uninstall it first. It
+is a separate app to Android, and its data does not carry over.
+
+---
+
+## Privacy and what Jitter can see
+
+- **No internet permission.** Nothing leaves the phone. No account, no
+  telemetry, no update checker.
+- **It sees which app is in front, and that you scrolled,** in the apps you
+  track and nothing else. It never reads what is on the screen: window content
+  retrieval is switched off in its accessibility configuration, so the text,
+  images, messages and accounts in those apps are not visible to it.
+- **Usage access** lets it rebuild your time if it is killed mid-session.
+
+**Permissions in the manifest**
+
+Every `uses-permission` in `AndroidManifest.xml`, and nothing else.
+`ReadmePermissionsTest` fails if this list and the manifest differ.
+
+- `PACKAGE_USAGE_STATS`: usage access. Replays `ACTIVITY_RESUMED` and
+  `ACTIVITY_PAUSED` after a process death, so a session's time is not lost.
+- `ACTIVITY_RECOGNITION`: the step sensor for the movement gate. Without it the
+  gate falls back to motion analysis.
+- `RECEIVE_BOOT_COMPLETED`: re-arms pending `$ rem` alarms after a reboot.
+- `VIBRATE`: `$ rem` vibrates once when the ringer is on vibrate.
+- `USE_EXACT_ALARM`: `$ rem` fires on time on Android 13 and later.
+- `SCHEDULE_EXACT_ALARM`: the same on Android 12 and 12L, capped at
+  `maxSdkVersion="32"`.
+
+Not requested: `READ_PHONE_STATE` (the call check uses `AudioManager`),
+`QUERY_ALL_PACKAGES`, `SYSTEM_ALERT_WINDOW`, `INTERNET`, `POST_NOTIFICATIONS`
+(nothing posts a notification, `$ rem` included) and
+`HIGH_SAMPLING_RATE_SENSORS` (no sensor is sampled fast enough to need it).
+
+---
+
+## Known limits
+
+- **Paytm blocks payments while Jitter is on.** It refuses to pay while any
+  accessibility service is enabled. Use "Disable for payments" in CFG, Safety,
+  then turn Jitter back on in Android Settings afterwards. Google Pay and
+  PhonePe work normally. Details in "Banking and UPI apps" below.
+- **YouTube is lease-gated only.** Its feed and Shorts send no scroll events,
+  so scroll stalls never start there. The lease gate still fires on time, even
+  while a video plays.
+- **YouTube can keep playing in a floating window.** When a gate sends YouTube
+  to the background, a playing video can move into picture-in-picture, which
+  Jitter cannot see or close. Turn it off: Android Settings, Apps, Special app
+  access, Picture-in-picture, YouTube. YouTube Premium's background play keeps
+  the sound going the same way; turn that off in YouTube's own settings.
+- **Locks have no unlock.** A lock runs until it ends.
+- **Screen margins are fixed.** Jitter clears the status and navigation bars
+  with a fixed margin rather than measuring them, so an unusual screen shape
+  may clip an edge.
+- **Command history is recorded but not shown.** A command can only be run
+  again by typing it again.
+
+---
+
+## Removing Jitter
+
+1. Set another home app: Android Settings, Apps, Default apps, Home app.
+2. Turn off Jitter's accessibility service: Android Settings, Accessibility.
+3. Uninstall Jitter.
+
+Uninstalling deletes all of Jitter's data: cycles, leases, locks, reminders
+and settings. It stores nothing outside its own data directory.
+
+---
+
+## For contributors
+
+Everything from here down is for people building or changing Jitter.
+
+**Stack:** Kotlin, Jetpack Compose, Hilt, Room (schema v1 committed under
+`app/schemas/`), Proto DataStore, an `AccessibilityService`, and
+`UsageStatsManager`. Minimum Android 11 (`minSdk` 30).
+
+**Architecture in brief.** The decisions live in a pure Kotlin core with no
+Android imports: `core/` and `engine/` (plus part of `sensing/`). That core is
+compiled and tested on a plain JVM by `tools/pure-verify`, and `PurityTest`
+fails if an Android import creeps in. The Android layer sits on top: the
+accessibility service, the overlays, the Compose screens, and storage. The
+repository's rules, and the reasons behind them, are in
+[CLAUDE.md](CLAUDE.md); read it before changing anything.
 
 The applicationId, the package the device knows the app by, is
 `org.jitteros.app`. The code namespace, and so every class name, is still
@@ -17,6 +282,22 @@ new applicationId as a different app, so an install of `dev.molasses` is not
 updated by `org.jitteros.app`: it has to be uninstalled, and its data goes
 with it. See RELEASE.md. Renaming the namespace as well would touch every
 file for no user-visible gain, so it stays.
+
+```
+dev.molasses
+├── MolassesApp.kt  (@HiltAndroidApp)
+├── core/           pure: no Android imports, enforced by PurityTest
+├── data/           db/ datastore/ repo/: Room ledger + Proto DataStore hot state
+├── di/             Hilt module
+├── engine/         FrictionEngine, TierPolicy, MonotonicInt
+├── monitor/        MolassesAccessibilityService, ForegroundReconciler, ForegroundProbe
+├── overlay/        ShutterOverlayManager, OverlayHost, GateOverlayManager,
+│                   LeaseGateOverlayManager, LockOverlayManager, CallDetector
+├── sensing/        MovementDetector, CadenceAnalyzer, StepGate, FallbackImuGate
+└── ui/             launcher/ setup/ settings/ gate/ lock/ theme/
+```
+
+## The friction model
 
 Two systems do this, and they share no state.
 
@@ -57,9 +338,121 @@ is 8 s the first time and 4 s longer for each lease taken this cycle, up to
 resets accumulated time, never lowers the stall duration, and never rewinds
 `tierIndex`. Gates are a toll, not a refund.
 
+## Building
+
+Run the app module's tests, then build:
+
+```
+./gradlew testDebugUnitTest
+./gradlew assembleRelease
+```
+
+`tools/check-all.sh` runs the repository's own checks (dashes, encoding,
+format strings, colours, structure) and the pure suite. It does not compile
+the Android layer or run `testDebugUnitTest`, so both are needed. See
+CLAUDE.md, "What check-all does not run".
+
+Debug: `./gradlew assembleDebug`, signed with the SDK's debug key, for
+development only.
+
+Release: `./gradlew assembleRelease`. It is signed with the one release key,
+which never lives in this repository. Set these four in
+`~/.gradle/gradle.properties`, or as environment variables of the same names:
+
+```
+JITTER_STORE_FILE=/absolute/path/to/jitter-release.jks
+JITTER_STORE_PASSWORD=...
+JITTER_KEY_ALIAS=...
+JITTER_KEY_PASSWORD=...
+```
+
+If any is missing the release build stops at packaging with a message naming
+the missing ones. It never produces an unsigned APK and never signs a release
+with the debug key. Debug builds, and compiling or testing the release
+variant, do not need them. Key files (`*.jks`, `*.keystore`, `*.p12`) are
+ignored by git, and a test fails if one is ever tracked. There are no product
+flavors: one channel, one key. See RELEASE.md for the release steps.
+
+### Distribution
+
+Jitter is distributed by sideload and F-Droid. That is
+permanent, not a staging step on the way to Google Play.
+
+An accessibility service that exists to make other apps harder to use is not
+something Play will keep listed. The Play Console policy on accessibility APIs
+requires that the service exist to help users with disabilities, and
+`isAccessibilityTool` is set to `false` in the service config precisely because
+claiming otherwise would be a false declaration. Every part of the design
+follows from accepting that:
+
+- No `SYSTEM_ALERT_WINDOW`, no `READ_PHONE_STATE`, no `QUERY_ALL_PACKAGES`, no
+  foreground service, no network permission. The permission set is small enough
+  to read in full on the install screen.
+- The accessibility service description is written as a prominent disclosure in
+  plain language, because a sideloading user has no store listing to read.
+- No update mechanism of its own, no telemetry, no account.
+
+## Integrity
+
+Every release is signed with the same key. Its certificate fingerprint is:
+
+```
+876cbba2c4cdab9f0020ab8fdb6bc66dc28c991158a776b28911f26ff40152ec
+```
+
+That is the SHA-256 of the signing certificate, and it never changes. It is
+not the checksum of an APK file, which is different for every release and is
+published on each release page. To check that an APK was signed with this
+key:
+
+```
+apksigner verify --print-certs jitter-v1.0.1.apk
+```
+
+The line `Signer #1 certificate SHA-256 digest` must show the fingerprint
+above. `apksigner` ships with the Android SDK build tools.
+
+## License
+
+Jitter is free software, licensed under the GNU General Public License,
+version 3 or (at your option) any later version: **GPL-3.0-or-later**. The
+full text is in [LICENSE](LICENSE).
+
+Copyright Keerthan Pragnay.
+
+The libraries that ship inside the APK, and their licences:
+
+- AndroidX (Core, Activity, Compose, Lifecycle, Room, DataStore, Hilt
+  Navigation), the Kotlin standard library, kotlinx.coroutines, and
+  Dagger/Hilt: Apache-2.0.
+- protobuf-javalite: BSD-3-Clause.
+- desugar_jdk_libs, which backports Java library APIs to older Android:
+  GPL-2.0 with the Classpath Exception.
+
+All three are compatible with distributing the whole under GPL-3.0-or-later:
+Apache-2.0 and BSD-3-Clause code may be combined into a GPLv3 work, and the
+Classpath Exception allows linking regardless of the licence of the rest.
+Test-only dependencies (JUnit, AndroidX Test) are not in the APK.
+
+## Contributing
+
+Open an issue on the
+[issue tracker](https://github.com/keerthanpragnay1728-prog/visceral/issues)
+before starting work, so the change can be agreed first. A pull request has to
+pass `tools/check-all.sh` (read its last line, `check-all: PASS`) and
+`./gradlew testDebugUnitTest`. Sources are UTF-8 and LF; `.gitattributes`
+enforces LF, and `LineEndingsTest` fails on a CRLF checkout. CLAUDE.md has the
+rest, including commit message style and the prose rules this file follows.
+
 ---
 
-## Banking and UPI apps
+## Engineering notes
+
+The record of how the design got here: the measurements, the bugs, and the
+reasoning behind each decision. Kept for anyone changing the parts they
+describe.
+
+### Banking and UPI apps
 
 Launching PhonePe, Google Pay, Paytm, BHIM or a banking app on a phone with
 Jitter enabled can raise "Suspicious App Detected: The below app has enhanced
@@ -100,7 +493,7 @@ witness that one is in front. While any overlay of ours is on the glass the
 foreground poll tightens from 2 s to 400 ms, which bounds how long a stall
 sink can sit over an app the user has just switched to.
 
-### Tested on a device, September 2026
+#### Tested on a device, September 2026
 
 | app | with Jitter enabled |
 | --- | --- |
@@ -166,144 +559,14 @@ overlay turns out to report a different package, or none, a gate could read as
 a foreground exit and close the session it is gating. Watch for a `PAUSED`
 ledger row timed with a gate appearing.
 
----
+### The stall latency probe
 
-## Distribution
+Segment D has since been measured on one device, at 406 ms p50
+(`FrictionCurve.MEASURED_SEGMENT_D_P50_MS`), and the stall floor is set from
+it. Other devices have not been measured. The probe below is how to measure
+one.
 
-Jitter is distributed by sideload and, once it is buildable, F-Droid. That is
-permanent, not a staging step on the way to Google Play.
-
-An accessibility service that exists to make other apps harder to use is not
-something Play will keep listed. The Play Console policy on accessibility APIs
-requires that the service exist to help users with disabilities, and
-`isAccessibilityTool` is set to `false` in the service config precisely because
-claiming otherwise would be a false declaration. Every part of the design
-follows from accepting that:
-
-- No `SYSTEM_ALERT_WINDOW`, no `READ_PHONE_STATE`, no `QUERY_ALL_PACKAGES`, no
-  foreground service, no network permission. The permission set is small enough
-  to read in full on the install screen.
-- The accessibility service description is written as a prominent disclosure in
-  plain language, because a sideloading user has no store listing to read.
-- No update mechanism of its own, no telemetry, no account.
-
-To install, enable install from unknown sources, install the APK, and open
-Jitter from the app drawer. The first-run guide asks for what it needs: two
-permissions (accessibility, usage access) and your home app. Uninstalling removes everything; the app stores nothing outside its
-own data directory.
-
-### Building
-
-Debug: `./gradlew assembleDebug`, signed with the SDK's debug key, for
-development only.
-
-Release: `./gradlew assembleRelease`. It is signed with the one release key,
-which never lives in this repository. Set these four in
-`~/.gradle/gradle.properties`, or as environment variables of the same names:
-
-```
-JITTER_STORE_FILE=/absolute/path/to/jitter-release.jks
-JITTER_STORE_PASSWORD=...
-JITTER_KEY_ALIAS=...
-JITTER_KEY_PASSWORD=...
-```
-
-If any is missing the release build stops at packaging with a message naming
-the missing ones. It never produces an unsigned APK and never signs a release
-with the debug key. Debug builds, and compiling or testing the release
-variant, do not need them. Key files (`*.jks`, `*.keystore`, `*.p12`) are
-ignored by git, and a test fails if one is ever tracked. There are no product
-flavors: one channel, one key. See RELEASE.md for the release steps.
-
----
-
-## Build status (read this first)
-
-**`./gradlew assembleDebug` has never been run. It cannot be run in the
-environment this was written in.** The brief asked me to stop and name a
-blocking constraint rather than substitute a weaker approach, so:
-
-The egress policy here denies `dl.google.com`. That single host serves both
-the Android SDK and all of Google Maven, and `maven.google.com` is a 301
-redirect into it. So AGP, every `androidx` artifact, Compose, Room, Hilt's
-Android artifacts, and the SDK platform jars are all unreachable:
-
-```
-$ ./gradlew assembleDebug
-Plugin [id: 'com.android.application', version: '8.11.1'] was not found in any
-of the following sources:
-  ...
-  - Plugin Repositories (could not resolve plugin artifact
-    'com.android.application:com.android.application.gradle.plugin:8.11.1')
-    Searched in the following repositories:
-      Google
-      MavenRepo
-
-$ curl -I https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-curl: (56) CONNECT tunnel failed, response 403
-```
-
-Maven Central *is* reachable, and the Gradle wrapper downloads fine. So rather
-than claim an unverified build, I verified everything that can be verified
-without the Android toolchain and marked the rest honestly.
-
-### What is actually verified
-
-| | |
-|---|---|
-| **173 JVM tests, 0 failures** | `core/**`, `engine`, and the pure sensing maths, compiled and executed for real |
-| **Purity is enforced, not asserted** | `PurityTest` walks the source tree and fails if the pure set grows an `android.*`/`androidx.*` import, and cross-checks its own list against the harness's, so the two cannot drift |
-| **Six real bugs found and fixed** | see "Bugs the harness caught" |
-
-Reproduce:
-
-```
-cd tools/pure-verify && ./gradlew test --rerun-tasks
-```
-
-`tools/pure-verify` is a **standalone Gradle build**, not an included module.
-The root `settings.gradle.kts` includes only `:app`, as the brief requires. So
-`./gradlew :tools:pure-verify` will not resolve; it has its own wrapper.
-
-```
-BucketProbe                  1 tests, 0 failed
-CadenceAnalyzerTest          9 tests, 0 failed
-CadenceBandEdgeTest          4 tests, 0 failed
-CalibrationSweep             1 tests, 0 failed
-ChannelSpecTest              7 tests, 0 failed
-ClockTamperClampTest         8 tests, 0 failed
-CvEstimatorTest              4 tests, 0 failed
-FallbackImuGateTest         19 tests, 0 failed
-ForegroundReplayTest        12 tests, 0 failed
-FrictionEngineTest          25 tests, 0 failed
-HysteresisGateTest           8 tests, 0 failed
-IirFilterTest                6 tests, 0 failed
-LatencySegmentsTest         14 tests, 0 failed
-MonotonicIntTest             4 tests, 0 failed
-MovementRejectionTest       13 tests, 0 failed
-PurityTest                   2 tests, 0 failed
-StepGateTest                 9 tests, 0 failed
-SustainAccumulatorTest      11 tests, 0 failed
-TerminalEventDeliveryTest    5 tests, 0 failed
-TickEvaluationTest           6 tests, 0 failed
-TierPolicyTest               5 tests, 0 failed
-TOTAL                      173 tests, 0 failed
-```
-
-### What is NOT verified
-
-Everything that touches the Android framework: `MolassesAccessibilityService`,
-`ShutterOverlayManager`, `OverlayHost`, `GateOverlayManager`,
-`MovementDetector`, `ForegroundReconciler`, the Room and Proto DataStore
-layers, and all Compose UI. It is written to compile and has been checked by
-hand and by cross-reference sweeps, but **it has not been through a compiler.**
-Expect a first-compile pass to surface import and signature fixes. Treat every
-version number in `gradle/libs.versions.toml` as unresolved.
-
-### The measured latency distribution (still not available)
-
-I cannot report latency numbers and will not invent them. What changed in this
-patch is that the probe now measures the right thing (§6), decomposed into four
+What changed in the patch that added it is that the probe now measures the right thing (§6), decomposed into four
 segments, all on `SystemClock.uptimeMillis()` so `AccessibilityEvent.getEventTime()`
 and `MotionEvent.getEventTime()` are directly subtractable:
 
@@ -333,12 +596,9 @@ adb shell dumpsys activity service \
     org.jitteros.app/dev.molasses.monitor.MolassesAccessibilityService
 ```
 
-**The central feasibility question remains open until someone runs that on
-hardware.**
+### The ambiguities, resolved (§0.1)
 
-## The ambiguities, resolved (§0.1)
-
-### 1. What does "resets only after 6 continuous hours" mean?
+#### 1. What does "resets only after 6 continuous hours" mean?
 
 The phrase is ambiguous between an abstinence window and a wall-clock window.
 The app runs **`FIXED_WINDOW_6H`**: the cycle is anchored on the first target
@@ -369,7 +629,7 @@ settings and moving the system clock forward six hours, which is the cheapest
 bypass in the app and needs nothing but the date and time screen. See the
 clamp section below.
 
-### 2. A second ambiguity I hit (`tierIndex` monotonicity vs. cycle reset)
+#### 2. A second ambiguity I hit (`tierIndex` monotonicity vs. cycle reset)
 
 Not in the brief, but unavoidable: "`tierIndex` … monotonic, never decremented"
 and "the cycle resets" are in direct tension, because a reset must return the
@@ -382,9 +642,8 @@ the lifetime of a counter, so the guard stays meaningful where it matters.
 `FrictionEngineTest.a rollover does not throw despite the monotonic tier
 counter` is the regression guard.
 
----
 
-## Bugs the harness caught
+### Bugs the harness caught
 
 Worth recording, because they are the argument for having verified anything at
 all rather than shipping the lot unexecuted.
@@ -436,12 +695,12 @@ because both were code that pretended to work:
 
 ---
 
-## Device session 1: the gate was unclearable
+### Device session 1: the gate was unclearable
 
 First device build. The progress ring reached 100%, the gate never cleared, and
 the streak reset to 0 with "a little faster". Two separate defects.
 
-### A terminal event was riding on a conflating channel
+#### A terminal event was riding on a conflating channel
 
 Pass was a boolean on `GateProgress`, and `GateProgress` travels on a
 `StateFlow`. A StateFlow conflates. A `passed = true` that holds for one sensor
@@ -464,7 +723,7 @@ very coroutine it then cancelled, and it was not idempotent, so a duplicate
 outcome or an outcome racing the 90 s timeout would have cleared one gate
 twice.
 
-### The sustain streak was too brittle
+#### The sustain streak was too brittle
 
 Requiring all seven tests to hold on every window for 8 continuous seconds is
 the defect already found for the CV floor, and it applied to the other six just
@@ -488,7 +747,7 @@ fail from being a bypass.
 RMS enters at 1.5 and exits below 1.3, the same 12.5% drop. This supersedes the
 1.15 Hz guard band, which was solving the same problem less well.
 
-### Measured: ticks to clear
+#### Measured: ticks to clear
 
 At 250 ms per tick, 32 ticks is the floor.
 
@@ -522,7 +781,7 @@ Tick count and tick duration are identical across delivery rates. The residual
 4-tick spread in time to clear is analyzer warm-up: `minSamples` is a fixed
 count of 40, which is 1.6 s at 25 Hz and 0.2 s at 200 Hz.
 
-### Band floor, through the full gate with hysteresis
+#### Band floor, through the full gate with hysteresis
 
 | Hz | p=0.00 | p=0.13 | p=0.25 | p=0.38 | p=0.50 | p=0.63 | p=0.75 | p=0.88 |
 |---|---|---|---|---|---|---|---|---|
@@ -531,7 +790,7 @@ count of 40, which is 1.6 s at 25 Hz and 0.2 s at 200 Hz.
 | 1.30 | clears | clears | clears | clears | clears | clears | clears | clears |
 | 1.35 | clears | clears | clears | clears | clears | clears | clears | clears |
 
-## GATE_EVAL: setting thresholds from real gait
+### GATE_EVAL: setting thresholds from real gait
 
 Every evaluation tick is logged, one line, every measured value and every
 per-test verdict.
@@ -554,7 +813,7 @@ enough intervals, which is distinct from a measured 0.000.
 Field order never changes, so a capture can be split on columns.
 `TickEvaluationTest` pins the format.
 
-## Debug controls, debug variant only
+### Debug controls, debug variant only
 
 `app/src/debug` and `app/src/release` each supply a `DebugSurface`. The release
 one is a no-op. Splitting by source set rather than guarding with
@@ -576,7 +835,7 @@ the same surface, that release contains no pointer handling, and that nothing
 in `main` hand-rolls a bypass. It is a source-level check. Asserting against an
 assembled release APK needs `assembleRelease`, which cannot run here.
 
-## Threshold recalibration (§4)
+### Threshold recalibration (§4)
 
 Every threshold in the seven-test battery was measured through a gravity filter
 that was silently removing ~35% of the passband. Moving the time constant from
@@ -588,7 +847,7 @@ analyzer at commit `482c728`, kept in test sources so the comparison is against
 code that actually ran rather than a reconstruction. "new" is the current
 pipeline. Reproduce with `CalibrationSweep`.
 
-### The decision table
+#### The decision table
 
 | test | old threshold | old measured (walk A=12) | new measured | proposed | rationale |
 |---|---|---|---|---|---|
@@ -600,7 +859,7 @@ pipeline. Reproduce with `CalibrationSweep`.
 | peak \|a\| ceiling | 25 m/s² | 7.82 | 10.55 | **25 (unchanged)** | Violent shake still reads 28.2 vs 26.0, clears the ceiling on both. |
 | gravity-angle | > 25° for 1 s | 40.0 | 40.0 | **> 25° (unchanged)** | Steady-state angle is unaffected; only the *time to reach it* moved. See below. |
 
-### Per-signal, old vs new
+#### Per-signal, old vs new
 
 | signal | pipe | rms | peaks | hz | cv | vert | peak\|a\| | tilt | verdict |
 |---|---|---|---|---|---|---|---|---|---|
@@ -631,7 +890,7 @@ Note the walk signals now carry realistic jitter. Before the CV floor existed, a
 zero-jitter synthetic was a fine model of a walker; it is now a cheat class in
 its own right, and the old model would have "proved" the floor was broken.
 
-### Passband retention
+#### Passband retention
 
 | input peak | old measured | old retention | new measured | new retention |
 |---|---|---|---|---|
@@ -643,7 +902,7 @@ its own right, and the old model would have "proved" the floor was broken.
 88%, not ~99%, because a burst train has a DC component the low-pass legitimately
 absorbs. 99% is the figure for a pure sinusoid at 1.8 Hz.
 
-### The RMS floor is 1.5, not 2.2 (the sweep does not support 2.2)
+#### The RMS floor is 1.5, not 2.2 (the sweep does not support 2.2)
 
 | input peakA | new rms | old floor 1.2 | **chosen 1.5** | suggested 2.2 | 2.6 |
 |---|---|---|---|---|---|
@@ -669,7 +928,7 @@ nothing else. Tremor measures 0.13, and the brief's own stated ceiling for it is
 the floor from 1.5 to 2.2 rejects no additional cheat and costs real walkers.
 1.5 still clears tremor by 11×.
 
-### The gravity-angle cost of the longer time constant
+#### The gravity-angle cost of the longer time constant
 
 The steady-state angle is unchanged, but the estimate now takes ~3τ to get
 there, so the *time to satisfy* the tilt test moved:
@@ -686,9 +945,9 @@ still fits inside the 8 s sustain and the 90 s gate budget with room to spare,
 and `CadenceAnalyzerTest` pins both the regression and the fact that a 26° walk
 still passes. Worth knowing if the gate ever feels sluggish to start.
 
-## Findings that changed the design
+### Findings that changed the design
 
-### §2. The band floor fails on the cadence *estimate*, not the peak count
+#### §2. The band floor fails on the cadence *estimate*, not the peak count
 
 The patch predicted the peak count would bind at 1.2 Hz. With the window at
 3.5 s it does not: the count lands on 4 or 5 across phase, and 4 satisfies the
@@ -716,7 +975,7 @@ With that, the §2 sweep passes 8/8 at every phase from 1.20 Hz up:
 | 1.30 | ok(4) | ok(5) | ok(5) | ok(5) | ok(5) | ok(5) | ok(4) | ok(4) |
 | 1.35 | ok(5) | ok(5) | ok(5) | ok(4) | ok(4) | ok(4) | ok(5) | ok(5) |
 
-### §3. A per-window CV floor is incompatible with a continuous sustain
+#### §3. A per-window CV floor is incompatible with a continuous sustain
 
 `MIN_PEAKS` was **not** raised to 5, and this is the one instruction I did not
 follow literally. Three measurements drove that.
@@ -773,7 +1032,7 @@ against a true 0.06, which matches σ·c4 to three decimal places. Bessel remove
 the 18% population bias and leaves an 11% one. `CvEstimatorTest` asserts
 against `c4(n)` exactly.
 
-### A real bypass on the fused path, found by the sweep
+#### A real bypass on the fused path, found by the sweep
 
 The 250 ms refractory is a hard decimator. Anything faster than 1/refractory
 (4 Hz) has peaks dropped, and what survives can land anywhere, including the
@@ -808,7 +1067,7 @@ cleanly:
 Threshold 0.30 sits in a wide gap. All shake rates 3-6 Hz, jittered or not, now
 read `CADENCE_TOO_FAST` on both pipelines.
 
-## Sensor pipeline hierarchy (§1)
+### Sensor pipeline hierarchy (§1)
 
 ```
 1. TYPE_STEP_DETECTOR                        (needs ACTIVITY_RECOGNITION)
@@ -830,7 +1089,7 @@ query. The active path is published on `GateProgress` and stamped on **every**
 ledger row. When a gate pass looks wrong in hindsight, the first question is
 which domain produced it, and that has to be answerable from the ledger alone.
 
-### α is derived from measured dt, never hardcoded
+#### α is derived from measured dt, never hardcoded
 
 `SENSOR_DELAY_GAME` is a hint, not a contract. A fixed α means a time constant
 that drifts with the device:
@@ -860,27 +1119,15 @@ Otherwise the filter spends ~2 s converging and the gate's first two seconds
 are measured against a gravity vector that is mostly wrong.
 
 
-## Architecture
+### Architecture
 
-```
-dev.molasses
-├── MolassesApp.kt                (@HiltAndroidApp)
-├── core/   model/ time/          pure: no Android imports, enforced by PurityTest
-├── data/   db/ datastore/ repo/  Room ledger + Proto DataStore hot state
-├── di/                           Hilt module  (added; not in the brief's tree)
-├── engine/ FrictionEngine, TierPolicy, MonotonicInt
-├── monitor/ MolassesAccessibilityService, ForegroundReconciler, ForegroundProbe
-├── overlay/ ShutterOverlayManager, OverlayHost, GateOverlayManager,
-│            LeaseGateOverlayManager, LockOverlayManager, CallDetector
-├── sensing/ MovementDetector, CadenceAnalyzer, StepGate, FallbackImuGate
-└── ui/     settings/ gate/ theme/
-```
+The package tree is under "For contributors" above.
 
 Two additions to the brief's tree, both noted in place: `di/` (Hilt needs a
 module, and putting it in `data/` would make a DI concern look like a storage
-one) and `monitor/ForegroundProbe.kt` (see bug 3).
+one) and `monitor/ForegroundProbe.kt` (see bug 5).
 
-### Two systems, and they do not talk
+#### Two systems, and they do not talk
 
 **System A is the lease**: permission to be in an app, measured in real elapsed
 time. **System B is friction**: accumulated foreground time, which decides what
@@ -914,7 +1161,7 @@ limitation: the longest one on offer is fifteen minutes and a reboot outlasts
 it. This is the opposite answer from a lock, which has to span reboots to mean
 anything. See "Which clock a deadline is measured on" in CLAUDE.md.
 
-### Timebase
+#### Timebase
 
 `FrictionEngine`'s `nowMs` parameter is **monotonic**
 (`SystemClock.elapsedRealtime()`). The brief does not say which clock; this is
@@ -927,7 +1174,7 @@ carry a wall-clock stamp as well. Both are held as `StampedInstant` and every
 deadline question about them goes through `CycleWindow`, which applies
 `ClockTamperClamp`.
 
-### The clock-tamper clamp
+#### The clock-tamper clamp
 
 The attack is trivial: accumulate 19 minutes, background the app, set the
 system clock forward seven hours, come back to a fresh cycle. Wall clock alone
@@ -959,13 +1206,13 @@ a different order of effort from opening the settings app, and closing it would
 mean persisting a trusted time source the platform does not offer without a
 network permission this app does not have.
 
-### Why there is no foreground service
+#### Why there is no foreground service
 
 An `AccessibilityService` is already system-bound and persistent. Adding an FGS
 on API 34+ forces a `specialUse` type and a Play justification for no extra
 capability. All long-lived work lives in the service's `SupervisorJob` scope.
 
-### Why `TYPE_ACCESSIBILITY_OVERLAY`
+#### Why `TYPE_ACCESSIBILITY_OVERLAY`
 
 A `TYPE_APPLICATION_OVERLAY` window is untrusted, so Android 12's
 untrusted-touch-blocking rules apply, and a window that is near-invisible and
@@ -974,12 +1221,11 @@ would pass touches through regardless of our flags.
 `TYPE_ACCESSIBILITY_OVERLAY` borrows the service's own window token, is
 trusted, and needs no `SYSTEM_ALERT_WINDOW` grant.
 
-`SYSTEM_ALERT_WINDOW` stays in the manifest for one thing. The "Test Phantom
-Stall" button in settings has no service token to borrow, so its preview shows
-the timing and the visible tell faithfully without guaranteeing that touches
-were eaten. Only the real path guarantees that.
+`SYSTEM_ALERT_WINDOW` is not requested. The "Test Phantom Stall" button in
+settings asks the accessibility service to show the preview, so it uses the
+same trusted overlay as a real stall.
 
-### The one hard performance rule
+#### The one hard performance rule
 
 `onAccessibilityEvent` runs on the service's main thread and events are
 delivered serially, so every millisecond there delays the next event. With
@@ -990,9 +1236,7 @@ own buffered channel, dropping the oldest row rather than blocking the caller.
 Losing a ledger row degrades the debug view; blocking that thread degrades the
 product.
 
----
-
-## Proposed and rejected
+### Proposed and rejected
 
 Both of these were specified, examined and dropped. They are recorded here as
 answered rather than deferred, so neither returns as an open question.
@@ -1021,7 +1265,7 @@ a messaging thread is worse than no feature. The friction curve already treats
 twenty-five minutes as twenty-five minutes whichever surface inside the app
 produced it, which is the behaviour the shield was asked for anyway.
 
-## Known limitations
+### Limitations and design choices, in detail
 
 **Known incompatibility**
 - **Paytm (`net.one97.paytm`) blocks payments while Jitter's accessibility
@@ -1046,14 +1290,6 @@ produced it, which is the behaviour the shield was asked for anyway.
   LinkedIn too. It was removed in full, and the declared event types are back
   to the three the app acts on.
 
-**Verification**
-- The Android layer has never been compiled. See "Build status".
-- No measured stall latency. The feasibility question is open.
-- Dependency versions in the catalog are unresolved and unpinnable here.
-- AGP is 8.11.1, not the 8.7.x the brief suggested: `compileSdk = 36` is not
-  recognised before AGP 8.9, so 8.7.3 fails at configuration. 8.11.1 satisfies
-  "8.7+" and actually accepts 36.
-
 **Platform ceilings**
 - **HOME and RECENTS cannot be blocked from an overlay.** This is intentional,
   not a gap: leaving takes the gate down without buying anything, and the gate
@@ -1069,26 +1305,6 @@ produced it, which is the behaviour the shield was asked for anyway.
 - `ACTIVITY_RESUMED`/`ACTIVITY_PAUSED` replay depends on `PACKAGE_USAGE_STATS`.
   Without it, a mid-session process death loses that session's tail. The
   checkpoint cadence bounds that loss to 15 s.
-
-**Permissions in the manifest**
-
-Every `uses-permission` in `AndroidManifest.xml`, and nothing else.
-`ReadmePermissionsTest` fails if this list and the manifest differ.
-
-- `PACKAGE_USAGE_STATS`: usage access. Replays `ACTIVITY_RESUMED` and
-  `ACTIVITY_PAUSED` after a process death, so a session's time is not lost.
-- `ACTIVITY_RECOGNITION`: the step sensor for the movement gate. Without it the
-  gate falls back to motion analysis.
-- `RECEIVE_BOOT_COMPLETED`: re-arms pending `$ rem` alarms after a reboot.
-- `VIBRATE`: `$ rem` vibrates once when the ringer is on vibrate.
-- `USE_EXACT_ALARM`: `$ rem` fires on time on Android 13 and later.
-- `SCHEDULE_EXACT_ALARM`: the same on Android 12 and 12L, capped at
-  `maxSdkVersion="32"`.
-
-Not requested: `READ_PHONE_STATE` (the call check uses `AudioManager`),
-`QUERY_ALL_PACKAGES`, `SYSTEM_ALERT_WINDOW`, `INTERNET`, `POST_NOTIFICATIONS`
-(nothing posts a notification, `$ rem` included) and
-`HIGH_SAMPLING_RATE_SENSORS` (no sensor is sampled fast enough to need it).
 
 **Thresholds that differ from the brief, and why**
 - `minHz` entry is **1.20** with a **1.05** exit, replacing the 1.15 guard band.
@@ -1214,114 +1430,6 @@ and neither of these is settled.
 
 ---
 
-## What this app does to your phone
-
-In plain language, because an app that deliberately makes a phone feel broken
-owes you this.
-
-**It watches two things, only in the apps you pick:** which app is in the
-foreground, and when you scroll. That is all. It does not and cannot read your
-screen. `canRetrieveWindowContent` is `false` in the service config, so the
-text, images, messages and accounts in those apps are not visible to it. It has
-no network permission and sends nothing anywhere.
-
-**It will make your phone ignore your finger.** Once you are 40% of the way
-into an app's horizon (ten minutes at the default of twenty five), a scroll
-can cause a blackout during which touches in that app do nothing. Blackouts
-get longer and more likely the further in you are, up to five seconds on
-every scroll at the default horizon. It looks and feels like the phone
-has frozen. That is the intended effect.
-
-**So you can always tell it is us.** While a blackout is active, a thin grey bar
-is drawn along the top edge of the screen. It is themeable and there is no
-setting that removes it, because without it you could not distinguish a
-deliberate stall from a failing touchscreen.
-
-**Four escape hatches, always available.** Tap the top-left corner of the screen
-four times within 1.5 seconds and the blackout releases immediately. It also
-releases when the screen turns off, when you leave the app, and when a phone
-call arrives. And it is never armed for more than eight continuous seconds, at
-any tier, no matter how much you scroll.
-
-**It will stop you at the door.** Opening one of your target apps puts a
-full-screen black page in front of it: a face, the app's name, how long you
-have spent in it today, how long this cycle, how many times you have opened it,
-and a countdown. Eight seconds the first time. There is nothing to do but wait,
-and there is no sentence on the screen telling you what to think about the
-numbers.
-
-**Then you choose how long you are staying.** At zero the countdown is replaced
-by four answers: 5m, 10m, 15m, or TAKE ME OUT, which sends you home. There is
-no unlimited option, and pressing back does the same thing as TAKE ME OUT.
-
-**When a lease runs out, the app goes home under the gate.** The gate
-checks your lease at its deadline, without waiting for you to touch anything,
-and the LEASE EXPIRED gate sends the app to the background as it appears, so
-a video stops because its app stopped, not because anything argued with its
-sound. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
-from the start and leaves (back does the same), [ BLOCK THIS APP ] is there
-from the start, and the lease options appear at zero; taking one reopens the
-app where you left it. Leaving grants nothing and resets nothing. The walking
-gate and a lock that arrives mid-session send the app home the same way.
-
-**Each lease makes the next gate longer.** Eight seconds, then twelve, sixteen,
-twenty, up to thirty, for as long as the cycle lasts. Backing out costs nothing
-extra: only leases you actually take lengthen it. The count resets when the
-cycle does.
-
-**A lease buys time and nothing else.** It does not reset your accumulated
-time, does not lower a tier, and does not make the blackouts shorter. Staying
-in the app past the lease you took makes them arrive sooner. Within a cycle the
-friction only ever increases.
-
-**It can ask you to get up and walk instead,** but only if you turn that on,
-and only past twenty five minutes in one app in one cycle. Settings → The gate
-→ What the gate asks for. That replaces the countdown with the movement gate:
-about twelve steps, or eight seconds of walking-shaped motion if your phone has
-no step sensor. **If walking is not something you can or should do,** the same
-setting offers a 25 second untimed typing task in its place. No sensors run in
-that mode. You can always leave with HOME or RECENTS; that takes the gate down
-without buying anything, and it comes back when you next scroll.
-
-**The counter resets six hours after the cycle started.** The cycle starts
-the first time you open one of your target apps from a clean state, and ends
-six hours later whether you kept using the apps or not. There is no setting
-for it.
-
-**Battery.** Motion sensors run only while a gate is open on screen, and are
-unregistered the moment it passes, is abandoned, or times out after 90 seconds.
-Nothing samples in the background. No wake locks are ever held.
-
-**Uninstalling works normally.** So does turning the accessibility service off
-in Android's own Settings. Nothing here tries to stop you, and anything that
-did would be malware.
-
----
-
-## License
-
-Jitter is free software, licensed under the GNU General Public License,
-version 3 or (at your option) any later version: **GPL-3.0-or-later**. The
-full text is in [LICENSE](LICENSE).
-
-Copyright Keerthan Pragnay.
-
-The libraries that ship inside the APK, and their licences:
-
-- AndroidX (Core, Activity, Compose, Lifecycle, Room, DataStore, Hilt
-  Navigation), the Kotlin standard library, kotlinx.coroutines, and
-  Dagger/Hilt: Apache-2.0.
-- protobuf-javalite: BSD-3-Clause.
-- desugar_jdk_libs, which backports Java library APIs to older Android:
-  GPL-2.0 with the Classpath Exception.
-
-All three are compatible with distributing the whole under GPL-3.0-or-later:
-Apache-2.0 and BSD-3-Clause code may be combined into a GPLv3 work, and the
-Classpath Exception allows linking regardless of the licence of the rest.
-Test-only dependencies (JUnit, AndroidX Test) are not in the APK.
-
----
-
 ## DESIGN HISTORY
 
 **Nothing under this heading describes the app as it is.** It records
@@ -1341,3 +1449,100 @@ computes `floor(accumulated / 5 min)` without a ceiling, rather than
 saturating at the last tier, so the index stays a faithful count of how much
 has been used. `FrictionEngine` still records it and the debug screen still
 shows it.
+
+### Build status before the first device build
+
+This described the project before the Android layer had ever been compiled.
+It has since been built, signed and installed on a device. Kept because it
+records how the pure core came to be verified separately.
+
+**`./gradlew assembleDebug` has never been run. It cannot be run in the
+environment this was written in.** The brief asked me to stop and name a
+blocking constraint rather than substitute a weaker approach, so:
+
+The egress policy here denies `dl.google.com`. That single host serves both
+the Android SDK and all of Google Maven, and `maven.google.com` is a 301
+redirect into it. So AGP, every `androidx` artifact, Compose, Room, Hilt's
+Android artifacts, and the SDK platform jars are all unreachable:
+
+```
+$ ./gradlew assembleDebug
+Plugin [id: 'com.android.application', version: '8.11.1'] was not found in any
+of the following sources:
+  ...
+  - Plugin Repositories (could not resolve plugin artifact
+    'com.android.application:com.android.application.gradle.plugin:8.11.1')
+    Searched in the following repositories:
+      Google
+      MavenRepo
+
+$ curl -I https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+curl: (56) CONNECT tunnel failed, response 403
+```
+
+Maven Central *is* reachable, and the Gradle wrapper downloads fine. So rather
+than claim an unverified build, I verified everything that can be verified
+without the Android toolchain and marked the rest honestly.
+
+#### What is actually verified
+
+| | |
+|---|---|
+| **173 JVM tests, 0 failures** | `core/**`, `engine`, and the pure sensing maths, compiled and executed for real |
+| **Purity is enforced, not asserted** | `PurityTest` walks the source tree and fails if the pure set grows an `android.*`/`androidx.*` import, and cross-checks its own list against the harness's, so the two cannot drift |
+| **Six real bugs found and fixed** | see "Bugs the harness caught" |
+
+Reproduce:
+
+```
+cd tools/pure-verify && ./gradlew test --rerun-tasks
+```
+
+`tools/pure-verify` is a **standalone Gradle build**, not an included module.
+The root `settings.gradle.kts` includes only `:app`, as the brief requires. So
+`./gradlew :tools:pure-verify` will not resolve; it has its own wrapper.
+
+```
+BucketProbe                  1 tests, 0 failed
+CadenceAnalyzerTest          9 tests, 0 failed
+CadenceBandEdgeTest          4 tests, 0 failed
+CalibrationSweep             1 tests, 0 failed
+ChannelSpecTest              7 tests, 0 failed
+ClockTamperClampTest         8 tests, 0 failed
+CvEstimatorTest              4 tests, 0 failed
+FallbackImuGateTest         19 tests, 0 failed
+ForegroundReplayTest        12 tests, 0 failed
+FrictionEngineTest          25 tests, 0 failed
+HysteresisGateTest           8 tests, 0 failed
+IirFilterTest                6 tests, 0 failed
+LatencySegmentsTest         14 tests, 0 failed
+MonotonicIntTest             4 tests, 0 failed
+MovementRejectionTest       13 tests, 0 failed
+PurityTest                   2 tests, 0 failed
+StepGateTest                 9 tests, 0 failed
+SustainAccumulatorTest      11 tests, 0 failed
+TerminalEventDeliveryTest    5 tests, 0 failed
+TickEvaluationTest           6 tests, 0 failed
+TierPolicyTest               5 tests, 0 failed
+TOTAL                      173 tests, 0 failed
+```
+
+#### What is NOT verified
+
+Everything that touches the Android framework: `MolassesAccessibilityService`,
+`ShutterOverlayManager`, `OverlayHost`, `GateOverlayManager`,
+`MovementDetector`, `ForegroundReconciler`, the Room and Proto DataStore
+layers, and all Compose UI. It is written to compile and has been checked by
+hand and by cross-reference sweeps, but **it has not been through a compiler.**
+Expect a first-compile pass to surface import and signature fixes. Treat every
+version number in `gradle/libs.versions.toml` as unresolved.
+
+The limitations list said the same at the time:
+
+**Verification**
+- The Android layer has never been compiled. See "Build status".
+- No measured stall latency. The feasibility question is open.
+- Dependency versions in the catalog are unresolved and unpinnable here.
+- AGP is 8.11.1, not the 8.7.x the brief suggested: `compileSdk = 36` is not
+  recognised before AGP 8.9, so 8.7.3 fails at configuration. 8.11.1 satisfies
+  "8.7+" and actually accepts 36.

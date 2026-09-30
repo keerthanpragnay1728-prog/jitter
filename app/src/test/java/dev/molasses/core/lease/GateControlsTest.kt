@@ -34,11 +34,11 @@ class GateControlsTest {
     }
 
     @Test
-    fun `TAKE ME OUT never appears on the expired gate, and stays as it was on entry`() {
-        for (ms in listOf(full, 0L)) {
-            assertTrue(GateControls.visible(expired = true, remainingMs = ms).exit != Exit.TAKE_ME_OUT)
+    fun `the entry gate's exit is ARCHITECT'S SPACE from the first frame, as on the expired gate`() {
+        for (ms in listOf(full, 12_345L, 1L, 0L)) {
+            assertEquals(Exit.ARCHITECTS_SPACE, GateControls.visible(expired = false, remainingMs = ms).exit)
+            assertEquals(Exit.ARCHITECTS_SPACE, GateControls.visible(expired = true, remainingMs = ms).exit)
         }
-        assertEquals(null, GateControls.visible(expired = false, remainingMs = full).exit)
-        assertEquals(Exit.TAKE_ME_OUT, GateControls.visible(expired = false, remainingMs = 0L).exit)
+        assertEquals("one exit, not two", listOf(Exit.ARCHITECTS_SPACE), Exit.entries.toList())
     }
 }

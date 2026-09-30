@@ -6,7 +6,7 @@ import android.util.Log
 import android.view.WindowManager
 import dev.molasses.core.model.EventType
 import dev.molasses.core.model.GateOutcome
-import dev.molasses.core.safety.HomeFirst
+import dev.molasses.core.safety.OverlayKind
 import dev.molasses.engine.FrictionLedger
 import dev.molasses.sensing.MovementDetector
 import dev.molasses.ui.gate.GateScreen
@@ -36,7 +36,7 @@ class GateOverlayManager(
     private val onAbandoned: (pkg: String) -> Unit,
     /**
      * Fires `GLOBAL_ACTION_HOME`. This gate sends its app home after its
-     * first draw and runs over the launcher; see `HomeFirst`.
+     * first draw and runs over the launcher; see `OverlayKind`.
      */
     private val goHome: () -> Unit,
     /**
@@ -77,12 +77,6 @@ class GateOverlayManager(
 
     val isShowing: Boolean get() = host?.isShowing == true
 
-    /**
-     * Always, while showing: this gate sends its app home under itself, so
-     * leaving the app must not abandon it. See [HomeFirst].
-     */
-    val homeFirst: Boolean get() = isShowing && HomeFirst.sendsHome(HomeFirst.Overlay.WALK_GATE)
-
     /** The package this window is up for, or null when it is not showing. */
     val showingFor: String? get() = if (isShowing) currentPkg else null
 
@@ -113,15 +107,11 @@ class GateOverlayManager(
         // After the first draw, never from this call: the frame has to reach
         // the display first or the user is bounced with nothing explaining it.
         h.show(
-            onFirstDraw = if (HomeFirst.sendsHome(HomeFirst.Overlay.WALK_GATE)) {
-                {
-                    if (currentPkg == pkg && !resolved) {
-                        goHome()
-                        Log.i(TAG, "overlay=${HomeFirst.Overlay.WALK_GATE} home sent for $pkg")
-                    }
+            onFirstDraw = {
+                if (currentPkg == pkg && !resolved) {
+                    goHome()
+                    Log.i(TAG, "overlay=${OverlayKind.WALK_GATE} home sent for $pkg")
                 }
-            } else {
-                null
             },
             // Back is the exit, the same handler as [ ARCHITECT'S SPACE ].
             onBackPressed = { exit() },
@@ -236,7 +226,7 @@ class GateOverlayManager(
         resolved = true
         ledger.log(pkg, EventType.LEASE_DECLINED, "reason=exit")
         goHome()
-        Log.i(TAG, "overlay=${HomeFirst.Overlay.WALK_GATE} exit taken for $pkg")
+        Log.i(TAG, "overlay=${OverlayKind.WALK_GATE} exit taken for $pkg")
         dismissInternal()
     }
 

@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.model.GateProgress
-import dev.molasses.core.safety.HomeFirst
+import dev.molasses.core.safety.OverlayKind
 import dev.molasses.core.safety.OverlayExit
 import dev.molasses.debug.DebugSurface
 import dev.molasses.debug.DebugSurface.debugBypassGesture
@@ -177,7 +177,7 @@ fun GateScreen(
             // Always there, whatever the progress or the challenge: a gate
             // can always be left. Asked of OverlayExit so this screen and the
             // invariant's test cannot disagree.
-            if (OverlayExit.shown(HomeFirst.Overlay.WALK_GATE, remainingMs = 0L) != null) {
+            if (OverlayExit.shown(OverlayKind.WALK_GATE, remainingMs = 0L) != null) {
                 Spacer(Modifier.height(24.dp))
                 Text(
                     text = stringResource(R.string.lock_exit),

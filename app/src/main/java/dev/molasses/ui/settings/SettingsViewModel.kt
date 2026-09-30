@@ -15,6 +15,7 @@ import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonPolicy
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.session.TargetScope
+import dev.molasses.core.settings.UntrackSunset
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.core.ui.FontScale
@@ -383,6 +384,17 @@ class SettingsViewModel @Inject constructor(
     fun untrackTarget(pkg: String) {
         viewModelScope.launch { repo.untrackTarget(pkg) }
     }
+
+    /** Social apps untracked for now, each with its re-arm. See [UntrackSunset]. */
+    val untrackSunsets: StateFlow<List<UntrackSunset.Sunset>> = repo.untrackSunsets
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** When tracking resumes, on the wall clock, against a fresh stamp. */
+    fun resumesAtWallMs(sunset: UntrackSunset.Sunset): Long =
+        UntrackSunset.resumesAtWallMs(sunset, repo.nowStamped())
+
+    /** Whether confirming an untrack of [pkg] starts a re-arm. The same answer the write uses. */
+    fun sunsetInScope(pkg: String): Boolean = repo.sunsetInScope(pkg)
 
     /**
      * The ledger as a file's worth of text.
