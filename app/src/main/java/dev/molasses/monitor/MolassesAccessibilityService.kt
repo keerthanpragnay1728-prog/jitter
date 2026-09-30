@@ -67,6 +67,7 @@ import dev.molasses.sensing.MovementDetector
 import java.io.FileDescriptor
 import java.io.PrintWriter
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -381,6 +382,11 @@ class MolassesAccessibilityService : AccessibilityService() {
                 // LeaseManager's doc makes about surviving process death.
                 leases = LeaseManager.of(it.leasesList.map { entry -> entry.toLease() })
             }
+            // Social apps whose untrack grace ran out while this service was
+            // not running, or across the reboot that ends a grace. Before
+            // observeSettings, so its first emission already carries them,
+            // and before ready, so the first event after a restart is gated.
+            rearmSunsets("connect")
             // On main, with the ready flag, because the engine is confined
             // there (see [engineConfinement]) and because `ready` is read by
             // onAccessibilityEvent on main with no other barrier.
@@ -643,8 +649,34 @@ class MolassesAccessibilityService : AccessibilityService() {
                     val pkg = foregroundPkg
                     if (pkg != null && pkg in targets) engine.checkpoint(now())
                 }
+                rearmSunsets("checkpoint")
             }
         }
+    }
+
+    /**
+     * Track again every social app whose untrack grace has run out. See
+     * `UntrackSunset`.
+     *
+     * The store decides inside its own transaction and writes nothing when
+     * nothing is due, so this holds no copy of the sunsets and there is no
+     * snapshot here to go stale. The target list it writes reaches [targets]
+     * the way every edit does, through observeSettings. No alarm and no
+     * worker: the checkpoint is at most fifteen seconds late, and connect
+     * covers the time the service was not running.
+     */
+    private suspend fun rearmSunsets(trigger: String) {
+        // Not runCatching: that would swallow the cancellation the service's
+        // teardown sends through this loop.
+        val rearmed = try {
+            cycleStore.rearmSunsets(nowStamped())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "untrack sunset re-arm failed ($trigger)", e)
+            emptyList()
+        }
+        if (rearmed.isNotEmpty()) Log.i(TAG, "untrack sunset: tracking resumed for $rearmed ($trigger)")
     }
 
     // ---------------------------------------------------------------- events
