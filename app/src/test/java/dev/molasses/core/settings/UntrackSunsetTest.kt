@@ -67,6 +67,7 @@ class UntrackSunsetTest {
         for (pkg in listOf(
             "com.instagram.android",
             "com.facebook.katana",
+            "com.facebook.lite",
             "com.twitter.android",
             "com.zhiliaoapp.musically",
             "com.ss.android.ugc.trill",

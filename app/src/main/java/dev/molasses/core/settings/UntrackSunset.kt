@@ -32,7 +32,8 @@ import dev.molasses.core.time.StampedInstant
  * long enough that a reboot inside it is the ordinary case, not the attack.
  * Ending early is the direction that errs toward friction, so the app is
  * tracked again from the first connect after a restart. The cooling-off
- * panel says so before the user confirms.
+ * panel says so before the user confirms, and CFG's row says "or sooner
+ * after a restart" beside the date.
  *
  * ## Stored as the deadline
  * [Sunset.deadline] is the instant the grace ends, stamped on all three
@@ -47,10 +48,11 @@ object UntrackSunset {
 
     const val YOUTUBE = "com.google.android.youtube"
 
-    /** Instagram, Facebook, X, TikTok (both of its package names), Snapchat. */
+    /** Instagram, Facebook and Facebook Lite, X, TikTok (both of its package names), Snapchat. */
     val FALLBACK: Set<String> = setOf(
         "com.instagram.android",
         "com.facebook.katana",
+        "com.facebook.lite",
         "com.twitter.android",
         "com.zhiliaoapp.musically",
         "com.ss.android.ugc.trill",
