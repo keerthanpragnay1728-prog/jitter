@@ -38,7 +38,7 @@ status=0
 # Binary types that are not expected to decode as text.
 is_binary() {
     case "$1" in
-        *.png|*.jpg|*.jpeg|*.webp|*.gif|*.ttf|*.otf|*.jar|*.keystore) return 0 ;;
+        *.jpg|*.jpeg|*.webp|*.gif|*.ttf|*.otf|*.jar|*.keystore) return 0 ;;
         *.zip|*.so|*.ico|*.pb|*.bin|*.gz|*.class) return 0 ;;
         *) return 1 ;;
     esac
@@ -54,6 +54,10 @@ is_binary() {
 # By path so the allowance cannot grow by accident: a .wav anywhere else is
 # still read as text and still fails. ScanAllowanceTest pins this line.
 RAW_BINARY_DIR="app/src/main/res/raw/"
+#
+# PNG is not binary by extension either. The one tracked PNG, the store icon
+# made by tools/gen-icon.py, is under fastlane/ and outside this scan's scope;
+# tools/scan-encoding-history.py reads every path and allows it by exact path.
 
 text_files() {
     git ls-files -- app/src tools | sort | while read -r f; do

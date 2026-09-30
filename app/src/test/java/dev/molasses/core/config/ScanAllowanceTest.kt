@@ -31,6 +31,15 @@ class ScanAllowanceTest {
     }
 
     @Test
+    fun `the store icon is allowed by its exact path, and PNG is not allowed by extension`() {
+        assertEquals(1, Regex("""ICON_PNG = "[^"]*"""").findAll(history).count())
+        assertTrue(history.contains("ICON_PNG = \"fastlane/metadata/android/en-US/images/icon.png\""))
+        assertTrue(history.contains("or path == ICON_PNG:"))
+        assertFalse(history.contains("\".png\""))
+        assertFalse(check.contains("*.png"))
+    }
+
+    @Test
     fun `audio is not allowed by extension anywhere`() {
         for (ext in listOf("wav", "ogg", "mp3", "m4a")) {
             assertFalse(".$ext in check-encoding's extension list", check.contains("*.$ext"))
