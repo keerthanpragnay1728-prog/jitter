@@ -26,8 +26,9 @@ class HomeFirstWiringTest {
             "GateOverlayManager" to "fun show(",
         )) {
             val body = functionBody(overlay(name), fn)
-            val firstDraw = body.indexOf("onFirstDraw = if (")
-            assertTrue("$name hands home to onFirstDraw", firstDraw >= 0)
+            val firstDraw = body.indexOf("onFirstDraw = {")
+            assertTrue("$name hands home to onFirstDraw, unconditionally", firstDraw >= 0)
+            assertFalse("$name has no path that skips it", body.contains("onFirstDraw = if ("))
             val afterAttach = body.substring(body.indexOf("if (!h.isShowing) {"))
             assertFalse("$name must not send home straight after attaching", afterAttach.substringBefore("return true").contains("goHome()\n        onWindowsChanged"))
         }
@@ -35,12 +36,13 @@ class HomeFirstWiringTest {
     }
 
     @Test
-    fun `leaveTarget skips home-first overlays and still closes the session`() {
+    fun `leaveTarget leaves a showing overlay up and still closes the session`() {
         val leave = functionBody(service, "private fun leaveTarget(")
-        assertTrue(leave.contains("if (gate.homeFirst) logSurvived(\"walk gate\", pkg, reason) else gate.abandon(\"left target\")"))
-        assertTrue(leave.contains("if (leaseGate.homeFirst) logSurvived(\"lease gate\", pkg, reason) else leaseGate.dismiss(\"left target\")"))
-        assertTrue(leave.contains("if (lockOverlay.homeFirst) logSurvived(\"lock overlay\", pkg, reason) else lockOverlay.dismiss(\"left target\")"))
-        val skip = leave.indexOf("gate.homeFirst")
+        assertTrue(leave.contains("if (gate.isShowing) logSurvived(\"walk gate\", pkg, reason)\n"))
+        assertFalse("leaving no longer abandons the walking gate", leave.contains("gate.abandon("))
+        assertTrue(leave.contains("if (leaseGate.isShowing) logSurvived(\"lease gate\", pkg, reason) else leaseGate.dismiss(\"left target\")"))
+        assertTrue(leave.contains("if (lockOverlay.isShowing) logSurvived(\"lock overlay\", pkg, reason) else lockOverlay.dismiss(\"left target\")"))
+        val skip = leave.indexOf("if (gate.isShowing) logSurvived(")
         for (step in listOf("sessions.close(id) ?: return", "engine.onForegroundExit(pkg, now())", "shutter.release(")) {
             assertTrue("$step still happens, before the skip", leave.indexOf(step) in 0 until skip)
         }
@@ -62,14 +64,16 @@ class HomeFirstWiringTest {
     }
 
     @Test
-    fun `taking a lease on a home-first gate grants, then relaunches, then dismisses`() {
+    fun `taking a lease grants, then relaunches, then dismisses, with no other path`() {
         val take = functionBody(overlay("LeaseGateOverlayManager"), "private fun takeLease(")
-        val branch = take.substring(take.indexOf("if (homeFirstNow) {"))
-        val grant = branch.indexOf("onLeaseTaken(pkg, durationMs)")
-        val relaunch = branch.indexOf("relaunch(pkg)")
-        val dismiss = branch.indexOf("dismissInternal()")
+        val grant = take.indexOf("onLeaseTaken(pkg, durationMs)")
+        val relaunch = take.indexOf("relaunch(pkg)")
+        val dismiss = take.indexOf("dismissInternal()")
         assertTrue(grant in 0 until relaunch && relaunch < dismiss)
-        assertTrue(branch.contains("relaunch on lease: pkg=\$pkg success=\$launched"))
+        assertEquals("one grant, one dismiss", 1, Regex("onLeaseTaken\\(").findAll(take).count())
+        assertEquals(1, Regex("dismissInternal\\(\\)").findAll(take).count())
+        assertFalse(take.contains("else"))
+        assertTrue(take.contains("relaunch on lease: pkg=\$pkg success=\$launched"))
         val relaunchFn = functionBody(service, "private fun relaunchTarget(")
         assertTrue(relaunchFn.contains("packageManager.getLaunchIntentForPackage(pkg)"))
         assertTrue(service.contains("relaunch = ::relaunchTarget,"))
@@ -90,22 +94,20 @@ class HomeFirstWiringTest {
     }
 
     @Test
-    fun `the entry gate and a lock at entry take their home-first answer from HomeFirst, and nothing overrides it`() {
-        val manager = overlay("LeaseGateOverlayManager")
-        assertTrue(manager.contains("homeFirst: Boolean = HomeFirst.sendsHome(HomeFirst.leaseGate(expired)),"))
-        assertTrue(service.contains("homeFirst: Boolean = HomeFirst.sendsHome(HomeFirst.leaseGate(expired)),"))
-        val flash = functionBody(overlay("LockOverlayManager"), "fun flash(")
-        assertTrue(flash.contains("homeFirstNow = HomeFirst.sendsHome(kind)"))
-        assertTrue(flash.contains("onFirstDraw = if (homeFirstNow) {"))
+    fun `no overlay has a switch that could stop it going home`() {
         val main = File(dev.molasses.core.repoRoot(), "app/src/main/java")
-        val overrides = main.walkTopDown().filter { it.isFile && it.extension == "kt" }
-            .filter { it.readText().contains("homeFirst = false") }.map { it.name }.toList()
-        assertEquals(emptyList<String>(), overrides)
+        val offenders = main.walkTopDown().filter { it.isFile && it.extension == "kt" }.filter {
+            val t = it.readText()
+            t.contains("homeFirstNow") || t.contains("sendsHome(") || t.contains("homeFirst:") ||
+                t.contains("homeFirst =") || t.contains(".homeFirst")
+        }.map { it.name }.toList()
+        assertEquals(emptyList<String>(), offenders)
+        assertTrue(functionBody(overlay("LockOverlayManager"), "fun flash(").contains("val kind = OverlayKind.lock(atEntry)"))
     }
 
     @Test
-    fun `the walking gate's lease panel runs home-first too, so its lease relaunches`() {
-        assertTrue(service.contains("showLeaseGate(pkg, countdownMs = 0, expired = false, homeFirst = true)"))
+    fun `the walking gate's lease panel is an ordinary lease gate, so its lease relaunches`() {
+        assertTrue(service.contains("showLeaseGate(pkg, countdownMs = 0, expired = false) }"))
     }
 
     @Test
@@ -144,7 +146,7 @@ class HomeFirstWiringTest {
         // Sliced by hand: functionBody would stop at the `= {}` default in
         // the parameter list.
         val body = gateScreen.substring(gateScreen.indexOf("fun GateScreen(")).substringBefore("\n}\n")
-        val exitControl = body.indexOf("OverlayExit.shown(HomeFirst.Overlay.WALK_GATE")
+        val exitControl = body.indexOf("OverlayExit.shown(OverlayKind.WALK_GATE")
         assertTrue(exitControl >= 0 && body.indexOf("R.string.lock_exit", exitControl) > exitControl)
         // Not inside the alternative-challenge branch or the progress branch.
         val branch = body.indexOf("if (alternativeChallenge) {")
@@ -161,7 +163,7 @@ class HomeFirstWiringTest {
         assertTrue("stamped before home is sent", rehome.indexOf("lastRehomeMs = nowMs") in 0 until rehome.indexOf("goHomeQuietly()"))
         assertTrue(watch.contains("re-home for \$gated skipped: debounced"))
         assertTrue(watch.contains("withContext(Dispatchers.Main.immediate)"))
-        val gated = functionBody(service, "private fun homeFirstGatedPkg()")
-        for (m in listOf("leaseGate", "gate", "lockOverlay")) assertTrue(m, gated.contains("$m.homeFirst -> $m.showingFor"))
+        val gated = service.substring(service.indexOf("private fun homeFirstGatedPkg()")).substringBefore("\n\n")
+        assertTrue(gated.contains("leaseGate.showingFor ?: gate.showingFor ?: lockOverlay.showingFor"))
     }
 }
