@@ -14,7 +14,7 @@ class OverlayExitTest {
         val homeFirst = HomeFirst.Overlay.entries.filter(HomeFirst::sendsHome)
         // The list is not empty by accident: the invariant has to have
         // something to hold over.
-        assertEquals(3, homeFirst.size)
+        assertEquals(5, homeFirst.size)
         for (overlay in homeFirst) {
             for (ms in states) {
                 assertNotNull("$overlay at ${ms}ms has no way out", OverlayExit.shown(overlay, ms))

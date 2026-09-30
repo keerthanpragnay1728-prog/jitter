@@ -301,7 +301,9 @@ class MolassesAccessibilityService : AccessibilityService() {
             //
             // The walking gate sent the app home, so this panel runs over the
             // launcher too, and a lease taken on it relaunches the app:
-            // homeFirst = true.
+            // homeFirst = true. The default for an entry gate says the same
+            // now; this stays explicit because here it is a fact about where
+            // the app already is, not a policy that could change.
             onCleared = { pkg -> if (ready) showLeaseGate(pkg, countdownMs = 0, expired = false, homeFirst = true) },
             // Nothing. No lease was taken, so the next scroll in this package
             // gates again, which is the whole reason the launch check also

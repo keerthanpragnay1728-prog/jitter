@@ -90,6 +90,20 @@ class HomeFirstWiringTest {
     }
 
     @Test
+    fun `the entry gate and a lock at entry take their home-first answer from HomeFirst, and nothing overrides it`() {
+        val manager = overlay("LeaseGateOverlayManager")
+        assertTrue(manager.contains("homeFirst: Boolean = HomeFirst.sendsHome(HomeFirst.leaseGate(expired)),"))
+        assertTrue(service.contains("homeFirst: Boolean = HomeFirst.sendsHome(HomeFirst.leaseGate(expired)),"))
+        val flash = functionBody(overlay("LockOverlayManager"), "fun flash(")
+        assertTrue(flash.contains("homeFirstNow = HomeFirst.sendsHome(kind)"))
+        assertTrue(flash.contains("onFirstDraw = if (homeFirstNow) {"))
+        val main = File(dev.molasses.core.repoRoot(), "app/src/main/java")
+        val overrides = main.walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .filter { it.readText().contains("homeFirst = false") }.map { it.name }.toList()
+        assertEquals(emptyList<String>(), overrides)
+    }
+
+    @Test
     fun `the walking gate's lease panel runs home-first too, so its lease relaunches`() {
         assertTrue(service.contains("showLeaseGate(pkg, countdownMs = 0, expired = false, homeFirst = true)"))
     }

@@ -2,7 +2,6 @@ package dev.molasses.core.safety
 
 import dev.molasses.core.safety.HomeFirst.Overlay
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -16,9 +15,14 @@ class HomeFirstTest {
     }
 
     @Test
-    fun `the entry gate and a lock at entry are unchanged`() {
-        assertFalse(HomeFirst.sendsHome(Overlay.ENTRY_GATE))
-        assertFalse(HomeFirst.sendsHome(Overlay.LOCK_AT_ENTRY))
+    fun `the entry gate and a lock at entry send home too, so autoplay behind them stops`() {
+        assertTrue(HomeFirst.sendsHome(Overlay.ENTRY_GATE))
+        assertTrue(HomeFirst.sendsHome(Overlay.LOCK_AT_ENTRY))
+    }
+
+    @Test
+    fun `every overlay sends home`() {
+        for (overlay in Overlay.entries) assertTrue("$overlay", HomeFirst.sendsHome(overlay))
     }
 
     @Test

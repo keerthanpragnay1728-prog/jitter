@@ -70,9 +70,11 @@ no matter how much you scroll.
 **It will stop you at the door.** Opening one of your target apps puts a
 full-screen black page in front of it: a face, the app's name, how long you
 have spent in it today, how long this cycle, how many times you have opened it,
-and a countdown. Eight seconds the first time. There is nothing to do but wait,
-and there is no sentence on the screen telling you what to think about the
-numbers.
+and a countdown. Eight seconds the first time. There is nothing to do but wait
+or leave, and there is no sentence on the screen telling you what to think
+about the numbers. The app goes to the background as the gate appears, so a
+video or Reel that starts on its own does not play behind the gate, and taking
+a lease reopens it.
 
 **Then you choose how long you are staying.** At zero the countdown is replaced
 by three answers: 5m, 10m or 15m. There is no unlimited option. You do not have
@@ -87,7 +89,7 @@ sound. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
 from the start and leaves (back does the same), [ BLOCK THIS APP ] is there
 from the start, and the lease options appear at zero; taking one reopens the
 app where you left it. Leaving grants nothing and resets nothing. The walking
-gate and a lock that arrives mid-session send the app home the same way.
+gate and the lock screen send the app home the same way.
 
 **Each lease makes the next gate longer.** Eight seconds, then twelve, sixteen,
 twenty, up to thirty, for as long as the cycle lasts. Backing out costs nothing
@@ -219,6 +221,11 @@ Not requested: `READ_PHONE_STATE` (the call check uses `AudioManager`),
 - **YouTube is lease-gated only.** Its feed and Shorts send no scroll events,
   so scroll stalls never start there. The lease gate still fires on time, even
   while a video plays.
+- **YouTube can keep playing in a floating window.** When a gate sends YouTube
+  to the background, a playing video can move into picture-in-picture, which
+  Jitter cannot see or close. Turn it off: Android Settings, Apps, Special app
+  access, Picture-in-picture, YouTube. YouTube Premium's background play keeps
+  the sound going the same way; turn that off in YouTube's own settings.
 - **Locks have no unlock.** A lock runs until it ends.
 - **Screen margins are fixed.** Jitter clears the status and navigation bars
   with a fixed margin rather than measuring them, so an unusual screen shape
