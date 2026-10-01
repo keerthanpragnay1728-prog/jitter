@@ -261,10 +261,6 @@ class MolassesAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         ServiceDiagnostics.onConnected()
-        // Before any overlay exists. The music-stream mute is gone, but a
-        // tester on the build that had it may have a stream still muted by
-        // us. Expiring: see LegacyMuteRestore.
-        LegacyMuteRestore.restoreOnConnect(this)
 
         val wm = getSystemService(WindowManager::class.java)
         if (wm == null) {
