@@ -112,7 +112,10 @@ class ReportProblemWiringTest {
         // Its own glyph, which never flips: not the accordion's chevron.
         assertTrue(link.contains("ReportProblem.ROW_GLYPH,"))
         assertFalse(link.contains("CfgAccordion.chevron("))
-        assertEquals(">", ReportProblem.ROW_GLYPH)
+        // A north-east arrow, not the closed chevron a collapsed section shows.
+        assertEquals("\u2197", ReportProblem.ROW_GLYPH)
+        assertTrue(ReportProblem.ROW_GLYPH != dev.molasses.core.settings.CfgAccordion.CHEVRON_CLOSED)
+        assertTrue(ReportProblem.ROW_GLYPH != dev.molasses.core.settings.CfgAccordion.CHEVRON_OPEN)
         // The failure note under the row, left-aligned.
         assertTrue(link.indexOf("stringResource(failureNote)") > link.indexOf("ReportProblem.ROW_GLYPH"))
     }
