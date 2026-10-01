@@ -130,8 +130,8 @@ class RouteTallyReasonTest {
     @Test
     fun `ignored is split by the branch that dropped it`() {
         val t = RouteTally()
-        t.record(event(ig, WindowEvent.Kind.VIEW_SCROLLED), EventRoute.Ignore(IgnoreReason.OWN_WINDOW))
-        t.record(event(ig, WindowEvent.Kind.VIEW_SCROLLED), EventRoute.Ignore(IgnoreReason.OWN_WINDOW))
+        t.record(event(ig, WindowEvent.Kind.VIEW_SCROLLED), EventRoute.Ignore(IgnoreReason.OWN_PACKAGE))
+        t.record(event(ig, WindowEvent.Kind.VIEW_SCROLLED), EventRoute.Ignore(IgnoreReason.OWN_PACKAGE))
         t.record(
             event(ig, WindowEvent.Kind.VIEW_SCROLLED),
             EventRoute.Ignore(IgnoreReason.NOT_A_TARGET),
@@ -139,29 +139,34 @@ class RouteTallyReasonTest {
 
         val tally = t.snapshot().toMap().getValue(ig)
         assertEquals(3, tally.ignored)
-        assertEquals(2, tally.ignoredBy(IgnoreReason.OWN_WINDOW))
+        assertEquals(2, tally.ignoredBy(IgnoreReason.OWN_PACKAGE))
         assertEquals(1, tally.ignoredBy(IgnoreReason.NOT_A_TARGET))
-        assertEquals(0, tally.ignoredBy(IgnoreReason.OWN_PACKAGE))
     }
 
     @Test
-    fun `the two failures that looked identical no longer do`() {
-        // Left: the collision guard rejecting a real app. Right: that app
-        // simply not being tracked. Same ignored total, different diagnosis,
-        // and only one of them can also swallow our own launcher.
-        val guard = RouteTally()
+    fun `the router's two drop reasons are the only ones`() {
+        // OWN_WINDOW, the window-id guard's reason, outlived its producer and
+        // was deleted at 1.0.3. See CLAUDE.md, "A guard with no caller", case 2.
+        assertEquals(listOf(IgnoreReason.OWN_PACKAGE, IgnoreReason.NOT_A_TARGET), IgnoreReason.entries.toList())
+    }
+
+    @Test
+    fun `the same ignored total from two branches stays distinguishable`() {
+        // Same ignored total, different diagnosis: our own package dropping
+        // its events is ordinary, a target the user is not tracking is not.
+        val own = RouteTally()
         val untracked = RouteTally()
         repeat(75) {
-            guard.record(
+            own.record(
                 event(ig, WindowEvent.Kind.VIEW_SCROLLED),
-                EventRoute.Ignore(IgnoreReason.OWN_WINDOW),
+                EventRoute.Ignore(IgnoreReason.OWN_PACKAGE),
             )
             untracked.record(
                 event(ig, WindowEvent.Kind.VIEW_SCROLLED),
                 EventRoute.Ignore(IgnoreReason.NOT_A_TARGET),
             )
         }
-        val a = guard.snapshot().toMap().getValue(ig)
+        val a = own.snapshot().toMap().getValue(ig)
         val b = untracked.snapshot().toMap().getValue(ig)
         assertEquals("the totals are the same, which was the problem", a.ignored, b.ignored)
         assertNotEquals(a.ignoredBy, b.ignoredBy)
@@ -180,12 +185,10 @@ class RouteTallyReasonTest {
     @Test
     fun `our own package being dropped as own-package is ordinary`() {
         // Every scroll inside our own launcher lands here and always has.
-        // It is only a finding when the count is OWN_WINDOW instead, because
-        // that means the guard ran before the package was ever looked at.
         val t = RouteTally()
         t.record(event(own, WindowEvent.Kind.VIEW_SCROLLED), EventRoute.Ignore(IgnoreReason.OWN_PACKAGE))
         val tally = t.snapshot().toMap().getValue(own)
         assertEquals(1, tally.ignoredBy(IgnoreReason.OWN_PACKAGE))
-        assertEquals(0, tally.ignoredBy(IgnoreReason.OWN_WINDOW))
+        assertEquals(0, tally.ignoredBy(IgnoreReason.NOT_A_TARGET))
     }
 }

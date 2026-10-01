@@ -163,7 +163,8 @@ written down once rather than re-argued.
    with an id of `-1`. **Deleted, not narrowed.**
 2. `IgnoreReason.OWN_WINDOW` outlived its producer and was kept for exactly one
    release, because a running build could still emit it and an in-memory tally
-   would have been unreadable without it. **Kept with a stated expiry.**
+   would have been unreadable without it. **Kept with a stated expiry**, and
+   deleted at 1.0.3, later than stated.
 3. The telephony secondary could not register on any shipped build, because
    `READ_PHONE_STATE` is held out of the manifest by test. **Deleted, not
    guarded**, after one commit that guarded it and was the wrong answer.
