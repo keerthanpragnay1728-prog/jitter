@@ -308,6 +308,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             // runs on scroll.
             onAbandoned = { },
             goHome = ::goHomeQuietly,
+            pauseMedia = { MediaPauseKey.send(this) },
             fontScale = { fontScaleMultiplier },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
@@ -339,6 +340,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                 runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
                     .onFailure { Log.w(TAG, "GLOBAL_ACTION_HOME refused", it) }
             },
+            pauseMedia = { MediaPauseKey.send(this) },
             onLeaseTaken = ::grantLease,
             onDeclined = { _, _ -> },
             onBlock = ::blockFromGate,

@@ -14,8 +14,9 @@ package dev.molasses.core.safety
  *
  * Sending it home does not argue with the app. The target goes to the
  * background and stops its own playback, the overlay stays up over the
- * launcher, and the countdown carries on there. Focus, the pause key and
- * the mute are gone.
+ * launcher, and the countdown carries on there. Focus and the mute are gone.
+ * One PAUSE key came back, after home and on two overlays only, for the
+ * playback home cannot stop: see [MediaPause].
  *
  * ## All of them, with no switch
  * The entry gate and a lock raised as the app opens were left out once, on
@@ -27,13 +28,11 @@ package dev.molasses.core.safety
  * every kind. A new overlay kind goes home too, and has to give an exit in
  * [OverlayExit], whose `when` will not compile without a branch for it.
  *
- * Nothing here touches audio, so background music from an app that is not
- * behind the overlay plays on untouched.
- *
  * What home does not stop is playback the target keeps alive outside its
  * own activity: YouTube's picture-in-picture window, and Premium background
- * play. Neither is visible to this service's profile. See the README's known
- * limits.
+ * play. Neither is visible to this service's profile, and no public API
+ * closes the window. [MediaPause] pauses it on the two overlays raised over
+ * a session in progress; the paused window stays for the user to dismiss.
  *
  * The kinds exist for [OverlayExit] and for the log line each overlay writes
  * when it sends home.
