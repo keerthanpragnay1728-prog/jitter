@@ -40,8 +40,10 @@ class GateOverlayManager(
      * first draw and runs over the launcher; see `OverlayKind`.
      */
     private val goHome: () -> Unit,
-    /** Sends one media PAUSE key, after home. See `MediaPause`. True when dispatched. */
+    /** Sends one media PAUSE key, after home, for a video app. See `MediaPause`. True when dispatched. */
     private val pauseMedia: () -> Boolean,
+    /** Whether [pkg] is a video app, read once per gate show. See `MediaPause.isVideoApp`. */
+    private val isVideoApp: (pkg: String) -> Boolean,
     /**
      * Fired after the gate window is added or removed. The gate belongs to our
      * own package, so without this the service reads showing it as the user
@@ -99,6 +101,9 @@ class GateOverlayManager(
 
         currentPkg = pkg
         currentReading = reading
+        // Once per show, so the decision the log reports is the one the
+        // window was raised with.
+        val videoApp = isVideoApp(pkg)
         resolved = false
 
         // A fresh host per gate: OverlayHost is single-use by construction.
@@ -115,8 +120,8 @@ class GateOverlayManager(
                     goHome()
                     // After home, so the key also reaches a video that has
                     // just moved into picture-in-picture. See MediaPause.
-                    val paused = MediaPause.sendsPause(OverlayKind.WALK_GATE) && pauseMedia()
-                    Log.i(TAG, "overlay=${OverlayKind.WALK_GATE} home sent for $pkg; pause sent=$paused")
+                    val paused = MediaPause.sendsPause(OverlayKind.WALK_GATE, videoApp) && pauseMedia()
+                    Log.i(TAG, "overlay=${OverlayKind.WALK_GATE} pkg=$pkg isVideoApp=$videoApp home sent; pause sent=$paused")
                 }
             },
             // Back is the exit, the same handler as [ ARCHITECT'S SPACE ].

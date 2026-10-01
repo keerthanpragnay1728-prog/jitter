@@ -3,6 +3,7 @@ package dev.molasses.monitor
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -30,6 +31,7 @@ import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.FrictionDecision
 import dev.molasses.core.safety.HomeFirstWatch
+import dev.molasses.core.safety.MediaPause
 import dev.molasses.core.safety.PauseWindow
 import dev.molasses.core.safety.SensitivePackages
 import dev.molasses.core.session.EventRoute
@@ -309,6 +311,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             onAbandoned = { },
             goHome = ::goHomeQuietly,
             pauseMedia = { MediaPauseKey.send(this) },
+            isVideoApp = ::isVideoApp,
             fontScale = { fontScaleMultiplier },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
@@ -341,6 +344,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                     .onFailure { Log.w(TAG, "GLOBAL_ACTION_HOME refused", it) }
             },
             pauseMedia = { MediaPauseKey.send(this) },
+            isVideoApp = ::isVideoApp,
             onLeaseTaken = ::grantLease,
             onDeclined = { _, _ -> },
             onBlock = ::blockFromGate,
@@ -1113,6 +1117,18 @@ class MolassesAccessibilityService : AccessibilityService() {
         startActivity(intent)
         true
     }.onFailure { Log.w(HOME_FIRST_TAG, "relaunch of $pkg failed", it) }.getOrDefault(false)
+
+    /**
+     * Whether [pkg] is a video app, for the media pause. A failed lookup
+     * reads as no category, so it is not a video app unless it is YouTube by
+     * name. See `MediaPause.isVideoApp`.
+     */
+    private fun isVideoApp(pkg: String): Boolean {
+        val categoryVideo = runCatching {
+            packageManager.getApplicationInfo(pkg, 0).category == ApplicationInfo.CATEGORY_VIDEO
+        }.getOrDefault(false)
+        return MediaPause.isVideoApp(pkg, categoryVideo)
+    }
 
     private fun goHomeQuietly() {
         runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
