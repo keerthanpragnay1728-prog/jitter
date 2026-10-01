@@ -31,6 +31,13 @@ object ReportProblem {
     /** `Intent.CATEGORY_BROWSABLE`. */
     const val CATEGORY_BROWSABLE = "android.intent.category.BROWSABLE"
 
+    /**
+     * The glyph at the right edge of the row, where a section header has its
+     * chevron. Its own constant rather than `CfgAccordion.chevron`, because
+     * that one flips to the open form and this row never expands.
+     */
+    const val ROW_GLYPH = ">"
+
     data class Spec(val action: String, val category: String, val url: String)
 
     /** The one Intent this row ever sends. */
