@@ -12,7 +12,7 @@ the more the phone feels like it is failing.
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.21-7F52FF)
 ![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)
 
-**[Download the latest release](https://github.com/keerthanpragnay1728-prog/visceral/releases/latest)**
+**[Download the latest release](https://github.com/keerthanpragnay1728-prog/jitter/releases/latest)**
 
 ---
 
@@ -157,7 +157,7 @@ Jitter needs Android 11 or later. It is not on the Play Store; you install the
 APK yourself.
 
 1. **Download the APK** from the
-   [latest release](https://github.com/keerthanpragnay1728-prog/visceral/releases/latest).
+   [latest release](https://github.com/keerthanpragnay1728-prog/jitter/releases/latest).
    Check the file is the one that was published: the release page lists its
    SHA-256, and yours should match exactly.
 
@@ -172,7 +172,7 @@ APK yourself.
    Play Store. Tap "More details", then "Install anyway". If Play Protect blocks
    the install outright on your phone, there is no in-app way around that.
    What you can check yourself is the checksum above and the
-   [source code](https://github.com/keerthanpragnay1728-prog/visceral).
+   [source code](https://github.com/keerthanpragnay1728-prog/jitter).
 
 4. **Restricted settings (Android 13 and later).** The first time you try to
    turn on Jitter's accessibility service, Android shows "Restricted setting".
@@ -437,7 +437,7 @@ Test-only dependencies (JUnit, AndroidX Test) are not in the APK.
 ## Contributing
 
 Open an issue on the
-[issue tracker](https://github.com/keerthanpragnay1728-prog/visceral/issues)
+[issue tracker](https://github.com/keerthanpragnay1728-prog/jitter/issues)
 before starting work, so the change can be agreed first. A pull request has to
 pass `tools/check-all.sh` (read its last line, `check-all: PASS`) and
 `./gradlew testDebugUnitTest`. Sources are UTF-8 and LF; `.gitattributes`

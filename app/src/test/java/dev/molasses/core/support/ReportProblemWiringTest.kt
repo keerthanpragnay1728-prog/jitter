@@ -71,6 +71,16 @@ class ReportProblemWiringTest {
     }
 
     @Test
+    fun `the row is centred across the list with about 24dp above and below, in its old style`() {
+        val row = screen.substring(screen.indexOf("item(CfgRowKey.chrome(\"report-problem\"))"))
+            .substringBefore("\n        }\n    }\n")
+        assertTrue(row.contains(".fillMaxWidth()\n                        .padding(vertical = 24.dp),"))
+        assertTrue(row.contains("horizontalAlignment = Alignment.CenterHorizontally,"))
+        assertEquals("the label and the note are both centred", 2, Regex("textAlign = TextAlign.Center,").findAll(row).count())
+        assertTrue(row.contains("style = MaterialTheme.typography.labelMedium,\n                        color = MaterialTheme.colorScheme.primary,"))
+    }
+
+    @Test
     fun `the launch is inside a try with both catches, and logs`() {
         val fn = launch.substring(launch.indexOf("fun launchReportProblem("))
         val tryAt = fn.indexOf("= try {")
@@ -94,7 +104,7 @@ class ReportProblemWiringTest {
         assertTrue(shared.contains("if (intent.component != null) 0 else PackageManager.MATCH_DEFAULT_ONLY"))
         assertTrue(repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
             .contains("private fun canResolve(intent: Intent): Boolean = packageManager.canResolve(intent)"))
-        val urls = kt.filter { it.readText().contains("github.com/keerthanpragnay1728-prog/visceral/issues") }.map { it.name }
+        val urls = kt.filter { it.readText().contains("github.com/keerthanpragnay1728-prog/jitter/issues") }.map { it.name }
         assertEquals(listOf("ReportProblem.kt"), urls)
     }
 }
