@@ -44,6 +44,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -716,12 +717,22 @@ fun SettingsScreen(
         // a link out of the app, not a setting, so it belongs to no section.
         if (reportRow is ReportProblem.Row.Shown) {
             item(CfgRowKey.chrome("report-problem")) {
-                Column(Modifier.fillMaxWidth()) {
+                // Centred across the list, with room above and below, so it
+                // reads as the screen's last line rather than a stray link
+                // pinned to the left edge.
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         stringResource(R.string.settings_report_problem),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier
+                            .fillMaxWidth()
                             .clickable { reportFailed = !launchReportProblem(context) }
                             .padding(vertical = 6.dp, horizontal = 8.dp),
                     )
@@ -730,7 +741,10 @@ fun SettingsScreen(
                             stringResource(R.string.settings_report_problem_failed),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.padding(horizontal = 8.dp),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
                         )
                     }
                 }

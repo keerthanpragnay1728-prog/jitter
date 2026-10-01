@@ -23,7 +23,7 @@ package dev.molasses.core.support
  */
 object ReportProblem {
 
-    const val ISSUES_URL = "https://github.com/keerthanpragnay1728-prog/visceral/issues"
+    const val ISSUES_URL = "https://github.com/keerthanpragnay1728-prog/jitter/issues"
 
     /** `Intent.ACTION_VIEW`, spelled out so this file stays free of Android. */
     const val ACTION_VIEW = "android.intent.action.VIEW"
