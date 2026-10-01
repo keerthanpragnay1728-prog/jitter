@@ -119,21 +119,30 @@ class HomeFirstWiringTest {
     }
 
     @Test
-    fun `no focus and no mute, one pause key in one file, and the legacy restore runs on connect`() {
+    fun `no focus, nothing touches volume or mute, and one pause key in one file`() {
         val main = File(dev.molasses.core.repoRoot(), "app/src/main/java")
         val kt = main.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
         fun filesWith(vararg s: String) = kt.filter { f -> val t = f.readText(); s.any { t.contains(it) } }.map { it.name }
-        // Disproven on device and not to come back: focus, and the mute.
-        assertEquals(emptyList<String>(), filesWith("requestAudioFocus(", "AudioFocusRequest", "ADJUST_MUTE"))
+        // Disproven on device and not to come back: focus, and the mute. And
+        // with LegacyMuteRestore gone, nothing changes any volume at all:
+        // every AudioManager adjust direction and every volume, mute and
+        // ringer setter. Reading volume, ringer mode or call mode is fine.
+        assertEquals(emptyList<String>(), filesWith("requestAudioFocus(", "AudioFocusRequest"))
+        assertEquals(
+            emptyList<String>(),
+            filesWith(
+                "ADJUST_MUTE", "ADJUST_UNMUTE", "ADJUST_TOGGLE_MUTE", "ADJUST_LOWER", "ADJUST_RAISE",
+                "adjustStreamVolume(", "adjustVolume(", "adjustSuggestedStreamVolume(",
+                "setStreamVolume(", "setStreamMute(", "setMicrophoneMute(", "setRingerMode(",
+            ),
+        )
         // Never PLAY or PLAY_PAUSE: either would start the user's own music.
         assertEquals(emptyList<String>(), filesWith("KEYCODE_MEDIA_PLAY"))
         // The pause key lives in one file, and only it dispatches media keys.
         assertEquals(listOf("MediaPauseKey.kt"), filesWith("KEYCODE_MEDIA_PAUSE", "dispatchMediaKeyEvent("))
-        val connect = functionBody(service, "override fun onServiceConnected()")
-        assertTrue(connect.indexOf("LegacyMuteRestore.restoreOnConnect(this)") in 0 until connect.indexOf("ShutterOverlayManager("))
-        val legacy = repoFile("app/src/main/java/dev/molasses/monitor/LegacyMuteRestore.kt").readText()
-        assertTrue(legacy.contains("delete in the release after this one"))
-        assertTrue(legacy.contains("AudioManager.ADJUST_UNMUTE") && legacy.contains(".remove(KEY_OURS)"))
+        // LegacyMuteRestore expired after 1.0.0 and is deleted, with its call.
+        assertEquals(emptyList<String>(), filesWith("LegacyMuteRestore", "music_muted_by_jitter", "molasses_audio"))
+        assertFalse(File(main, "dev/molasses/monitor/LegacyMuteRestore.kt").exists())
     }
 
     @Test
