@@ -450,7 +450,7 @@ pass `tools/check-all.sh` (read its last line, `check-all: PASS`) and
 enforces LF, and `LineEndingsTest` fails on a CRLF checkout. CLAUDE.md has the
 rest, including commit message style and the prose rules this file follows.
 
-In the app, [ REPORT A PROBLEM ] at the end of CFG opens that same issue
+In the app, REPORT A PROBLEM, the last row in CFG, opens that same issue
 tracker in your browser.
 
 ---

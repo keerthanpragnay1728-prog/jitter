@@ -57,27 +57,64 @@ class ReportProblemWiringTest {
         assertTrue(screen.contains("R.string.settings_report_problem_failed"))
     }
 
-    @Test
-    fun `the row is its own row after the last section, not inside DBG or a section`() {
-        val row = screen.indexOf("item(CfgRowKey.chrome(\"report-problem\"))")
-        val lastSection = screen.indexOf("section = Section.TRY,")
-        assertTrue(row > lastSection)
-        assertFalse(repoFile("app/src/main/java/dev/molasses/ui/settings/DebugScreen.kt").readText().contains("ReportProblem"))
-        // After the TRY section's block has closed, at the builder's own
-        // indentation rather than a section's.
-        val between = screen.substring(lastSection, row)
-        assertTrue(between.contains("        }\n\n        // Its own row after the last section"))
-        assertTrue(screen.contains("\n        if (reportRow is ReportProblem.Row.Shown) {\n            item(CfgRowKey.chrome(\"report-problem\")) {"))
+    /** The section builder's calls, in order, and the report row's position among them. */
+    private val cfgBuilder by lazy {
+        screen.substring(screen.indexOf("val cfgRows = buildCfgRows {"))
+            .substringBefore("\n    // The letters the rail offers")
     }
 
     @Test
-    fun `the row is centred across the list with about 24dp above and below, in its old style`() {
-        val row = screen.substring(screen.indexOf("item(CfgRowKey.chrome(\"report-problem\"))"))
-            .substringBefore("\n        }\n    }\n")
-        assertTrue(row.contains(".fillMaxWidth()\n                        .padding(vertical = 24.dp),"))
-        assertTrue(row.contains("horizontalAlignment = Alignment.CenterHorizontally,"))
-        assertEquals("the label and the note are both centred", 2, Regex("textAlign = TextAlign.Center,").findAll(row).count())
-        assertTrue(row.contains("style = MaterialTheme.typography.labelMedium,\n                        color = MaterialTheme.colorScheme.primary,"))
+    fun `the row is the last row, directly after TRY IT, and not in DBG`() {
+        val sections = Regex("""section = Section\.(\w+),""").findAll(cfgBuilder).map { it.groupValues[1] }.toList()
+        assertEquals("TRY", sections.last())
+        val row = cfgBuilder.indexOf("item(CfgRowKey.chrome(\"report-problem\"))")
+        assertTrue(row > cfgBuilder.indexOf("section = Section.TRY,"))
+        // Nothing after it but the builder's close.
+        val after = cfgBuilder.substring(row + "item(".length)
+        assertFalse(after.contains("item("))
+        assertFalse(after.contains("section("))
+        // At the builder's own indentation, outside TRY IT's block.
+        assertTrue(cfgBuilder.contains("\n        if (reportRow is ReportProblem.Row.Shown) {\n            item(CfgRowKey.chrome(\"report-problem\")) {"))
+        assertFalse(repoFile("app/src/main/java/dev/molasses/ui/settings/DebugScreen.kt").readText().contains("ReportProblem"))
+    }
+
+    @Test
+    fun `the row is not an accordion section and never takes part in single-open`() {
+        val accordion = repoFile("app/src/main/java/dev/molasses/core/settings/CfgAccordion.kt").readText()
+        val sectionEnum = accordion.substring(accordion.indexOf("enum class Section")).substringBefore("}")
+        assertFalse("no REPORT section", sectionEnum.contains("REPORT"))
+        val row = cfgBuilder.substring(cfgBuilder.indexOf("if (reportRow is ReportProblem.Row.Shown) {"))
+        assertFalse(row.contains("CfgAccordion."))
+        assertFalse(row.contains("accordion"))
+        assertFalse(row.contains("CfgRowKey.section("))
+        assertFalse(row.contains("SectionHeader("))
+        assertTrue(row.contains("LinkRow("))
+    }
+
+    @Test
+    fun `the row is laid out as a section header, left-aligned, with its own glyph`() {
+        val link = functionBody(screen, "private fun LinkRow(")
+        val header = functionBody(screen, "private fun SectionHeader(")
+        // The same spacing above and below as every section header.
+        for (spacing in listOf("Spacer(Modifier.height(20.dp))", "Spacer(Modifier.height(8.dp))")) {
+            assertTrue(spacing, header.contains(spacing) && link.contains(spacing))
+        }
+        // The same row and label style.
+        val rowShape = ".fillMaxWidth()\n            .clickable(onClick = "
+        assertTrue(header.contains(rowShape + "onToggle)") && link.contains(rowShape + "onClick)"))
+        val label = ".uppercase(),\n            style = MaterialTheme.typography.labelMedium,\n            color = MaterialTheme.colorScheme.primary,"
+        assertTrue(header.contains(label) && link.contains(label))
+        assertTrue(link.contains("Spacer(Modifier.weight(1f))"))
+        // Left-aligned: no centring anywhere in it.
+        for (centring in listOf("TextAlign", "CenterHorizontally", "Arrangement.Center", "padding(vertical = 24.dp)")) {
+            assertFalse(centring, link.contains(centring))
+        }
+        // Its own glyph, which never flips: not the accordion's chevron.
+        assertTrue(link.contains("ReportProblem.ROW_GLYPH,"))
+        assertFalse(link.contains("CfgAccordion.chevron("))
+        assertEquals(">", ReportProblem.ROW_GLYPH)
+        // The failure note under the row, left-aligned.
+        assertTrue(link.indexOf("stringResource(failureNote)") > link.indexOf("ReportProblem.ROW_GLYPH"))
     }
 
     @Test
