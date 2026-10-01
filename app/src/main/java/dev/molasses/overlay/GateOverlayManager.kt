@@ -6,6 +6,7 @@ import android.util.Log
 import android.view.WindowManager
 import dev.molasses.core.model.EventType
 import dev.molasses.core.model.GateOutcome
+import dev.molasses.core.safety.MediaPause
 import dev.molasses.core.safety.OverlayKind
 import dev.molasses.engine.FrictionLedger
 import dev.molasses.sensing.MovementDetector
@@ -39,6 +40,8 @@ class GateOverlayManager(
      * first draw and runs over the launcher; see `OverlayKind`.
      */
     private val goHome: () -> Unit,
+    /** Sends one media PAUSE key, after home. See `MediaPause`. True when dispatched. */
+    private val pauseMedia: () -> Boolean,
     /**
      * Fired after the gate window is added or removed. The gate belongs to our
      * own package, so without this the service reads showing it as the user
@@ -110,7 +113,10 @@ class GateOverlayManager(
             onFirstDraw = {
                 if (currentPkg == pkg && !resolved) {
                     goHome()
-                    Log.i(TAG, "overlay=${OverlayKind.WALK_GATE} home sent for $pkg")
+                    // After home, so the key also reaches a video that has
+                    // just moved into picture-in-picture. See MediaPause.
+                    val paused = MediaPause.sendsPause(OverlayKind.WALK_GATE) && pauseMedia()
+                    Log.i(TAG, "overlay=${OverlayKind.WALK_GATE} home sent for $pkg; pause sent=$paused")
                 }
             },
             // Back is the exit, the same handler as [ ARCHITECT'S SPACE ].

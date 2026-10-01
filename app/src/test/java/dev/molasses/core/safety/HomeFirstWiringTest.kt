@@ -119,18 +119,47 @@ class HomeFirstWiringTest {
     }
 
     @Test
-    fun `no audio lever is left, and the legacy restore runs on connect`() {
+    fun `no focus and no mute, one pause key in one file, and the legacy restore runs on connect`() {
         val main = File(dev.molasses.core.repoRoot(), "app/src/main/java")
-        val offenders = main.walkTopDown().filter { it.isFile && it.extension == "kt" }.filter {
-            val t = it.readText()
-            t.contains("requestAudioFocus(") || t.contains("KEYCODE_MEDIA_PAUSE") || t.contains("ADJUST_MUTE")
-        }.map { it.name }.toList()
-        assertEquals(emptyList<String>(), offenders)
+        val kt = main.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        fun filesWith(vararg s: String) = kt.filter { f -> val t = f.readText(); s.any { t.contains(it) } }.map { it.name }
+        // Disproven on device and not to come back: focus, and the mute.
+        assertEquals(emptyList<String>(), filesWith("requestAudioFocus(", "AudioFocusRequest", "ADJUST_MUTE"))
+        // Never PLAY or PLAY_PAUSE: either would start the user's own music.
+        assertEquals(emptyList<String>(), filesWith("KEYCODE_MEDIA_PLAY"))
+        // The pause key lives in one file, and only it dispatches media keys.
+        assertEquals(listOf("MediaPauseKey.kt"), filesWith("KEYCODE_MEDIA_PAUSE", "dispatchMediaKeyEvent("))
         val connect = functionBody(service, "override fun onServiceConnected()")
         assertTrue(connect.indexOf("LegacyMuteRestore.restoreOnConnect(this)") in 0 until connect.indexOf("ShutterOverlayManager("))
         val legacy = repoFile("app/src/main/java/dev/molasses/monitor/LegacyMuteRestore.kt").readText()
         assertTrue(legacy.contains("delete in the release after this one"))
         assertTrue(legacy.contains("AudioManager.ADJUST_UNMUTE") && legacy.contains(".remove(KEY_OURS)"))
+    }
+
+    @Test
+    fun `the pause key is down then up, sent after home, on the two gates only`() {
+        val key = repoFile("app/src/main/java/dev/molasses/monitor/MediaPauseKey.kt").readText()
+        val down = key.indexOf("KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE")
+        val up = key.indexOf("KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE")
+        assertTrue(down in 0 until up)
+        assertEquals(2, Regex("""dispatchMediaKeyEvent\(""").findAll(key).count())
+
+        val lease = functionBody(overlay("LeaseGateOverlayManager"), "private fun sendHome(")
+        assertTrue("after home", lease.indexOf("goHome()") in 0 until lease.indexOf("pauseMedia()"))
+        assertTrue(lease.contains("MediaPause.sendsPause(kind) && pauseMedia()"))
+        assertTrue(lease.contains("pause sent=\$paused"))
+        val walk = functionBody(overlay("GateOverlayManager"), "fun show(")
+        assertTrue("after home", walk.indexOf("goHome()") in 0 until walk.indexOf("pauseMedia()"))
+        assertTrue(walk.contains("MediaPause.sendsPause(OverlayKind.WALK_GATE) && pauseMedia()"))
+        assertTrue(walk.contains("pause sent=\$paused"))
+
+        // Sent from the first draw and nowhere else: nothing on dismiss.
+        assertEquals(1, Regex("""pauseMedia\(\)""").findAll(overlay("LeaseGateOverlayManager")).count())
+        assertEquals(1, Regex("""pauseMedia\(\)""").findAll(overlay("GateOverlayManager")).count())
+        // Never on a lock, and wired into exactly the two gates.
+        assertFalse(overlay("LockOverlayManager").contains("pauseMedia"))
+        assertFalse(overlay("LockOverlayManager").contains("MediaPause"))
+        assertEquals(2, Regex("""pauseMedia = \{ MediaPauseKey\.send\(this\) \},""").findAll(service).count())
     }
 
     @Test

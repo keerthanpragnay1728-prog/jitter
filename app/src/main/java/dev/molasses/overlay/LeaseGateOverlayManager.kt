@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateControls
 import dev.molasses.core.lease.GateReadout
+import dev.molasses.core.safety.MediaPause
 import dev.molasses.core.safety.OverlayKind
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.model.EventType
@@ -83,6 +84,11 @@ class LeaseGateOverlayManager(
     private val monotonicMs: () -> Long,
     /** Fires `GLOBAL_ACTION_HOME`. Passed in so this class holds no service. */
     private val goHome: () -> Unit,
+    /**
+     * Sends one media PAUSE key, after home, on the LEASE EXPIRED gate only.
+     * See `MediaPause`. True when it was dispatched.
+     */
+    private val pauseMedia: () -> Boolean,
     private val onLeaseTaken: (pkg: String, durationMs: Long) -> Unit,
     private val onDeclined: (pkg: String, reason: String) -> Unit,
     /**
@@ -318,7 +324,10 @@ class LeaseGateOverlayManager(
     private fun sendHome(pkg: String, kind: OverlayKind) {
         if (currentPkg != pkg || resolved) return
         goHome()
-        Log.i(TAG, "overlay=$kind home sent for $pkg")
+        // After home, so the key also reaches a video YouTube has just moved
+        // into picture-in-picture. Never at entry: see MediaPause.
+        val paused = MediaPause.sendsPause(kind) && pauseMedia()
+        Log.i(TAG, "overlay=$kind home sent for $pkg; pause sent=$paused")
     }
 
     /**

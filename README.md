@@ -85,7 +85,8 @@ frame and sends you home, and pressing back does the same.
 checks your lease at its deadline, without waiting for you to touch anything,
 and the LEASE EXPIRED gate sends the app to the background as it appears, so
 a video stops because its app stopped, not because anything argued with its
-sound. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
+sound. It then sends one media pause, for a video that kept playing in a
+floating window. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
 from the start and leaves (back does the same), [ BLOCK THIS APP ] is there
 from the start, and the lease options appear at zero; taking one reopens the
 app where you left it. Leaving grants nothing and resets nothing. The walking
@@ -229,11 +230,15 @@ Not requested: `READ_PHONE_STATE` (the call check uses `AudioManager`),
 - **YouTube is lease-gated only.** Its feed and Shorts send no scroll events,
   so scroll stalls never start there. The lease gate still fires on time, even
   while a video plays.
-- **YouTube can keep playing in a floating window.** When a gate sends YouTube
-  to the background, a playing video can move into picture-in-picture, which
-  Jitter cannot see or close. Turn it off: Android Settings, Apps, Special app
-  access, Picture-in-picture, YouTube. YouTube Premium's background play keeps
-  the sound going the same way; turn that off in YouTube's own settings.
+- **YouTube's floating window stays on screen, paused.** When a lease runs
+  out, a playing YouTube video can move into picture-in-picture. The LEASE
+  EXPIRED gate (and the walking gate) pauses its video and audio, but the
+  paused floating window stays until you dismiss it, because Android gives
+  other apps no way to close it. To avoid the window, turn picture-in-picture
+  off: Android Settings, Apps, Special app access, Picture-in-picture,
+  YouTube. YouTube Premium's background play has not been checked against the
+  pause; if its sound carries on, turn background play off in YouTube's own
+  settings.
 - **Locks have no unlock.** A lock runs until it ends.
 - **Screen margins are fixed.** Jitter clears the status and navigation bars
   with a fixed margin rather than measuring them, so an unusual screen shape
