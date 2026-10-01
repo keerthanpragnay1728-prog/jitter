@@ -7,32 +7,46 @@ import org.junit.Test
 
 class MediaPauseTest {
 
+    private val pausing = setOf(OverlayKind.EXPIRED_GATE, OverlayKind.WALK_GATE)
+
     @Test
-    fun `the expired gate sends pause`() {
-        assertTrue(MediaPause.sendsPause(OverlayKind.EXPIRED_GATE))
+    fun `for a video app, only the expired and walking gates pause`() {
+        for (kind in OverlayKind.entries) {
+            assertEquals("$kind, video app", kind in pausing, MediaPause.sendsPause(kind, isVideoApp = true))
+        }
     }
 
     @Test
-    fun `the walking gate sends pause`() {
-        assertTrue(MediaPause.sendsPause(OverlayKind.WALK_GATE))
+    fun `for a non-video app, no overlay kind pauses`() {
+        for (kind in OverlayKind.entries) {
+            assertFalse("$kind, non-video app", MediaPause.sendsPause(kind, isVideoApp = false))
+        }
     }
 
     @Test
-    fun `the entry gate never sends pause, so the user's own music is left alone`() {
-        assertFalse(MediaPause.sendsPause(OverlayKind.ENTRY_GATE))
+    fun `YouTube is a video app by name, with no category`() {
+        assertTrue(MediaPause.isVideoApp("com.google.android.youtube", categoryVideo = false))
+        assertTrue(MediaPause.sendsPause(OverlayKind.EXPIRED_GATE, MediaPause.isVideoApp("com.google.android.youtube", false)))
     }
 
     @Test
-    fun `no lock sends pause, at entry or mid-session`() {
-        assertFalse(MediaPause.sendsPause(OverlayKind.LOCK_AT_ENTRY))
-        assertFalse(MediaPause.sendsPause(OverlayKind.LOCK_MID_SESSION))
+    fun `an app declaring CATEGORY_VIDEO is a video app`() {
+        assertTrue(MediaPause.isVideoApp("org.example.tube", categoryVideo = true))
     }
 
     @Test
-    fun `exactly the two overlays raised over a session in progress`() {
-        assertEquals(
-            setOf(OverlayKind.EXPIRED_GATE, OverlayKind.WALK_GATE),
-            OverlayKind.entries.filter(MediaPause::sendsPause).toSet(),
-        )
+    fun `a non-video app never pauses, on any overlay`() {
+        for (pkg in listOf("com.twitter.android", "com.linkedin.android", "com.facebook.katana", "com.instagram.android")) {
+            val video = MediaPause.isVideoApp(pkg, categoryVideo = false)
+            assertFalse("$pkg is not a video app without the category", video)
+            for (kind in OverlayKind.entries) assertFalse("$pkg, $kind", MediaPause.sendsPause(kind, video))
+        }
+    }
+
+    @Test
+    fun `YouTube Music is not YouTube`() {
+        // By exact name only. A prefix would take in YouTube Music, whose
+        // session is the user's own music.
+        assertFalse(MediaPause.isVideoApp("com.google.android.apps.youtube.music", categoryVideo = false))
     }
 }

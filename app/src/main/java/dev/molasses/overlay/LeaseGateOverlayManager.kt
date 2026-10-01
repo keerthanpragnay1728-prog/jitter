@@ -85,10 +85,12 @@ class LeaseGateOverlayManager(
     /** Fires `GLOBAL_ACTION_HOME`. Passed in so this class holds no service. */
     private val goHome: () -> Unit,
     /**
-     * Sends one media PAUSE key, after home, on the LEASE EXPIRED gate only.
-     * See `MediaPause`. True when it was dispatched.
+     * Sends one media PAUSE key, after home, on the LEASE EXPIRED gate of a
+     * video app only. See `MediaPause`. True when it was dispatched.
      */
     private val pauseMedia: () -> Boolean,
+    /** Whether [pkg] is a video app, read once per gate show. See `MediaPause.isVideoApp`. */
+    private val isVideoApp: (pkg: String) -> Boolean,
     private val onLeaseTaken: (pkg: String, durationMs: Long) -> Unit,
     private val onDeclined: (pkg: String, reason: String) -> Unit,
     /**
@@ -188,6 +190,9 @@ class LeaseGateOverlayManager(
         resolved = false
         blockPickerOpen = false
         val kind = OverlayKind.leaseGate(expired)
+        // Once per show, here rather than at the first draw, so the decision
+        // the log reports is the one the window was raised with.
+        val videoApp = isVideoApp(pkg)
 
         this.stats = stats
         val deadline = monotonicMs() + countdownMs
@@ -200,7 +205,7 @@ class LeaseGateOverlayManager(
         host = h
 
         h.show(
-            onFirstDraw = { sendHome(pkg, kind) },
+            onFirstDraw = { sendHome(pkg, kind, videoApp) },
             onBackPressed = {
                 // Back from the rung row returns to the gate; it does not
                 // answer it. Otherwise back is the exit, on either gate, the
@@ -321,13 +326,14 @@ class LeaseGateOverlayManager(
      * After the first draw: send the app home under this window. The frame
      * has composited by then, so the user sees the gate rather than a bounce.
      */
-    private fun sendHome(pkg: String, kind: OverlayKind) {
+    private fun sendHome(pkg: String, kind: OverlayKind, videoApp: Boolean) {
         if (currentPkg != pkg || resolved) return
         goHome()
         // After home, so the key also reaches a video YouTube has just moved
-        // into picture-in-picture. Never at entry: see MediaPause.
-        val paused = MediaPause.sendsPause(kind) && pauseMedia()
-        Log.i(TAG, "overlay=$kind home sent for $pkg; pause sent=$paused")
+        // into picture-in-picture. Never at entry, and only for a video app:
+        // see MediaPause.
+        val paused = MediaPause.sendsPause(kind, videoApp) && pauseMedia()
+        Log.i(TAG, "overlay=$kind pkg=$pkg isVideoApp=$videoApp home sent; pause sent=$paused")
     }
 
     /**

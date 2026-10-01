@@ -85,8 +85,9 @@ frame and sends you home, and pressing back does the same.
 checks your lease at its deadline, without waiting for you to touch anything,
 and the LEASE EXPIRED gate sends the app to the background as it appears, so
 a video stops because its app stopped, not because anything argued with its
-sound. It then sends one media pause, for a video that kept playing in a
-floating window. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
+sound. For a video app, such as YouTube, it then sends one media pause, for
+a video that kept playing in a floating window. Other apps get no pause, so
+music you are playing in the background is not touched. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
 from the start and leaves (back does the same), [ BLOCK THIS APP ] is there
 from the start, and the lease options appear at zero; taking one reopens the
 app where you left it. Leaving grants nothing and resets nothing. The walking

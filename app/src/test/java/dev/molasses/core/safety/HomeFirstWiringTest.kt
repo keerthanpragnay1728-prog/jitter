@@ -146,12 +146,24 @@ class HomeFirstWiringTest {
 
         val lease = functionBody(overlay("LeaseGateOverlayManager"), "private fun sendHome(")
         assertTrue("after home", lease.indexOf("goHome()") in 0 until lease.indexOf("pauseMedia()"))
-        assertTrue(lease.contains("MediaPause.sendsPause(kind) && pauseMedia()"))
-        assertTrue(lease.contains("pause sent=\$paused"))
+        assertTrue(lease.contains("MediaPause.sendsPause(kind, videoApp) && pauseMedia()"))
+        assertTrue(lease.contains("overlay=\$kind pkg=\$pkg isVideoApp=\$videoApp home sent; pause sent=\$paused"))
         val walk = functionBody(overlay("GateOverlayManager"), "fun show(")
         assertTrue("after home", walk.indexOf("goHome()") in 0 until walk.indexOf("pauseMedia()"))
-        assertTrue(walk.contains("MediaPause.sendsPause(OverlayKind.WALK_GATE) && pauseMedia()"))
-        assertTrue(walk.contains("pause sent=\$paused"))
+        assertTrue(walk.contains("MediaPause.sendsPause(OverlayKind.WALK_GATE, videoApp) && pauseMedia()"))
+        assertTrue(walk.contains("pkg=\$pkg isVideoApp=\$videoApp home sent; pause sent=\$paused"))
+        // Read once per show, before the window goes up.
+        assertTrue(walk.indexOf("val videoApp = isVideoApp(pkg)") in 0 until walk.indexOf("h.show("))
+        val leaseShow = functionBody(overlay("LeaseGateOverlayManager"), "fun show(")
+        assertTrue(leaseShow.indexOf("val videoApp = isVideoApp(pkg)") in 0 until leaseShow.indexOf("h.show("))
+        assertTrue(leaseShow.contains("onFirstDraw = { sendHome(pkg, kind, videoApp) },"))
+        // The service reads the category, a failed lookup reads as none, and
+        // the pure rule decides.
+        val video = functionBody(service, "private fun isVideoApp(")
+        assertTrue(video.contains("ApplicationInfo.CATEGORY_VIDEO"))
+        assertTrue(video.contains(".getOrDefault(false)"))
+        assertTrue(video.contains("MediaPause.isVideoApp(pkg, categoryVideo)"))
+        assertEquals(2, Regex("""isVideoApp = ::isVideoApp,""").findAll(service).count())
 
         // Sent from the first draw and nowhere else: nothing on dismiss.
         assertEquals(1, Regex("""pauseMedia\(\)""").findAll(overlay("LeaseGateOverlayManager")).count())

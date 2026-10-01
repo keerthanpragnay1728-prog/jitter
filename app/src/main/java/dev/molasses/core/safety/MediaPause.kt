@@ -13,9 +13,20 @@ package dev.molasses.core.safety
  * and left the floating window on screen, paused, for the user to dismiss.
  *
  * So one PAUSE key, down then up, after home, on the two overlays raised over
- * a session in progress: the LEASE EXPIRED gate and the walking gate. Never
- * PLAY or PLAY_PAUSE, which would start the user's own music when nothing
- * else is playing, and nothing on dismiss.
+ * a session in progress, the LEASE EXPIRED gate and the walking gate, and
+ * only when the gated app is a video app. Never PLAY or PLAY_PAUSE, which
+ * would start the user's own music when nothing else is playing, and nothing
+ * on dismiss.
+ *
+ * ## Only video apps
+ * Android sends a media key to the most recently active media session, not
+ * to the app under the gate. In an app that plays no media (X, LinkedIn, a
+ * Facebook text feed) that session is the user's own music, so a key sent
+ * there paused it on every expired or walking gate. A video app is one whose
+ * `ApplicationInfo.category` is `CATEGORY_VIDEO`, or YouTube by name, because
+ * a category is self-declared and may be missing. Everything else gets
+ * home-first only. The caller reads the category; a lookup that fails counts
+ * as no category, so YouTube is still a video app by name.
  *
  * ## Why not at entry, and not on locks
  * The pause key was removed once, after device evidence: at entry it paused
@@ -27,19 +38,26 @@ package dev.molasses.core.safety
  * stays deleted: Instagram re-took it within 0.6 s, and releasing it when
  * the gate closed let the app resume.
  *
- * ## Whose session it reaches
- * Android routes a media key to the most recently active media session. At
- * expiry that is the target app: the user has spent a whole lease in it, and
- * a video or Reel playing there started after anything playing in the
- * background. The walking gate fires on a scroll past the horizon, in the
- * same position. If the user's own music was the most recent session (the
- * target played nothing during the lease, or the user started their music
- * from the shade while in it), the key pauses that instead. That is a paused
- * song the user can resume with one tap, not anything lost.
+ * ## The risk that is left
+ * In a video app at expiry, the most recent session is almost always that
+ * app's own player: a video started during the lease began after anything
+ * playing in the background. It is still possible, and rare, for the user's
+ * own music to be the most recent session in a video app: they browsed
+ * without playing anything, or started their music from the shade while in
+ * it. Then the key pauses their music instead. That is a paused song they
+ * can resume with one tap, not anything lost.
  */
 object MediaPause {
 
-    fun sendsPause(overlay: OverlayKind): Boolean = when (overlay) {
+    const val YOUTUBE = "com.google.android.youtube"
+
+    /**
+     * @param categoryVideo `ApplicationInfo.category == CATEGORY_VIDEO`, or
+     *   false when the caller could not read it.
+     */
+    fun isVideoApp(pkg: String, categoryVideo: Boolean): Boolean = categoryVideo || pkg == YOUTUBE
+
+    fun sendsPause(overlay: OverlayKind, isVideoApp: Boolean): Boolean = isVideoApp && when (overlay) {
         OverlayKind.EXPIRED_GATE, OverlayKind.WALK_GATE -> true
         OverlayKind.ENTRY_GATE, OverlayKind.LOCK_AT_ENTRY, OverlayKind.LOCK_MID_SESSION -> false
     }
