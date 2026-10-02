@@ -218,9 +218,11 @@ message CycleState {
 }
 
 // One pending re-arm. The deadline is stamped on all three clocks at the
-// moment the untrack is confirmed, each moved on by seven days, the same
-// due_* shape as ReminderEntry. It is read with the RELIEF clamp, and a
-// changed boot id ends it.
+// moment the untrack is confirmed, each moved on by the grace in
+// UntrackSunset.GRACE_DAYS, the same due_* shape as ReminderEntry. It is read
+// as a deadline, the earlier of the two clocks ending it (the RELIEF rule),
+// and a changed boot id ends it. Changing the grace changes only what new
+// entries get; a stored deadline keeps its date.
 message UntrackSunsetEntry {
   string pkg = 1;
   int64 due_wall_ms = 2;

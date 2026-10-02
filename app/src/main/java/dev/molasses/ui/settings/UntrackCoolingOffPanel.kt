@@ -48,7 +48,7 @@ import kotlinx.coroutines.delay
  *     UNTRACK COOLING-OFF
  *     TARGET // <app label>
  *     LAST TARGET. UNTRACKING IT LEAVES NOTHING GATED.
- *     SOCIAL APP. TRACKING RESUMES IN 7 DAYS, OR AT THE NEXT RESTART.
+ *     SOCIAL APP. TRACKING RESUMES IN <n> DAYS, OR AT THE NEXT RESTART.
  *     <seconds>
  * ```
  *

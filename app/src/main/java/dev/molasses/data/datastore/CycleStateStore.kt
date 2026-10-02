@@ -217,7 +217,7 @@ class CycleStateStore(context: Context) {
         onlyIfTracked: Boolean = false,
         /**
          * The cooling-off's confirm, for an app in `UntrackSunset.inScope`:
-         * store its seven-day deadline in this same transaction, so there is
+         * store its sunset deadline in this same transaction, so there is
          * never a moment where the app is untracked with no re-arm pending.
          */
         grantsSunset: Boolean = false,
