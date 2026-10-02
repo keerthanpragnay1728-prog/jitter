@@ -225,8 +225,8 @@ class SettingsRepository(
     /**
      * Remove [pkg] from the tracked set, at the end of the untrack
      * cooling-off. The same single writer and the same lock guard as
-     * [toggleTarget], restricted to removing. A social app gets a seven-day
-     * re-arm in the same write: see [sunsetInScope].
+     * [toggleTarget], restricted to removing. A social app gets a re-arm,
+     * `UntrackSunset.GRACE_DAYS` out, in the same write: see [sunsetInScope].
      */
     suspend fun untrackTarget(pkg: String) =
         store.toggleTarget(pkg, nowStamped(), onlyIfTracked = true, grantsSunset = sunsetInScope(pkg))

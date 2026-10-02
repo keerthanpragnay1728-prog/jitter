@@ -121,7 +121,7 @@ for it.
 **Untracking a social app is temporary.** Turning an app off in CFG waits two
 and a half minutes before it lets you confirm. For Instagram, Facebook (and
 Facebook Lite), X, TikTok, Snapchat and any app Android lists as social,
-tracking comes back on by itself after seven days, or at the next restart if
+tracking comes back on by itself after three days, or at the next restart if
 that is sooner, and CFG shows the date on the app's row. YouTube and every
 other app stay untracked until you turn them back on.
 
