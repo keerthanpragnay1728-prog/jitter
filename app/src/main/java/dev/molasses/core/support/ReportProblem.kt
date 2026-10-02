@@ -23,13 +23,27 @@ package dev.molasses.core.support
  */
 object ReportProblem {
 
-    const val ISSUES_URL = "https://github.com/keerthanpragnay1728-prog/visceral/issues"
+    const val ISSUES_URL = "https://github.com/keerthanpragnay1728-prog/jitter/issues"
 
     /** `Intent.ACTION_VIEW`, spelled out so this file stays free of Android. */
     const val ACTION_VIEW = "android.intent.action.VIEW"
 
     /** `Intent.CATEGORY_BROWSABLE`. */
     const val CATEGORY_BROWSABLE = "android.intent.category.BROWSABLE"
+
+    /**
+     * The glyph at the right edge of the row, where a section header has its
+     * chevron: a north-east arrow, U+2197, which reads as "opens elsewhere".
+     * Not ">", because a closed section already shows ">", and a row that
+     * looked like a collapsed section would invite a tap to expand it. Its
+     * own constant rather than `CfgAccordion.chevron`, because that one flips
+     * to the open form and this row never expands.
+     *
+     * Written as an escape, as `CfgAccordion.CHEVRON_OPEN` is, so no editor or
+     * paste can mangle it. If it renders badly on a device, "->" is the ASCII
+     * fallback, and this line is the only one to change.
+     */
+    const val ROW_GLYPH = "\u2197"
 
     data class Spec(val action: String, val category: String, val url: String)
 

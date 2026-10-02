@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateControls
 import dev.molasses.core.lease.GateReadout
+import dev.molasses.core.safety.MediaPause
 import dev.molasses.core.safety.OverlayKind
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.model.EventType
@@ -29,6 +30,8 @@ import kotlinx.coroutines.launch
  * Read once, when the gate attaches. They are a day's totals and a cycle
  * total: none of them can move enough in eight seconds to be worth a second
  * query, and the countdown has to be the only thing on the screen that moves.
+ * The countdown is the numeral and the playhead under it, which step together
+ * from one whole-second value, so that is still one moving thing.
  */
 data class GateStats(
     val todayMs: Long?,
@@ -83,6 +86,13 @@ class LeaseGateOverlayManager(
     private val monotonicMs: () -> Long,
     /** Fires `GLOBAL_ACTION_HOME`. Passed in so this class holds no service. */
     private val goHome: () -> Unit,
+    /**
+     * Sends one media PAUSE key, after home, on the LEASE EXPIRED gate of a
+     * video app only. See `MediaPause`. True when it was dispatched.
+     */
+    private val pauseMedia: () -> Boolean,
+    /** Whether [pkg] is a video app, read once per gate show. See `MediaPause.isVideoApp`. */
+    private val isVideoApp: (pkg: String) -> Boolean,
     private val onLeaseTaken: (pkg: String, durationMs: Long) -> Unit,
     private val onDeclined: (pkg: String, reason: String) -> Unit,
     /**
@@ -182,6 +192,9 @@ class LeaseGateOverlayManager(
         resolved = false
         blockPickerOpen = false
         val kind = OverlayKind.leaseGate(expired)
+        // Once per show, here rather than at the first draw, so the decision
+        // the log reports is the one the window was raised with.
+        val videoApp = isVideoApp(pkg)
 
         this.stats = stats
         val deadline = monotonicMs() + countdownMs
@@ -189,12 +202,15 @@ class LeaseGateOverlayManager(
         // mutableLongStateOf rather than mutableStateOf<Long> so the tick does
         // not box a Long five times a second for the life of the gate.
         var remaining by mutableLongStateOf(countdownMs)
+        // The countdown's whole length in seconds, from the same countdownMs
+        // the deadline and `remaining` start from: the playhead's track length.
+        val countdownTotalSec = GateReadout.remainingSeconds(countdownMs)
 
         val h = OverlayHost(service, windowManager)
         host = h
 
         h.show(
-            onFirstDraw = { sendHome(pkg, kind) },
+            onFirstDraw = { sendHome(pkg, kind, videoApp) },
             onBackPressed = {
                 // Back from the rung row returns to the gate; it does not
                 // answer it. Otherwise back is the exit, on either gate, the
@@ -215,6 +231,7 @@ class LeaseGateOverlayManager(
                         opensToday = this@LeaseGateOverlayManager.stats.opensToday,
                         remainingMs = remaining,
                     ),
+                    countdownTotalSec = countdownTotalSec,
                     nextScroll = nextScroll,
                     controls = GateControls.visible(expired, remaining),
                     onTakeLease = { ms -> takeLease(ms) },
@@ -315,10 +332,14 @@ class LeaseGateOverlayManager(
      * After the first draw: send the app home under this window. The frame
      * has composited by then, so the user sees the gate rather than a bounce.
      */
-    private fun sendHome(pkg: String, kind: OverlayKind) {
+    private fun sendHome(pkg: String, kind: OverlayKind, videoApp: Boolean) {
         if (currentPkg != pkg || resolved) return
         goHome()
-        Log.i(TAG, "overlay=$kind home sent for $pkg")
+        // After home, so the key also reaches a video YouTube has just moved
+        // into picture-in-picture. Never at entry, and only for a video app:
+        // see MediaPause.
+        val paused = MediaPause.sendsPause(kind, videoApp) && pauseMedia()
+        Log.i(TAG, "overlay=$kind pkg=$pkg isVideoApp=$videoApp home sent; pause sent=$paused")
     }
 
     /**
