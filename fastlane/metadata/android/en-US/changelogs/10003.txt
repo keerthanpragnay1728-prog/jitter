@@ -1,3 +1,5 @@
-- When a lease runs out in YouTube or another video app, its video and audio now pause, including in a floating picture-in-picture window. The paused window stays on screen until you close it.
-- Other apps get no pause, so music you play in the background is left alone.
-- REPORT A PROBLEM is now a row in CFG, after Try it, and opens the issue tracker of the renamed repository.
+- When a lease runs out in YouTube or another video app, playback pauses, even in a floating picture-in-picture window. The paused window stays until you close it.
+- Other apps get no pause, so music playing in the background is left alone.
+- REPORT A PROBLEM is now a row in CFG and opens the renamed repository's issue tracker.
+- Untracking a social app now lasts 3 days, or less after a restart.
+- The lease gate shows an ASCII playhead under the countdown that steps with it each second.
