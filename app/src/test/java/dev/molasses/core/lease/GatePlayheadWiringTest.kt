@@ -16,19 +16,35 @@ class GatePlayheadWiringTest {
     private val screen by lazy { repoFile("app/src/main/java/dev/molasses/ui/gate/LeaseGateScreen.kt").readText() }
     private val gate by lazy { functionBody(screen, "fun LeaseGateScreen(") }
     private val playhead by lazy { functionBody(screen, "private fun Playhead(") }
+    private val manager by lazy { repoFile("app/src/main/java/dev/molasses/overlay/LeaseGateOverlayManager.kt").readText() }
 
     @Test
     fun `the playhead reads the same remaining value that drives the numeral`() {
         val numeral = gate.indexOf("text = fields.countdown,")
-        val call = gate.indexOf("Playhead(remainingSec = fields.remainingSec, totalSec = playheadTotalSec)")
+        val call = gate.indexOf("Playhead(remainingSec = fields.remainingSec, totalSec = countdownTotalSec)")
         assertTrue("the numeral is drawn from fields", numeral >= 0)
         assertTrue("directly under the numeral, in the same branch", call > numeral)
         // Both from one Fields, built once per tick by GateReadout.fields.
         val countdownBranch = gate.substring(gate.indexOf("} else {", gate.indexOf("if (controls.leases) {")))
         assertTrue(countdownBranch.indexOf("Playhead(") < countdownBranch.indexOf("\n            }\n"))
         assertTrue(playhead.contains("GatePlayhead.playhead(remainingSec, totalSec)"))
-        // The track's length is the gate's own countdown, from the first frame.
-        assertTrue(gate.contains("val playheadTotalSec = remember { fields.remainingSec }"))
+    }
+
+    @Test
+    fun `the total is a parameter the manager passes, not derived by the screen`() {
+        // The screen takes it and derives nothing.
+        val params = screen.substring(screen.indexOf("fun LeaseGateScreen("), screen.indexOf(") {", screen.indexOf("fun LeaseGateScreen(")))
+        assertTrue(params.contains("countdownTotalSec: Int,"))
+        assertFalse("no first-frame derivation", screen.contains("remember {"))
+        assertFalse(screen.contains("playheadTotalSec"))
+        // The manager passes the total it starts the countdown with: the same
+        // countdownMs that sets the deadline and the first remaining value.
+        val show = functionBody(manager, "fun show(")
+        assertTrue(show.contains("val deadline = monotonicMs() + countdownMs"))
+        assertTrue(show.contains("var remaining by mutableLongStateOf(countdownMs)"))
+        assertTrue(show.contains("val countdownTotalSec = GateReadout.remainingSeconds(countdownMs)"))
+        assertTrue(show.contains("countdownTotalSec = countdownTotalSec,"))
+        assertTrue("computed before the window is shown", show.indexOf("val countdownTotalSec") < show.indexOf("h.show("))
     }
 
     /** The screen's code with comments removed, so prose about animation does not count as animation. */
@@ -57,9 +73,11 @@ class GatePlayheadWiringTest {
     }
 
     @Test
-    fun `the overlay managers and the walking gate are untouched by it`() {
+    fun `only the screen draws it, and the walking gate does not use it`() {
+        // The lease gate manager passes a number and draws nothing.
+        assertFalse(manager.contains("GatePlayhead"))
+        assertFalse(manager.contains("Playhead("))
         for (path in listOf(
-            "app/src/main/java/dev/molasses/overlay/LeaseGateOverlayManager.kt",
             "app/src/main/java/dev/molasses/overlay/GateOverlayManager.kt",
             "app/src/main/java/dev/molasses/overlay/OverlayHost.kt",
             "app/src/main/java/dev/molasses/ui/gate/GateScreen.kt",
