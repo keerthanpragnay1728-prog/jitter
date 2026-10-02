@@ -70,11 +70,12 @@ no matter how much you scroll.
 **It will stop you at the door.** Opening one of your target apps puts a
 full-screen black page in front of it: a face, the app's name, how long you
 have spent in it today, how long this cycle, how many times you have opened it,
-and a countdown. Eight seconds the first time. There is nothing to do but wait
-or leave, and there is no sentence on the screen telling you what to think
-about the numbers. The app goes to the background as the gate appears, so a
-video or Reel that starts on its own does not play behind the gate, and taking
-a lease reopens it.
+and a countdown. Eight seconds the first time. Under the number, a dashed
+track with a marker steps one place left each second, down to zero. There is
+nothing to do but wait or leave, and there is no sentence on the screen telling
+you what to think about the numbers. The app goes to the background as the
+gate appears, so a video or Reel that starts on its own does not play behind
+the gate, and taking a lease reopens it.
 
 **Then you choose how long you are staying.** At zero the countdown is replaced
 by three answers: 5m, 10m or 15m. There is no unlimited option. You do not have

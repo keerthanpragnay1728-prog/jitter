@@ -28,12 +28,16 @@ import dev.molasses.core.ui.CycleLine
  * making a claim about what the user wants, and the numbers make no claim at
  * all.
  *
- * ## No progress bar
- * The countdown is a number and the only moving thing on the screen. A bar
- * filling up invites watching the bar, which is a second thing to look at
- * instead of the numbers. A single digit changing once a second is the
- * smallest possible moving element and it is unambiguous about how long is
- * left, which a bar is not.
+ * ## A playhead, not a progress bar
+ * This section used to say "no progress bar": a bar filling up invites
+ * watching the bar, a second thing to look at instead of the numbers. The
+ * owner decided to add a playhead under the numeral (see [GatePlayhead]),
+ * and the reasoning that survives is in how it is built. It is not a fill and
+ * it does not animate: a fixed dashed track with one marker that steps one
+ * column per whole second, at the same instant as the digit above it and
+ * from the same value ([Fields.remainingSec]). So the screen still has one
+ * moving thing per second, shown twice, and the numeral still carries the
+ * meaning; the track is hidden from TalkBack.
  *
  * ## Unknown is [UNKNOWN], never zero and never hidden
  * A device without usage access cannot answer TODAY or OPENS TODAY. It renders
