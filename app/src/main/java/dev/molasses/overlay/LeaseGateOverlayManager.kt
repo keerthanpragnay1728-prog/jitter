@@ -30,6 +30,8 @@ import kotlinx.coroutines.launch
  * Read once, when the gate attaches. They are a day's totals and a cycle
  * total: none of them can move enough in eight seconds to be worth a second
  * query, and the countdown has to be the only thing on the screen that moves.
+ * The countdown is the numeral and the playhead under it, which step together
+ * from one whole-second value, so that is still one moving thing.
  */
 data class GateStats(
     val todayMs: Long?,
@@ -200,6 +202,9 @@ class LeaseGateOverlayManager(
         // mutableLongStateOf rather than mutableStateOf<Long> so the tick does
         // not box a Long five times a second for the life of the gate.
         var remaining by mutableLongStateOf(countdownMs)
+        // The countdown's whole length in seconds, from the same countdownMs
+        // the deadline and `remaining` start from: the playhead's track length.
+        val countdownTotalSec = GateReadout.remainingSeconds(countdownMs)
 
         val h = OverlayHost(service, windowManager)
         host = h
@@ -226,6 +231,7 @@ class LeaseGateOverlayManager(
                         opensToday = this@LeaseGateOverlayManager.stats.opensToday,
                         remainingMs = remaining,
                     ),
+                    countdownTotalSec = countdownTotalSec,
                     nextScroll = nextScroll,
                     controls = GateControls.visible(expired, remaining),
                     onTakeLease = { ms -> takeLease(ms) },

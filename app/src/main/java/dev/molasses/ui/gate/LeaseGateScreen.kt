@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -81,6 +80,14 @@ fun LeaseGateScreen(
     appLabel: String,
     expired: Boolean,
     fields: GateReadout.Fields,
+    /**
+     * The gate's whole countdown in seconds, the playhead's track length,
+     * fixed for the life of the gate. Passed by the overlay manager from the
+     * same value it starts the countdown with. A gate that opens at zero (the
+     * panel after a walking gate) never shows the numeral, so its track is
+     * never drawn.
+     */
+    countdownTotalSec: Int,
     nextScroll: NextScroll.Reading,
     /** What is on screen at this point of the countdown. See `GateControls`. */
     controls: GateControls.Visible,
@@ -91,14 +98,6 @@ fun LeaseGateScreen(
     onOpenBlock: () -> Unit,
     onBlock: (durationMs: Long) -> Unit,
 ) {
-    // The playhead's track length: the gate's whole countdown, in seconds.
-    // Read from the first frame, because the overlay manager starts the
-    // countdown at exactly the gate's length, so the first remaining value
-    // is the total. Taken here rather than passed in, so the playhead needs
-    // no change to the manager. A gate that opens at zero (the panel after
-    // a walking gate) never shows the numeral, so its track is never drawn.
-    val playheadTotalSec = remember { fields.remainingSec }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -158,7 +157,7 @@ fun LeaseGateScreen(
                 // The same whole-second value the numeral prints, read from
                 // the same Fields, so the two move together once a second.
                 Spacer(Modifier.height(6.dp))
-                Playhead(remainingSec = fields.remainingSec, totalSec = playheadTotalSec)
+                Playhead(remainingSec = fields.remainingSec, totalSec = countdownTotalSec)
             }
 
             // Outside the leases branch on purpose: both are there from the
