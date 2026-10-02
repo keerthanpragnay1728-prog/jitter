@@ -59,7 +59,14 @@ object GateReadout {
         val today: String,
         val cycle: String,
         val opens: String,
+        /** [remainingSec] as the numeral prints it. */
         val countdown: String,
+        /**
+         * Whole seconds left, rounded up. Computed once per call, so the
+         * numeral and the playhead under it read the same value and cannot
+         * disagree for a frame. See [GatePlayhead].
+         */
+        val remainingSec: Int,
     )
 
     /**
@@ -76,13 +83,17 @@ object GateReadout {
         cycleMs: Long?,
         opensToday: Int?,
         remainingMs: Long,
-    ) = Fields(
-        face = faceFor(remainingMs),
-        today = todayMs?.let { CycleLine.duration(it) } ?: UNKNOWN,
-        cycle = cycleMs?.let { CycleLine.duration(it) } ?: UNKNOWN,
-        opens = opensToday?.takeIf { it >= 0 }?.toString() ?: UNKNOWN,
-        countdown = countdown(remainingMs),
-    )
+    ): Fields {
+        val seconds = remainingSeconds(remainingMs)
+        return Fields(
+            face = faceFor(remainingMs),
+            today = todayMs?.let { CycleLine.duration(it) } ?: UNKNOWN,
+            cycle = cycleMs?.let { CycleLine.duration(it) } ?: UNKNOWN,
+            opens = opensToday?.takeIf { it >= 0 }?.toString() ?: UNKNOWN,
+            countdown = seconds.toString(),
+            remainingSec = seconds,
+        )
+    }
 
     fun faceFor(remainingMs: Long): String =
         if (remainingMs > 0L) FACE_WAITING else FACE_READY
@@ -96,9 +107,12 @@ object GateReadout {
      * zero on the one screen whose whole point is honest numbers is not worth
      * the millisecond of accuracy.
      */
-    fun countdown(remainingMs: Long): String {
-        if (remainingMs <= 0L) return "0"
-        return ((remainingMs + 999L) / 1000L).toString()
+    fun countdown(remainingMs: Long): String = remainingSeconds(remainingMs).toString()
+
+    /** [countdown] as a number: whole seconds left, rounded up, never negative. */
+    fun remainingSeconds(remainingMs: Long): Int {
+        if (remainingMs <= 0L) return 0
+        return ((remainingMs + 999L) / 1000L).toInt()
     }
 
     /** True once the decision panel should be on screen. */
