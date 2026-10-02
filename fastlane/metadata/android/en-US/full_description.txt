@@ -2,11 +2,13 @@ Jitter is a progressive-friction focus tool. It never blocks the apps you pick. 
 
 <b>What it does</b>
 <ul>
-<li><b>A gate at the door.</b> Opening a tracked app puts a full-screen page in front of it: how long you have spent in it today and this cycle, and a countdown. Eight seconds the first time, longer after each lease you take, up to thirty.</li>
-<li><b>Leases, not unlimited use.</b> At zero you choose 5, 10 or 15 minutes, or leave. When the lease runs out the gate comes back on time, even if you are only watching, and the app goes to the background under it.</li>
+<li><b>A gate at the door.</b> Opening a tracked app puts a full-screen page in front of it: how long you have spent in it today and this cycle, and a countdown. Eight seconds the first time, longer after each lease you take, up to thirty. Under the number, a dashed track with a marker steps one place left each second, down to zero.</li>
+<li><b>Leases, not unlimited use.</b> At zero you choose 5, 10 or 15 minutes, or leave. When the lease runs out the gate comes back on time, even if you are only watching, and the app goes to the background under it. For YouTube and other video apps it also pauses playback, including a floating picture-in-picture window. Other apps get no pause, so music playing in the background is left alone.</li>
 <li><b>Scroll stalls.</b> Each app has a horizon you set, 25 minutes by default. From 40% of it, a scroll can cause a short touch blackout, longer and more likely the further in you are, up to a ceiling at the horizon. A thin bar marks every stall so it is never mistaken for a broken screen, and four taps in the top-left corner release it.</li>
 <li><b>Locks.</b> Lock an app, or all tracked apps, for a set time. A lock has no unlock. It runs until it ends.</li>
+<li><b>Untracking a social app is temporary.</b> Turning off Instagram, Facebook, X, TikTok, Snapchat or another app Android lists as social waits two and a half minutes, then tracking comes back on by itself after three days, or sooner after a restart. Other apps stay untracked until you turn them back on.</li>
 <li><b>A terminal launcher.</b> A plain console home screen with a few commands that answer once, among them calc, conv, days, rem, block, focus and bedtime.</li>
+<li><b>Report a problem.</b> The last row in Settings opens the issue tracker in your browser.</li>
 </ul>
 
 <b>What it needs</b>
