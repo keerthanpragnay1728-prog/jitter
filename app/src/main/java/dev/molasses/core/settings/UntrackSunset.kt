@@ -1,11 +1,10 @@
 package dev.molasses.core.settings
 
-import dev.molasses.core.time.ClockTamperClamp
 import dev.molasses.core.time.StampedInstant
 
 /**
- * Untracking a social app is not permanent: it comes back after seven days.
- * Pure.
+ * Untracking a social app is not permanent: it comes back after [GRACE_DAYS]
+ * days. Pure.
  *
  * ## Why only social apps
  * The untrack cooling-off slows the decision down. It does not stop a user
@@ -23,27 +22,39 @@ import dev.molasses.core.time.StampedInstant
  *
  * ## Which clock
  * The grace is a relief: while it runs the app has no friction at all, so
- * ending it late is the bypass. It is measured with
- * [ClockTamperClamp.Direction.RELIEF], which credits the larger of the wall
- * and monotonic deltas, so winding the clock back does not extend it.
+ * ending it late is the bypass. It follows the RELIEF rule of
+ * `ClockTamperClamp`: time served is credited the larger way, which is the
+ * same as saying time left is the smaller of what the two clocks say. So it
+ * ends when either clock reaches the deadline, and winding the wall clock
+ * back does not extend it.
  *
  * A reboot ends it. Relief must not trust a wall clock across a boot (see
- * CLAUDE.md, "Which clock a deadline is measured on"), and seven days is
+ * CLAUDE.md, "Which clock a deadline is measured on"), and a grace of days is
  * long enough that a reboot inside it is the ordinary case, not the attack.
  * Ending early is the direction that errs toward friction, so the app is
  * tracked again from the first connect after a restart. The cooling-off
  * panel says so before the user confirms, and CFG's row says "or sooner
  * after a restart" beside the date.
  *
- * ## Stored as the deadline
+ * ## Stored as the deadline, and read as one
  * [Sunset.deadline] is the instant the grace ends, stamped on all three
- * clocks at the moment of confirming, each moved on by [GRACE_MS]. Both
- * clocks move by the same amount, so the start is recovered exactly by
- * moving them back, which is what [remainingMs] hands the clamp.
+ * clocks at the moment of confirming, each moved on by [GRACE_MS].
+ * [remainingMs] reads the deadline and nothing else, so [GRACE_MS] decides
+ * only what a new untrack is given. A sunset stored under an earlier grace
+ * ends on the date its user was shown, with no migration.
+ *
+ * That is why it measures from the deadline rather than recovering the start
+ * as the deadline minus [GRACE_MS]. That recovery was exact only while the
+ * grace never changed. When the grace was shortened from its first value of
+ * 7 days, a pending sunset from before would have been read as starting in
+ * the future: its served time floors at zero, and CFG would have shown "now
+ * plus the new grace" for days, although the re-arm itself still landed on
+ * the original day.
  */
 object UntrackSunset {
 
-    const val GRACE_DAYS: Int = 7
+    /** How long a new untrack of a social app lasts. The only copy of the number. */
+    const val GRACE_DAYS: Int = 3
     const val GRACE_MS: Long = GRACE_DAYS * 24L * 60 * 60 * 1000
 
     const val YOUTUBE = "com.google.android.youtube"
@@ -77,21 +88,18 @@ object UntrackSunset {
         ),
     )
 
-    /** Grace left, never negative. Zero across a reboot. See the class doc. */
+    /**
+     * Grace left, never negative, read from the stored deadline alone. Zero
+     * across a reboot. The smaller of what the two clocks leave, which is the
+     * RELIEF rule: a wall clock wound back leaves more by the wall and the
+     * same by the monotonic clock, so it gains nothing. See the class doc.
+     */
     fun remainingMs(sunset: Sunset, now: StampedInstant): Long {
         val d = sunset.deadline
-        val verdict = ClockTamperClamp.evaluate(
-            ClockTamperClamp.Gap(
-                lastSeenWallMs = d.wallMs - GRACE_MS,
-                lastSeenElapsedMs = d.elapsedMs - GRACE_MS,
-                nowWallMs = now.wallMs,
-                nowElapsedMs = now.elapsedMs,
-                bootIdChanged = now.bootId != d.bootId,
-            ),
-            ClockTamperClamp.Direction.RELIEF,
-        )
-        if (verdict.bootChanged) return 0L
-        return (GRACE_MS - verdict.creditedMs).coerceAtLeast(0L)
+        if (now.bootId != d.bootId) return 0L
+        val byWall = d.wallMs - now.wallMs
+        val byElapsed = d.elapsedMs - now.elapsedMs
+        return minOf(byWall, byElapsed).coerceAtLeast(0L)
     }
 
     fun due(sunset: Sunset, now: StampedInstant): Boolean = remainingMs(sunset, now) == 0L

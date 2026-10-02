@@ -6,13 +6,13 @@ Jitter is a home screen and a set of speed bumps for Android. Instagram, X and
 YouTube are never blocked: the longer you stay in one inside a six-hour cycle,
 the more the phone feels like it is failing.
 
-![Release](https://img.shields.io/badge/release-v1.0.2-blue)
+![Release](https://img.shields.io/badge/release-v1.0.3-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 ![Android](https://img.shields.io/badge/Android-11%2B-3DDC84)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.21-7F52FF)
 ![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)
 
-**[Download the latest release](https://github.com/keerthanpragnay1728-prog/visceral/releases/latest)**
+**[Download the latest release](https://github.com/keerthanpragnay1728-prog/jitter/releases/latest)**
 
 ---
 
@@ -70,11 +70,12 @@ no matter how much you scroll.
 **It will stop you at the door.** Opening one of your target apps puts a
 full-screen black page in front of it: a face, the app's name, how long you
 have spent in it today, how long this cycle, how many times you have opened it,
-and a countdown. Eight seconds the first time. There is nothing to do but wait
-or leave, and there is no sentence on the screen telling you what to think
-about the numbers. The app goes to the background as the gate appears, so a
-video or Reel that starts on its own does not play behind the gate, and taking
-a lease reopens it.
+and a countdown. Eight seconds the first time. Under the number, a dashed
+track with a marker steps one place left each second, down to zero. There is
+nothing to do but wait or leave, and there is no sentence on the screen telling
+you what to think about the numbers. The app goes to the background as the
+gate appears, so a video or Reel that starts on its own does not play behind
+the gate, and taking a lease reopens it.
 
 **Then you choose how long you are staying.** At zero the countdown is replaced
 by three answers: 5m, 10m or 15m. There is no unlimited option. You do not have
@@ -85,7 +86,9 @@ frame and sends you home, and pressing back does the same.
 checks your lease at its deadline, without waiting for you to touch anything,
 and the LEASE EXPIRED gate sends the app to the background as it appears, so
 a video stops because its app stopped, not because anything argued with its
-sound. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
+sound. For a video app, such as YouTube, it then sends one media pause, for
+a video that kept playing in a floating window. Other apps get no pause, so
+music you are playing in the background is not touched. The gate stays up over the home screen. [ ARCHITECT'S SPACE ] is there
 from the start and leaves (back does the same), [ BLOCK THIS APP ] is there
 from the start, and the lease options appear at zero; taking one reopens the
 app where you left it. Leaving grants nothing and resets nothing. The walking
@@ -119,7 +122,7 @@ for it.
 **Untracking a social app is temporary.** Turning an app off in CFG waits two
 and a half minutes before it lets you confirm. For Instagram, Facebook (and
 Facebook Lite), X, TikTok, Snapchat and any app Android lists as social,
-tracking comes back on by itself after seven days, or at the next restart if
+tracking comes back on by itself after three days, or at the next restart if
 that is sooner, and CFG shows the date on the app's row. YouTube and every
 other app stay untracked until you turn them back on.
 
@@ -157,13 +160,13 @@ Jitter needs Android 11 or later. It is not on the Play Store; you install the
 APK yourself.
 
 1. **Download the APK** from the
-   [latest release](https://github.com/keerthanpragnay1728-prog/visceral/releases/latest).
+   [latest release](https://github.com/keerthanpragnay1728-prog/jitter/releases/latest).
    Check the file is the one that was published: the release page lists its
    SHA-256, and yours should match exactly.
 
-   - Windows: `certutil -hashfile jitter-v1.0.2.apk SHA256`
-   - macOS: `shasum -a 256 jitter-v1.0.2.apk`
-   - Linux: `sha256sum jitter-v1.0.2.apk`
+   - Windows: `certutil -hashfile jitter-v1.0.3.apk SHA256`
+   - macOS: `shasum -a 256 jitter-v1.0.3.apk`
+   - Linux: `sha256sum jitter-v1.0.3.apk`
 
 2. **Allow the install.** Android asks the first time you open an APK from your
    browser or file manager. Allow that app to install unknown apps.
@@ -172,7 +175,7 @@ APK yourself.
    Play Store. Tap "More details", then "Install anyway". If Play Protect blocks
    the install outright on your phone, there is no in-app way around that.
    What you can check yourself is the checksum above and the
-   [source code](https://github.com/keerthanpragnay1728-prog/visceral).
+   [source code](https://github.com/keerthanpragnay1728-prog/jitter).
 
 4. **Restricted settings (Android 13 and later).** The first time you try to
    turn on Jitter's accessibility service, Android shows "Restricted setting".
@@ -229,11 +232,15 @@ Not requested: `READ_PHONE_STATE` (the call check uses `AudioManager`),
 - **YouTube is lease-gated only.** Its feed and Shorts send no scroll events,
   so scroll stalls never start there. The lease gate still fires on time, even
   while a video plays.
-- **YouTube can keep playing in a floating window.** When a gate sends YouTube
-  to the background, a playing video can move into picture-in-picture, which
-  Jitter cannot see or close. Turn it off: Android Settings, Apps, Special app
-  access, Picture-in-picture, YouTube. YouTube Premium's background play keeps
-  the sound going the same way; turn that off in YouTube's own settings.
+- **YouTube's floating window stays on screen, paused.** When a lease runs
+  out, a playing YouTube video can move into picture-in-picture. The LEASE
+  EXPIRED gate (and the walking gate) pauses its video and audio, but the
+  paused floating window stays until you dismiss it, because Android gives
+  other apps no way to close it. To avoid the window, turn picture-in-picture
+  off: Android Settings, Apps, Special app access, Picture-in-picture,
+  YouTube. YouTube Premium's background play has not been checked against the
+  pause; if its sound carries on, turn background play off in YouTube's own
+  settings.
 - **Locks have no unlock.** A lock runs until it ends.
 - **Screen margins are fixed.** Jitter clears the status and navigation bars
   with a fixed margin rather than measuring them, so an unusual screen shape
@@ -406,7 +413,7 @@ published on each release page. To check that an APK was signed with this
 key:
 
 ```
-apksigner verify --print-certs jitter-v1.0.2.apk
+apksigner verify --print-certs jitter-v1.0.3.apk
 ```
 
 The line `Signer #1 certificate SHA-256 digest` must show the fingerprint
@@ -437,14 +444,14 @@ Test-only dependencies (JUnit, AndroidX Test) are not in the APK.
 ## Contributing
 
 Open an issue on the
-[issue tracker](https://github.com/keerthanpragnay1728-prog/visceral/issues)
+[issue tracker](https://github.com/keerthanpragnay1728-prog/jitter/issues)
 before starting work, so the change can be agreed first. A pull request has to
 pass `tools/check-all.sh` (read its last line, `check-all: PASS`) and
 `./gradlew testDebugUnitTest`. Sources are UTF-8 and LF; `.gitattributes`
 enforces LF, and `LineEndingsTest` fails on a CRLF checkout. CLAUDE.md has the
 rest, including commit message style and the prose rules this file follows.
 
-In the app, [ REPORT A PROBLEM ] at the end of CFG opens that same issue
+In the app, REPORT A PROBLEM, the last row in CFG, opens that same issue
 tracker in your browser.
 
 ---

@@ -10,7 +10,7 @@ class ReportProblemTest {
         val spec = ReportProblem.spec()
         assertEquals("android.intent.action.VIEW", spec.action)
         assertEquals("android.intent.category.BROWSABLE", spec.category)
-        assertEquals("https://github.com/keerthanpragnay1728-prog/visceral/issues", spec.url)
+        assertEquals("https://github.com/keerthanpragnay1728-prog/jitter/issues", spec.url)
         assertEquals("the same spec every time", spec, ReportProblem.spec())
     }
 

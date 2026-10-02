@@ -24,36 +24,17 @@ data class WindowEvent(
 /**
  * Why an event was dropped.
  *
- * `ForegroundEventRouter` no longer produces [OWN_WINDOW]; see its doc.
- *
  * ## Why the reason is carried rather than inferred
  * A total of ignored events says the router rejected them and nothing about
- * which branch did it, and the three branches have completely different
- * fixes. On hardware that cost a diagnosis: every event from every package
- * was being dropped, including the launcher's own, and the tally could say
- * only that it was happening. The first branch drops before the package is
- * ever looked at, so "the target set is wrong" and "the collision guard is
- * eating everything" produce an identical row.
+ * which branch did it, and the branches have completely different fixes. On
+ * hardware that cost a diagnosis: every event from every package was being
+ * dropped, including the launcher's own, and the tally could say only that
+ * it was happening. A window-id guard, since deleted, dropped events before
+ * the package was ever looked at, so "the target set is wrong" and "the
+ * collision guard is eating everything" produced an identical row. Its
+ * reason, OWN_WINDOW, went with it at 1.0.3.
  */
 enum class IgnoreReason {
-    /**
-     * **No longer produced.** The window-id branch that returned this is gone;
-     * see [ForegroundEventRouter] for why it could never work under this app's
-     * accessibility profile.
-     *
-     * Retained for one release so a tally read on a build that still has the
-     * branch is interpreted with the same enum rather than a renumbered one.
-     * Delete it, and this comment, at the release after the one that removed
-     * the branch.
-     *
-     * Note for whoever does: the earlier claim that this kept "a stale build's
-     * tally readable" was wrong. The tally is in memory and does not survive a
-     * reinstall, so nothing crosses builds. What the value is actually worth
-     * is that a reader comparing two versions of this enum sees a removal
-     * rather than a silent shift in meaning.
-     */
-    OWN_WINDOW,
-
     /** Our own package, and not the launcher activity. */
     OWN_PACKAGE,
 

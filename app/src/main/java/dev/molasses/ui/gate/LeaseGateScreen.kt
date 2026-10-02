@@ -16,15 +16,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import dev.molasses.R
 import dev.molasses.core.friction.NextScroll
 import dev.molasses.core.lease.GateControls
+import dev.molasses.core.lease.GatePlayhead
 import dev.molasses.core.lease.GateReadout
 import dev.molasses.core.command.CommandRender
 import dev.molasses.core.lease.LeaseLadder
@@ -46,17 +51,21 @@ import dev.molasses.ui.theme.PhosphorGreen
  *   OPENS TODAY              17
  *
  *                 8
+ *             --------|
  * ```
  *
  * Pitch black, monospace, borderless, no card, no elevation, no accent. It is
  * not styled as part of the app it is covering and it is not styled as a
  * dialog, because it is neither. See [GateReadout] for why there is no
- * sentence on it and no progress bar in it.
+ * sentence on it, and why the line under the numeral is a playhead rather
+ * than a progress bar.
  *
  * ## The countdown is the only thing that moves
  * Nothing pulses, nothing fades, nothing animates in. A screen with two moving
  * elements invites watching the other one, and this screen has exactly one
- * job, which is to be waited through while three numbers are visible.
+ * job, which is to be waited through while three numbers are visible. The
+ * playhead under the numeral is the countdown shown a second way: it steps at
+ * the same instant from the same value, so it is one motion, not two.
  *
  * ## The panel appears at zero and not before
  * The buttons are not disabled-then-enabled, they are absent and then present.
@@ -71,6 +80,14 @@ fun LeaseGateScreen(
     appLabel: String,
     expired: Boolean,
     fields: GateReadout.Fields,
+    /**
+     * The gate's whole countdown in seconds, the playhead's track length,
+     * fixed for the life of the gate. Passed by the overlay manager from the
+     * same value it starts the countdown with. A gate that opens at zero (the
+     * panel after a walking gate) never shows the numeral, so its track is
+     * never drawn.
+     */
+    countdownTotalSec: Int,
     nextScroll: NextScroll.Reading,
     /** What is on screen at this point of the countdown. See `GateControls`. */
     controls: GateControls.Visible,
@@ -137,6 +154,10 @@ fun LeaseGateScreen(
                     fontSize = 44.sp,
                     color = PhosphorGreen,
                 )
+                // The same whole-second value the numeral prints, read from
+                // the same Fields, so the two move together once a second.
+                Spacer(Modifier.height(6.dp))
+                Playhead(remainingSec = fields.remainingSec, totalSec = countdownTotalSec)
             }
 
             // Outside the leases branch on purpose: both are there from the
@@ -161,6 +182,38 @@ fun LeaseGateScreen(
             }
         }
     }
+}
+
+/**
+ * The countdown's playhead: a dim dashed track with a green marker that
+ * steps one column left per whole second. See `GatePlayhead`.
+ *
+ * Display only. Not clickable and no pointer input, and hidden from TalkBack,
+ * because the numeral above it already says how long is left and a line of
+ * dashes read aloud says nothing. No animation of any kind: it is redrawn
+ * when the tick recomposes the screen, and only then.
+ */
+@Composable
+private fun Playhead(remainingSec: Int, totalSec: Int) {
+    val line = GatePlayhead.playhead(remainingSec, totalSec)
+    Text(
+        text = buildAnnotatedString {
+            for (c in line) {
+                if (c == GatePlayhead.MARKER) {
+                    withStyle(SpanStyle(color = PhosphorGreen)) { append(c) }
+                } else {
+                    append(c)
+                }
+            }
+        },
+        fontFamily = FontFamily.Monospace,
+        fontSize = 14.sp,
+        color = PhosphorDim,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier.clearAndSetSemantics { },
+    )
 }
 
 /**
@@ -236,7 +289,8 @@ private fun BlockControl(
  * error here rather than a silently unformatted line.
  *
  * Dimmed rather than green. It is context for the decision, not the decision,
- * and the countdown is still the only thing on this screen that moves.
+ * and the countdown (the numeral and its playhead) is still the only thing on
+ * this screen that moves.
  */
 @Composable
 private fun NextScrollLine(reading: NextScroll.Reading) {

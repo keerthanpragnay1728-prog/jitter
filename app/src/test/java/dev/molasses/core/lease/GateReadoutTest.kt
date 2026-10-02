@@ -85,4 +85,15 @@ class GateReadoutTest {
             LeaseLadder.OFFERED_MS.map { GateReadout.leaseLabel(it) },
         )
     }
+
+    @Test
+    fun `the numeral and the playhead's seconds are one value`() {
+        for (ms in listOf(30_000L, 29_999L, 24_001L, 8_000L, 7_001L, 1L, 0L, -5L)) {
+            val f = GateReadout.fields(todayMs = null, cycleMs = null, opensToday = null, remainingMs = ms)
+            assertEquals("at ${ms}ms", f.countdown, f.remainingSec.toString())
+            assertEquals(GateReadout.countdown(ms), f.countdown)
+        }
+        assertEquals(0, GateReadout.remainingSeconds(-1L))
+        assertEquals(8, GateReadout.remainingSeconds(7_001L))
+    }
 }

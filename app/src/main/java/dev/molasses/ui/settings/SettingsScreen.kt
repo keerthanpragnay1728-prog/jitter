@@ -712,28 +712,17 @@ fun SettingsScreen(
             }
         }
 
-        // Its own row after the last section, in the masthead's [DBG] style:
-        // a link out of the app, not a setting, so it belongs to no section.
+        // The last row, directly after TRY IT, laid out as a section header
+        // but not one: a link out of the app opens and never expands, so it
+        // is built here rather than with section(), has no Section, and takes
+        // no part in the accordion's single-open rule.
         if (reportRow is ReportProblem.Row.Shown) {
             item(CfgRowKey.chrome("report-problem")) {
-                Column(Modifier.fillMaxWidth()) {
-                    Text(
-                        stringResource(R.string.settings_report_problem),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clickable { reportFailed = !launchReportProblem(context) }
-                            .padding(vertical = 6.dp, horizontal = 8.dp),
-                    )
-                    if (reportRow.failureNote) {
-                        Text(
-                            stringResource(R.string.settings_report_problem_failed),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.padding(horizontal = 8.dp),
-                        )
-                    }
-                }
+                LinkRow(
+                    text = R.string.settings_report_problem,
+                    failureNote = if (reportRow.failureNote) R.string.settings_report_problem_failed else null,
+                    onClick = { reportFailed = !launchReportProblem(context) },
+                )
             }
         }
     }
@@ -1093,6 +1082,52 @@ private fun SectionHeader(
             CfgAccordion.chevron(open),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+}
+
+/**
+ * A row that opens something outside CFG, laid out exactly as [SectionHeader]
+ * is: the same spacing above and below, the same label style, and a glyph at
+ * the right edge in the chevron's place. The glyph is [ReportProblem.ROW_GLYPH],
+ * not [CfgAccordion.chevron], because this row does not expand and its glyph
+ * must never flip to the open form.
+ *
+ * [failureNote] sits under the row, left-aligned, when the last tap opened
+ * nothing.
+ */
+@Composable
+private fun LinkRow(
+    @StringRes text: Int,
+    @StringRes failureNote: Int?,
+    onClick: () -> Unit,
+) {
+    Spacer(Modifier.height(20.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(text).uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            ReportProblem.ROW_GLYPH,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    if (failureNote != null) {
+        Text(
+            stringResource(failureNote),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
     Spacer(Modifier.height(8.dp))

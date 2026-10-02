@@ -18,8 +18,8 @@ import org.junit.Test
 class VersionTest {
 
     private companion object {
-        /** 1.0.1 shipped as versionCode 10001. */
-        const val LAST_SHIPPED_CODE = 10001
+        /** 1.0.2 shipped as versionCode 10002. */
+        const val LAST_SHIPPED_CODE = 10002
     }
 
     private fun appVersion(): String {

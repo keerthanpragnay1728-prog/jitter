@@ -28,12 +28,16 @@ import dev.molasses.core.ui.CycleLine
  * making a claim about what the user wants, and the numbers make no claim at
  * all.
  *
- * ## No progress bar
- * The countdown is a number and the only moving thing on the screen. A bar
- * filling up invites watching the bar, which is a second thing to look at
- * instead of the numbers. A single digit changing once a second is the
- * smallest possible moving element and it is unambiguous about how long is
- * left, which a bar is not.
+ * ## A playhead, not a progress bar
+ * This section used to say "no progress bar": a bar filling up invites
+ * watching the bar, a second thing to look at instead of the numbers. The
+ * owner decided to add a playhead under the numeral (see [GatePlayhead]),
+ * and the reasoning that survives is in how it is built. It is not a fill and
+ * it does not animate: a fixed dashed track with one marker that steps one
+ * column per whole second, at the same instant as the digit above it and
+ * from the same value ([Fields.remainingSec]). So the screen still has one
+ * moving thing per second, shown twice, and the numeral still carries the
+ * meaning; the track is hidden from TalkBack.
  *
  * ## Unknown is [UNKNOWN], never zero and never hidden
  * A device without usage access cannot answer TODAY or OPENS TODAY. It renders
@@ -59,7 +63,14 @@ object GateReadout {
         val today: String,
         val cycle: String,
         val opens: String,
+        /** [remainingSec] as the numeral prints it. */
         val countdown: String,
+        /**
+         * Whole seconds left, rounded up. Computed once per call, so the
+         * numeral and the playhead under it read the same value and cannot
+         * disagree for a frame. See [GatePlayhead].
+         */
+        val remainingSec: Int,
     )
 
     /**
@@ -76,13 +87,17 @@ object GateReadout {
         cycleMs: Long?,
         opensToday: Int?,
         remainingMs: Long,
-    ) = Fields(
-        face = faceFor(remainingMs),
-        today = todayMs?.let { CycleLine.duration(it) } ?: UNKNOWN,
-        cycle = cycleMs?.let { CycleLine.duration(it) } ?: UNKNOWN,
-        opens = opensToday?.takeIf { it >= 0 }?.toString() ?: UNKNOWN,
-        countdown = countdown(remainingMs),
-    )
+    ): Fields {
+        val seconds = remainingSeconds(remainingMs)
+        return Fields(
+            face = faceFor(remainingMs),
+            today = todayMs?.let { CycleLine.duration(it) } ?: UNKNOWN,
+            cycle = cycleMs?.let { CycleLine.duration(it) } ?: UNKNOWN,
+            opens = opensToday?.takeIf { it >= 0 }?.toString() ?: UNKNOWN,
+            countdown = seconds.toString(),
+            remainingSec = seconds,
+        )
+    }
 
     fun faceFor(remainingMs: Long): String =
         if (remainingMs > 0L) FACE_WAITING else FACE_READY
@@ -96,9 +111,12 @@ object GateReadout {
      * zero on the one screen whose whole point is honest numbers is not worth
      * the millisecond of accuracy.
      */
-    fun countdown(remainingMs: Long): String {
-        if (remainingMs <= 0L) return "0"
-        return ((remainingMs + 999L) / 1000L).toString()
+    fun countdown(remainingMs: Long): String = remainingSeconds(remainingMs).toString()
+
+    /** [countdown] as a number: whole seconds left, rounded up, never negative. */
+    fun remainingSeconds(remainingMs: Long): Int {
+        if (remainingMs <= 0L) return 0
+        return ((remainingMs + 999L) / 1000L).toInt()
     }
 
     /** True once the decision panel should be on screen. */
