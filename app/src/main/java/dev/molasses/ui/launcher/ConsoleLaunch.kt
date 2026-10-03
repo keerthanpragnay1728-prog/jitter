@@ -1,13 +1,38 @@
 package dev.molasses.ui.launcher
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.util.Log
+import dev.molasses.core.launch.ConsoleStart
+
+private const val TAG = "Molasses.ConsoleLaunch"
+
+/**
+ * Where a refused start is said. The console page sets [say] while it is
+ * composed and clears it when it is not, so a refusal from the drawer, a
+ * quick-launch row or a command lands on the console's own answer line.
+ *
+ * The ledger page has no answer line. Wellbeing is opened from there, so a
+ * refused Wellbeing start is logged and not said, because the console page
+ * is not composed to say it.
+ */
+internal class ConsoleRefusal {
+    var say: (() -> Unit)? = null
+}
 
 /**
  * Every activity start from the console: the drawer, quick launch, the
  * shortcut ladder's rungs, `[phone]`, Wellbeing, CFG, and the intents a
- * command opens. Throws whatever `startActivity` throws; each caller keeps
- * its own answer to that.
+ * command opens. The one path, so no caller wraps it in a catch of its own.
+ *
+ * ## Never a crash
+ * `ActivityNotFoundException` and `SecurityException`, the two ways the
+ * platform refuses a start, are caught, logged with the intent, and said on
+ * the console in one line through [refusal]. The start then reads as false,
+ * so the ladder can try its next rung and a command can give its own,
+ * more specific answer, which replaces this one on the same line. Anything
+ * else is thrown on; see `ConsoleStart`.
  *
  * ## Why NEW_TASK on every one, set here
  * The console is the home activity, in the home task. A start without
@@ -26,7 +51,15 @@ import android.content.Intent
  * Not for an activity result: the system cancels a result request started
  * with NEW_TASK at once. The home role request is one, and it lives in the
  * setup controller for that reason.
+ *
+ * @return true when the start returned, false when it was refused.
  */
-internal fun Activity.startFromConsole(intent: Intent) {
-    startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-}
+internal fun Activity.startFromConsole(intent: Intent, refusal: ConsoleRefusal): Boolean =
+    ConsoleStart.attempt(
+        start = { startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+        isRefusal = { it is ActivityNotFoundException || it is SecurityException },
+        onRefused = {
+            Log.w(TAG, "nothing could open $intent", it)
+            refusal.say?.invoke()
+        },
+    )

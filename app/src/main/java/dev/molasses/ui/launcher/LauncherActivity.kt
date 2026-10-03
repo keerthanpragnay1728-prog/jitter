@@ -77,6 +77,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -209,6 +210,9 @@ class LauncherActivity : ComponentActivity() {
      */
     private val setup = SetupFlowController(this) { settingsRepository }
 
+    /** Where a refused start is said. The console page fills it in; see ConsoleRefusal. */
+    private val consoleRefusal = ConsoleRefusal()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Edge to edge stays here: it is a window layout attribute and it is
@@ -318,6 +322,7 @@ class LauncherActivity : ComponentActivity() {
                                     Intent(this@LauncherActivity, SettingsActivity::class.java)
                                         .putExtra(SettingsActivity.EXTRA_OPEN_SECTION, CfgAccordion.Section.TARGETS.name)
                                         .putExtra(SettingsActivity.EXTRA_SETUP_DETOUR, true),
+                                    consoleRefusal,
                                 )
                             },
                         ) {
@@ -326,7 +331,7 @@ class LauncherActivity : ComponentActivity() {
                                 pagerState = pagerState,
                                 onOpenDrawer = { showDrawer = true },
                                 onOpenSettings = {
-                                    startFromConsole(Intent(this@LauncherActivity, SettingsActivity::class.java))
+                                    startFromConsole(Intent(this@LauncherActivity, SettingsActivity::class.java), consoleRefusal)
                                 },
                                 onLaunchPackage = ::launchPackage,
                                 cycle = cycle,
@@ -382,7 +387,10 @@ class LauncherActivity : ComponentActivity() {
                                         showLedger = {
                                             scope.launch { pagerState.animateScrollToPage(PAGE_LEDGER) }
                                         },
-                                        startIntent = ::startIfHandled,
+                                        // False when refused, so a command
+                                        // gives its own answer in place of
+                                        // the helper's line.
+                                        startIntent = { startFromConsole(it, consoleRefusal) },
                                         canResolve = ::canResolve,
                                         lockRemainingMs = { pkg ->
                                             locks.remainingMs(pkg, settingsRepository.nowStamped())
@@ -447,13 +455,14 @@ class LauncherActivity : ComponentActivity() {
                                     )
                                 },
                                 onDialer = {
-                                    startFromConsole(Intent(Intent.ACTION_DIAL))
+                                    startFromConsole(Intent(Intent.ACTION_DIAL), consoleRefusal)
                                 },
                                 messagingApps = ::messagingApps,
                                 onLaunchLadder = ::launchLadder,
                                 onOpenWellbeingSettings = ::openWellbeing,
                                 // Read on this activity's resume, by the same
                                 // reader as CFG. See HomeRole.
+                                refusal = consoleRefusal,
                                 homeLost = !setup.grants.defaultHome,
                                 onOpenHomeSettings = setup::openHomeSettings,
                             )
@@ -501,7 +510,7 @@ class LauncherActivity : ComponentActivity() {
 
     private fun launchPackage(pkg: String) {
         val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return
-        startFromConsole(intent)
+        startFromConsole(intent, consoleRefusal)
     }
 
     /**
@@ -538,7 +547,7 @@ class LauncherActivity : ComponentActivity() {
             // A package rung's launch intent is already known to exist, so it
             // needs no second resolve; an action rung does.
             if (rung.pkg == null && !canResolve(intent)) continue
-            if (startIfHandled(intent)) return true
+            if (startFromConsole(intent, consoleRefusal)) return true
         }
         Log.w(TAG_LAUNCHER, "no rung of the ladder resolved: $ladder")
         return false
@@ -613,19 +622,10 @@ class LauncherActivity : ComponentActivity() {
             Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS),
         )
         val resolved = candidates.firstOrNull { canResolve(it) } ?: return
-        runCatching { startFromConsole(resolved) }
-            .onFailure { Log.w(TAG_LAUNCHER, "wellbeing intent refused", it) }
+        // Refused or not, the helper's answer is the whole of it: it logs,
+        // and says the line when the console is there to say it.
+        startFromConsole(resolved, consoleRefusal)
     }
-
-
-    /**
-     * @return false when nothing handled it, so the caller can say that rather
-     *   than reporting a success that did nothing.
-     */
-    private fun startIfHandled(intent: Intent): Boolean = runCatching {
-        startFromConsole(intent)
-        true
-    }.getOrDefault(false)
 
     /** Whether anything on this device handles [intent]. See the shared helper's doc. */
     private fun canResolve(intent: Intent): Boolean = packageManager.canResolve(intent)
@@ -817,6 +817,8 @@ fun MainLauncherWorkspace(
      */
     homeLost: Boolean,
     onOpenHomeSettings: () -> Unit,
+    /** Where a refused start is said. Handed to the console page. */
+    refusal: ConsoleRefusal,
 ) {
 
     // Queried once by the Activity and passed down, rather than re-run on
@@ -915,6 +917,7 @@ fun MainLauncherWorkspace(
                     onDialer = onDialer,
                     messagingApps = messagingApps,
                     onLaunchLadder = onLaunchLadder,
+                    refusal = refusal,
                 )
                 PAGE_LEDGER -> TextualWellbeingView(
                     shown = pagerState.settledPage == PAGE_LEDGER,
@@ -962,6 +965,8 @@ fun TerminalHomeView(
     messagingApps: () -> List<LaunchableApp>,
     /** Walks a ShortcutLadder. False when no rung resolved. */
     onLaunchLadder: (List<ShortcutLadder.Candidate>) -> Boolean,
+    /** Set to this page's answer line while it is composed. See ConsoleRefusal. */
+    refusal: ConsoleRefusal,
 ) {
     val context = LocalContext.current
 
@@ -1279,10 +1284,22 @@ fun TerminalHomeView(
         if (!onLaunchLadder(ladder)) {
             react(
                 BitStateMachine.Reaction.Unavailable(
-                    context.getString(R.string.launcher_fav_none),
+                    context.getString(R.string.launcher_open_refused),
                 ),
             )
         }
+    }
+
+    // A start the shared helper refused: the drawer, quick launch, [phone],
+    // a rung or a command. The same face and the same line as a ladder with
+    // no rung, because to the user it is the same thing. Said at once, so a
+    // command's own answer, given after, replaces it rather than racing it.
+    val sayRefused by rememberUpdatedState {
+        react(BitStateMachine.Reaction.Unavailable(context.getString(R.string.launcher_open_refused)))
+    }
+    DisposableEffect(refusal) {
+        refusal.say = { sayRefused() }
+        onDispose { refusal.say = null }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
