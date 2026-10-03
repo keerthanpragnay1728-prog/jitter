@@ -26,19 +26,30 @@ class ConsoleLaunchWiringTest {
         .replace(Regex("""//[^\n]*"""), "")
 
     @Test
-    fun `the helper sets NEW_TASK itself, on a copy, and catches both refusals`() {
+    fun `the helper sets NEW_TASK itself, on a copy, and answers any RuntimeException`() {
         // Sliced by hand: an expression body, whose first brace is a lambda's.
         val fn = helper.substring(helper.indexOf("internal fun Activity.startFromConsole(intent: Intent, refusal: ConsoleRefusal): Boolean =")).substringBefore("\n    )\n")
         assertTrue(fn.contains("ConsoleStart.attempt("))
-        assertTrue(fn.contains("start = { startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },"))
-        assertTrue(fn.contains("isRefusal = { it is ActivityNotFoundException || it is SecurityException },"))
+        assertTrue("the start is the start call and nothing else", fn.contains("start = { startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },"))
+        assertFalse("no filter left that could let a refusal through", fn.contains("isRefusal"))
         val refused = fn.substring(fn.indexOf("onRefused = {"))
-        assertTrue("logged with the intent", refused.contains("Log.w(TAG, \"nothing could open \$intent\", it)"))
+        assertTrue("logged with the intent and the exception's class", refused.contains("Log.w(TAG, \"nothing could open \$intent: \${it.javaClass.name}\", it)"))
         assertTrue("then said on the console", refused.indexOf("refusal.say?.invoke()") > refused.indexOf("Log.w("))
         assertEquals("one start, the one above", 1, Regex("""startActivity\(""").findAll(code(helper)).count())
         assertFalse("no catch beside ConsoleStart's", code(helper).contains("runCatching") || code(helper).contains("catch ("))
         // The refusal is a required argument, so no call can leave it out.
         assertFalse(helper.contains("refusal: ConsoleRefusal ="))
+    }
+
+    @Test
+    fun `the try holds the start call only, and catches RuntimeException, not Throwable`() {
+        val start = repoFile("app/src/main/java/dev/molasses/core/launch/ConsoleStart.kt").readText()
+        val fn = functionBody(start, "fun attempt(")
+        val tryBody = fn.substring(fn.indexOf("try {") + "try {".length, fn.indexOf("} catch ("))
+        assertEquals("start()", tryBody.trim())
+        assertEquals("one catch", 1, Regex("""catch \(""").findAll(fn).count())
+        assertTrue(fn.contains("} catch (e: RuntimeException) {"))
+        assertFalse(fn.contains("Throwable") || fn.contains("runCatching"))
     }
 
     @Test

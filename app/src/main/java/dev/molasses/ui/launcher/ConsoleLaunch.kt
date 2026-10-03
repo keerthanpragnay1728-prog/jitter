@@ -1,7 +1,6 @@
 package dev.molasses.ui.launcher
 
 import android.app.Activity
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.util.Log
 import dev.molasses.core.launch.ConsoleStart
@@ -27,12 +26,13 @@ internal class ConsoleRefusal {
  * command opens. The one path, so no caller wraps it in a catch of its own.
  *
  * ## Never a crash
- * `ActivityNotFoundException` and `SecurityException`, the two ways the
- * platform refuses a start, are caught, logged with the intent, and said on
- * the console in one line through [refusal]. The start then reads as false,
- * so the ladder can try its next rung and a command can give its own,
- * more specific answer, which replaces this one on the same line. Anything
- * else is thrown on; see `ConsoleStart`.
+ * Any `RuntimeException` from the start call is caught, logged with its
+ * class and the intent, and said on the console in one line through
+ * [refusal]. The platform's usual two are `ActivityNotFoundException` and
+ * `SecurityException`. The start then reads as false, so the ladder can try
+ * its next rung and a command can give its own, more specific answer, which
+ * replaces this one on the same line. The catch covers the start call alone,
+ * and an `Error` is thrown on; see `ConsoleStart`.
  *
  * ## Why NEW_TASK on every one, set here
  * The console is the home activity, in the home task. A start without
@@ -57,9 +57,8 @@ internal class ConsoleRefusal {
 internal fun Activity.startFromConsole(intent: Intent, refusal: ConsoleRefusal): Boolean =
     ConsoleStart.attempt(
         start = { startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
-        isRefusal = { it is ActivityNotFoundException || it is SecurityException },
         onRefused = {
-            Log.w(TAG, "nothing could open $intent", it)
+            Log.w(TAG, "nothing could open $intent: ${it.javaClass.name}", it)
             refusal.say?.invoke()
         },
     )

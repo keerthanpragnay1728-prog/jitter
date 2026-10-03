@@ -8,15 +8,10 @@ import org.junit.Test
 
 class ConsoleStartTest {
 
-    /** Stand-ins for the two platform refusals, which do not exist off Android. */
-    private class NotFound : RuntimeException("no activity")
-    private class Denied : SecurityException("denied")
-
     private val refused = mutableListOf<RuntimeException>()
 
     private fun attempt(start: () -> Unit) = ConsoleStart.attempt(
         start = start,
-        isRefusal = { it is NotFound || it is SecurityException },
         onRefused = { refused += it },
     )
 
@@ -29,8 +24,12 @@ class ConsoleStartTest {
     }
 
     @Test
-    fun `both refusals are caught, handed on once, and read as false`() {
-        for (thrown in listOf(NotFound(), Denied())) {
+    fun `any RuntimeException is caught, reported once, and read as false`() {
+        // A stand-in for ActivityNotFoundException, which does not exist off
+        // Android, the real SecurityException, and two kinds a start is not
+        // documented to throw at all.
+        class NotFound : RuntimeException("no activity")
+        for (thrown in listOf(NotFound(), SecurityException("denied"), IllegalStateException("odd"), IllegalArgumentException("odd"))) {
             refused.clear()
             assertFalse(attempt { throw thrown })
             assertEquals(1, refused.size)
@@ -39,15 +38,15 @@ class ConsoleStartTest {
     }
 
     @Test
-    fun `anything else is thrown on, not answered as a refusal`() {
-        val other = IllegalStateException("a bug, not a refusal")
+    fun `an Error is thrown on, not answered as a refusal`() {
+        val error = OutOfMemoryError("not a refusal")
         val caught = try {
-            attempt { throw other }
+            attempt { throw error }
             null
-        } catch (e: IllegalStateException) {
+        } catch (e: OutOfMemoryError) {
             e
         }
-        assertSame(other, caught)
+        assertSame(error, caught)
         assertTrue(refused.isEmpty())
     }
 }
