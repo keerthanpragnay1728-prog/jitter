@@ -314,7 +314,7 @@ class LauncherActivity : ComponentActivity() {
                             onEditTargets = {
                                 // CFG opens on TARGETS with the flow stepped
                                 // aside, and Back there returns here.
-                                startActivity(
+                                startFromConsole(
                                     Intent(this@LauncherActivity, SettingsActivity::class.java)
                                         .putExtra(SettingsActivity.EXTRA_OPEN_SECTION, CfgAccordion.Section.TARGETS.name)
                                         .putExtra(SettingsActivity.EXTRA_SETUP_DETOUR, true),
@@ -326,7 +326,7 @@ class LauncherActivity : ComponentActivity() {
                                 pagerState = pagerState,
                                 onOpenDrawer = { showDrawer = true },
                                 onOpenSettings = {
-                                    startActivity(Intent(this@LauncherActivity, SettingsActivity::class.java))
+                                    startFromConsole(Intent(this@LauncherActivity, SettingsActivity::class.java))
                                 },
                                 onLaunchPackage = ::launchPackage,
                                 cycle = cycle,
@@ -447,7 +447,7 @@ class LauncherActivity : ComponentActivity() {
                                     )
                                 },
                                 onDialer = {
-                                    startActivity(Intent(Intent.ACTION_DIAL))
+                                    startFromConsole(Intent(Intent.ACTION_DIAL))
                                 },
                                 messagingApps = ::messagingApps,
                                 onLaunchLadder = ::launchLadder,
@@ -501,7 +501,7 @@ class LauncherActivity : ComponentActivity() {
 
     private fun launchPackage(pkg: String) {
         val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return
-        startActivity(intent)
+        startFromConsole(intent)
     }
 
     /**
@@ -613,7 +613,7 @@ class LauncherActivity : ComponentActivity() {
             Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS),
         )
         val resolved = candidates.firstOrNull { canResolve(it) } ?: return
-        runCatching { startActivity(resolved) }
+        runCatching { startFromConsole(resolved) }
             .onFailure { Log.w(TAG_LAUNCHER, "wellbeing intent refused", it) }
     }
 
@@ -623,7 +623,7 @@ class LauncherActivity : ComponentActivity() {
      *   than reporting a success that did nothing.
      */
     private fun startIfHandled(intent: Intent): Boolean = runCatching {
-        startActivity(intent)
+        startFromConsole(intent)
         true
     }.getOrDefault(false)
 

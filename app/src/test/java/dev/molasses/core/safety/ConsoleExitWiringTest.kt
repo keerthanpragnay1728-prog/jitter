@@ -91,4 +91,17 @@ class ConsoleExitWiringTest {
         // user out of a locked app. Neither is an exit.
         assertEquals(2, count(manager, "goHome()"))
     }
+
+    @Test
+    fun `a call takes the lock down without going anywhere, as it does the lease gate`() {
+        val lock = functionBody(overlay("LockOverlayManager"), "private fun watchForCall()")
+        assertTrue(lock.contains("if (calls.inProgress(whenUnknown = true)) {"))
+        assertTrue(lock.contains("dismiss(\"call in progress\")"))
+        assertFalse("not the exit: that would start the console over the call screen", lock.contains("exit("))
+        assertFalse(lock.contains("openConsole") || lock.contains("goHome"))
+        val lease = functionBody(overlay("LeaseGateOverlayManager"), "fun show(")
+        val call = lease.substring(lease.indexOf("if (calls.inProgress(whenUnknown = false)) {")).substringBefore("}")
+        assertTrue(call.contains("dismiss(\"call in progress\")"))
+        assertFalse(call.contains("decline(") || call.contains("openConsole"))
+    }
 }

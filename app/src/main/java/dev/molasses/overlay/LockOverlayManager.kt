@@ -207,6 +207,11 @@ class LockOverlayManager(
      * window, so the next entry or scroll enforces it again. Dismissing is
      * not unlocking. A detector that cannot answer therefore degrades this
      * screen to the timed bounce it used to be, rather than to a bypass.
+     *
+     * It dismisses and goes nowhere, as the lease gate does during a call.
+     * Taking the exit here would start the console over the call screen the
+     * user is trying to reach. The locked app was sent to the background at
+     * the first draw, so nothing locked is uncovered.
      */
     private fun watchForCall() {
         callJob?.cancel()
@@ -216,7 +221,7 @@ class LockOverlayManager(
                 if (!isShowing) return@launch
                 if (calls.inProgress(whenUnknown = true)) {
                     Log.i(TAG, "lock flash yielding: ${calls.describe()}")
-                    exit("call in progress")
+                    dismiss("call in progress")
                     return@launch
                 }
             }
