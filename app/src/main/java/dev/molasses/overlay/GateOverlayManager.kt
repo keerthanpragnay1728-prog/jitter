@@ -40,6 +40,12 @@ class GateOverlayManager(
      * first draw and runs over the launcher; see `OverlayKind`.
      */
     private val goHome: () -> Unit,
+    /**
+     * Starts Jitter's console by name, falling back to the home action if the
+     * start throws. Every way out of this window goes through it; see
+     * `ConsoleExit`. Home-first, at the first draw, stays on [goHome].
+     */
+    private val openConsole: () -> Unit,
     /** Sends one media PAUSE key, after home, for a video app. See `MediaPause`. True when dispatched. */
     private val pauseMedia: () -> Boolean,
     /** Whether [pkg] is a video app, read once per gate show. See `MediaPause.isVideoApp`. */
@@ -228,15 +234,15 @@ class GateOverlayManager(
      * meaning. The gate comes down and the user stays on the launcher. It
      * grants nothing and clears nothing, and it is not an abandon: the ledger
      * row is LEASE_DECLINED reason=exit, the same row the expired gate
-     * writes. Home is sent again on the way out, which is harmless if the
-     * first one landed and covers the case where it had not.
+     * writes. The way out lands on Jitter's console, by name, started
+     * before the window comes down.
      */
     private fun exit() {
         val pkg = currentPkg ?: return
         if (resolved) return
         resolved = true
         ledger.log(pkg, EventType.LEASE_DECLINED, "reason=exit")
-        goHome()
+        openConsole()
         Log.i(TAG, "overlay=${OverlayKind.WALK_GATE} exit taken for $pkg")
         dismissInternal()
     }

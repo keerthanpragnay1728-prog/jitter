@@ -43,6 +43,12 @@ class LockOverlayManager(
     /** Fires `GLOBAL_ACTION_HOME`. Passed in so this class holds no service. */
     private val goHome: () -> Unit,
     /**
+     * Starts Jitter's console by name, falling back to the home action if the
+     * start throws. Every way out of this window goes through it; see
+     * `ConsoleExit`. Home-first, at the first draw, stays on [goHome].
+     */
+    private val openConsole: () -> Unit,
+    /**
      * Fired after the window is added or removed. This window belongs to our
      * own package, so without it the service reads the flash as the user
      * going home and closes the session under it.
@@ -135,6 +141,10 @@ class LockOverlayManager(
                     Log.i(TAG, "overlay=$kind home sent for $pkg")
                 }
             },
+            // Back is the way out, the same handler as [ ARCHITECT'S SPACE ].
+            // Without it the focusable window swallows back, which reads as
+            // a frozen phone.
+            onBackPressed = { exit("back") },
         ) {
             MolassesTheme(fontScale = fontScale()) {
                 LockScreen(
@@ -166,17 +176,17 @@ class LockOverlayManager(
     }
 
     /**
-     * Take the window down and go home.
+     * Take the window down and go to Jitter's console.
      *
-     * The settle hold is what keeps the locked app from being revealed for a
-     * frame while the transition runs, so dismissal comes after home rather
-     * than with it.
+     * The settle hold is what keeps anything under the window from being
+     * revealed for a frame while the transition runs, so dismissal comes
+     * after the console start rather than with it.
      */
     private fun exit(reason: String) {
         if (host == null) return
         job?.cancel()
         job = scope.launch(Dispatchers.Main.immediate) {
-            goHome()
+            openConsole()
             delay(LockEnforcement.HOME_SETTLE_MS)
             job = null
             dismiss(reason)

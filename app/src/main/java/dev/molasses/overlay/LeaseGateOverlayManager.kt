@@ -87,6 +87,12 @@ class LeaseGateOverlayManager(
     /** Fires `GLOBAL_ACTION_HOME`. Passed in so this class holds no service. */
     private val goHome: () -> Unit,
     /**
+     * Starts Jitter's console by name, falling back to the home action if the
+     * start throws. Every way out of this window goes through it; see
+     * `ConsoleExit`. Home-first, at the first draw, stays on [goHome].
+     */
+    private val openConsole: () -> Unit,
+    /**
      * Sends one media PAUSE key, after home, on the LEASE EXPIRED gate of a
      * video app only. See `MediaPause`. True when it was dispatched.
      */
@@ -346,9 +352,8 @@ class LeaseGateOverlayManager(
      * [ ARCHITECT'S SPACE ], and back, on either gate: one handler.
      *
      * Leaving is never relief. It grants nothing, clears nothing, and does
-     * not move the countdown escalation, which counts leases taken. Home is
-     * sent again on the way out, which is harmless if the first one landed
-     * and covers the case where it had not.
+     * not move the countdown escalation, which counts leases taken. The way
+     * out lands on Jitter's console, by name: see [decline].
      */
     private fun exit() {
         Log.i(TAG, "exit taken for $currentPkg")
@@ -371,9 +376,10 @@ class LeaseGateOverlayManager(
     }
 
     /**
-     * The way out, in every spelling. Fires home first and holds the window
-     * across the transition, as [LockOverlayManager] does and for the same
-     * reason.
+     * The way out, in every spelling. Starts the console first and holds the
+     * window across the transition, as [LockOverlayManager] does and for the
+     * same reason: the window comes down after the console is on its way, so
+     * nothing under it is shown for a frame.
      */
     private fun decline(reason: String) {
         val pkg = currentPkg ?: return
@@ -381,7 +387,7 @@ class LeaseGateOverlayManager(
         resolved = true
         ticker?.cancel(); ticker = null
         ledger.log(pkg, EventType.LEASE_DECLINED, "reason=$reason")
-        goHome()
+        openConsole()
         holdJob = scope.launch(Dispatchers.Main.immediate) {
             delay(LockEnforcement.HOME_SETTLE_MS)
             holdJob = null

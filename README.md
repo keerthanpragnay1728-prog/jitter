@@ -80,7 +80,7 @@ the gate, and taking a lease reopens it.
 **Then you choose how long you are staying.** At zero the countdown is replaced
 by three answers: 5m, 10m or 15m. There is no unlimited option. You do not have
 to wait for zero to leave: [ ARCHITECT'S SPACE ] is on the gate from the first
-frame and sends you home, and pressing back does the same.
+frame and opens Jitter's console, and pressing back does the same.
 
 **When a lease runs out, the app goes home under the gate.** The gate
 checks your lease at its deadline, without waiting for you to touch anything,
@@ -111,7 +111,7 @@ gate: about twelve steps, or eight seconds of walking-shaped motion if your
 phone has no step sensor. **If walking is not something you can or should
 do,** the same setting offers a short untimed typing task in its place. No
 sensors run in that mode. You can always leave with [ ARCHITECT'S SPACE ] or
-back; that sends you home without buying anything, and the gate comes back
+back; that opens Jitter's console without buying anything, and the gate comes back
 when you next scroll.
 
 **The counter resets six hours after the cycle started.** The cycle starts
