@@ -452,6 +452,10 @@ class LauncherActivity : ComponentActivity() {
                                 messagingApps = ::messagingApps,
                                 onLaunchLadder = ::launchLadder,
                                 onOpenWellbeingSettings = ::openWellbeing,
+                                // Read on this activity's resume, by the same
+                                // reader as CFG. See HomeRole.
+                                homeLost = !setup.grants.defaultHome,
+                                onOpenHomeSettings = setup::openHomeSettings,
                             )
 
                             AnimatedVisibility(
@@ -807,6 +811,12 @@ fun MainLauncherWorkspace(
     /** Walks a ShortcutLadder. False when no rung resolved. */
     onLaunchLadder: (List<ShortcutLadder.Candidate>) -> Boolean,
     onOpenWellbeingSettings: () -> Unit,
+    /**
+     * Jitter is not the home app. One line under the header until it is,
+     * read on resume and never polled. See HomeRole.
+     */
+    homeLost: Boolean,
+    onOpenHomeSettings: () -> Unit,
 ) {
 
     // Queried once by the Activity and passed down, rather than re-run on
@@ -852,6 +862,21 @@ fun MainLauncherWorkspace(
                 modifier = Modifier
                     .clickable { onOpenSettings() }
                     .padding(4.dp),
+            )
+        }
+
+        // Above the pager, so it holds on both pages and nothing scrolls it
+        // away. It goes when the role comes back and the console resumes.
+        if (homeLost) {
+            Text(
+                text = stringResource(R.string.launcher_home_lost),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                color = PhosphorGreen,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenHomeSettings() }
+                    .padding(top = 10.dp, bottom = 2.dp),
             )
         }
 
