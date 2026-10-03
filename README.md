@@ -185,6 +185,8 @@ APK yourself.
 
 5. **Finish setup in the app.** Open Jitter. The setup guide asks for what it
    needs: two permissions (accessibility, usage access) and your home app.
+   If another app later takes over as home, Jitter says so: one line on the
+   console, and a row in CFG's SETUP section that opens the home app settings.
 
 **Moving from the old tester build (`dev.molasses`)?** Uninstall it first. It
 is a separate app to Android, and its data does not carry over.

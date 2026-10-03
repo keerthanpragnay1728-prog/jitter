@@ -1,5 +1,7 @@
-- When a lease runs out in YouTube or another video app, playback pauses, even in a floating picture-in-picture window. The paused window stays until you close it.
-- Other apps get no pause, so music playing in the background is left alone.
-- REPORT A PROBLEM is now a row in CFG and opens the renamed repository's issue tracker.
-- Untracking a social app now lasts 3 days, or less after a restart.
-- The lease gate shows an ASCII playhead under the countdown that steps with it each second.
+- An expired lease pauses YouTube and other video apps, even in picture-in-picture (the paused window stays open). Music in other apps is untouched.
+- Leaving a gate or lock opens Jitter's console. A lock steps aside for a call.
+- Jitter warns when it is no longer your home app.
+- Console launches no longer crash when nothing can open them.
+- REPORT A PROBLEM is a row in CFG.
+- Untracking a social app lasts 3 days, or less after a restart.
+- The lease gate shows a playhead under its countdown.
