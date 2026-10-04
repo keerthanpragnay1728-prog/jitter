@@ -1,19 +1,22 @@
 package dev.molasses.monitor
 
-import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import dev.molasses.core.friction.CycleRollover
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EventType
+import dev.molasses.core.session.TargetScope
 import dev.molasses.core.time.ClockTamperClamp
 import dev.molasses.core.time.CycleWindow
+import dev.molasses.core.time.ForegroundIntervals
 import dev.molasses.core.time.ForegroundReplay
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.data.datastore.CycleStateStore
+import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.datastore.anchorInstant
 import dev.molasses.data.datastore.toEngineSnapshot
 import dev.molasses.engine.FrictionLedger
@@ -67,7 +70,15 @@ class ForegroundReconciler(
         val now = StampedInstant(wallMs = nowWall, elapsedMs = nowElapsed, bootId = bootId)
 
         val bootChanged = state.lastSeenWallMs != 0L && state.bootId != bootId
-        val targets = state.targetPackagesList.toSet()
+        // Through resolve, like every reader of the tracked set. The stored
+        // list is empty on a fresh install while the defaults are being
+        // tracked, and read raw it made this credit nothing at all after a
+        // process death there. See CLAUDE.md, "The stored target list is not
+        // the tracked set".
+        val targets = TargetScope.resolve(
+            TargetScope.Selection(stored = state.targetPackagesList, chosen = state.targetsChosen),
+            DEFAULT_TARGETS,
+        )
 
         // Nothing to reconcile on a first run.
         if (state.lastSeenWallMs == 0L) {
@@ -118,13 +129,23 @@ class ForegroundReconciler(
             val windowStart = state.lastSeenWallMs
             val windowEnd = minOf(nowWall, windowStart + verdict.creditedMs)
                 .coerceAtLeast(windowStart)
-            replay = ForegroundReplay.replay(
-                transitions = queryTransitions(windowStart, nowWall, targets),
-                windowStartMs = windowStart,
-                windowEndMs = windowEnd,
-                targets = targets,
-                assumeOpenPkg = state.openSessionPkg,
-            )
+            // No stream, no credit. The open session would otherwise be
+            // credited the whole window with nothing to bound it, which is
+            // every minute the process was dead, as friction time that is
+            // never refunded.
+            val events = queryEvents(windowStart, nowWall)
+            if (events == null) {
+                Log.w(TAG, "no usage events to replay; crediting nothing for ${state.openSessionPkg}")
+            } else {
+                replay = ForegroundReplay.replay(
+                    events = events,
+                    windowStartMs = windowStart,
+                    windowEndMs = windowEnd,
+                    targets = targets,
+                    interactiveNow = isInteractive(),
+                    assumeOpenPkg = state.openSessionPkg,
+                )
+            }
         }
 
         val credited = replay?.foregroundMsByPkg ?: emptyMap()
@@ -199,41 +220,32 @@ class ForegroundReconciler(
     }
 
     /**
-     * Map `UsageEvents` onto the pure [ForegroundReplay.Transition] type. The
-     * arithmetic lives in `core/time` so it can be unit-tested; `UsageEvents`
-     * cannot be constructed on the JVM.
+     * Every package's events and the device's, through the reader the ledger
+     * uses. Every package and not only the targets, because another app's
+     * resume is what bounds a target's interval when its own close never
+     * arrived. See `ForegroundIntervals`.
+     *
+     * @return null when the stream could not be read, so the caller credits
+     *   nothing rather than an interval with no bound.
      */
-    private fun queryTransitions(
-        beginWallMs: Long,
-        endWallMs: Long,
-        targets: Set<String>,
-    ): List<ForegroundReplay.Transition> {
-        val manager = usage ?: return emptyList()
-        val out = mutableListOf<ForegroundReplay.Transition>()
-        try {
-            val events: UsageEvents = manager.queryEvents(beginWallMs, endWallMs)
-            val event = UsageEvents.Event()
-            while (events.hasNextEvent()) {
-                events.getNextEvent(event)
-                val pkg = event.packageName ?: continue
-                if (pkg !in targets) continue
-                val kind = when (event.eventType) {
-                    UsageEvents.Event.ACTIVITY_RESUMED -> ForegroundReplay.Kind.RESUMED
-                    UsageEvents.Event.ACTIVITY_PAUSED -> ForegroundReplay.Kind.PAUSED
-                    else -> null
-                } ?: continue
-                out += ForegroundReplay.Transition(pkg, kind, event.timeStamp)
-            }
+    private fun queryEvents(beginWallMs: Long, endWallMs: Long): List<ForegroundIntervals.Event>? {
+        val manager = usage ?: return null
+        return try {
+            manager.foregroundEvents(beginWallMs, endWallMs)
         } catch (e: SecurityException) {
-            // PACKAGE_USAGE_STATS not granted. Recoverable: without it a
-            // mid-session death simply loses that session's tail, which the
-            // 15 s checkpoint already bounds.
+            // PACKAGE_USAGE_STATS not granted. A mid-session death then loses
+            // that session's tail, which the 15 s checkpoint bounds.
             Log.w(TAG, "no usage-stats access; skipping replay", e)
+            null
         } catch (e: Exception) {
             Log.w(TAG, "queryEvents failed", e)
+            null
         }
-        return out
     }
+
+    /** Unknown reads as not interactive, so an open interval is not run to now on a guess. */
+    private fun isInteractive(): Boolean =
+        appContext.getSystemService(PowerManager::class.java)?.isInteractive ?: false
 
     private fun readBootCount(): Int = runCatching {
         Settings.Global.getInt(appContext.contentResolver, Settings.Global.BOOT_COUNT, 0)

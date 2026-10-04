@@ -93,6 +93,9 @@ fun SettingsScreen(
     onRequestActivityRecognition: () -> Unit,
     onOpenDebug: () -> Unit,
     onOpenOnboarding: () -> Unit,
+    /** From `isDefaultHome`, the reader the first-run flow and the console use. */
+    defaultHome: Boolean,
+    onOpenHomeSettings: () -> Unit,
     openSection: CfgAccordion.Section?,
     onSectionOpened: () -> Unit,
     vm: SettingsViewModel = hiltViewModel(),
@@ -325,11 +328,22 @@ fun SettingsScreen(
                     onClick = onRequestActivityRecognition,
                 )
             }
+            // The same answer as the first-run flow's home step and the
+            // console's line: all three read isDefaultHome on resume.
+            item(CfgRowKey.body(Section.SETUP, "home")) {
+                ChecklistRow(
+                    index = 5,
+                    title = homeRowTitle(defaultHome),
+                    subtitle = homeRowBody(defaultHome),
+                    satisfied = defaultHome,
+                    onClick = onOpenHomeSettings,
+                )
+            }
             // Re-opens the first-run flow on this screen. Never marked done, so
             // it stays tappable: ChecklistRow disables a satisfied row.
             item(CfgRowKey.body(Section.SETUP, "onboarding")) {
                 ChecklistRow(
-                    index = 5,
+                    index = 6,
                     title = R.string.settings_onboarding_title,
                     subtitle = R.string.settings_onboarding_body,
                     satisfied = false,
@@ -1132,6 +1146,15 @@ private fun LinkRow(
     }
     Spacer(Modifier.height(8.dp))
 }
+
+/** SETUP's home row. A lost role names itself, and the row is the way back. */
+@StringRes
+private fun homeRowTitle(defaultHome: Boolean): Int =
+    if (defaultHome) R.string.settings_home_title else R.string.settings_home_lost_title
+
+@StringRes
+private fun homeRowBody(defaultHome: Boolean): Int =
+    if (defaultHome) R.string.settings_home_body else R.string.onboarding_home_settings
 
 @Composable
 private fun ChecklistRow(

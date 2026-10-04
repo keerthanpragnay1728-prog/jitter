@@ -117,7 +117,7 @@ class OnboardingWiringTest {
         assertTrue(gate.contains("registerForActivityResult"))
         assertTrue(gate.contains("createRequestRoleIntent(RoleManager.ROLE_HOME)"))
         assertTrue(gate.contains("Settings.ACTION_HOME_SETTINGS"))
-        assertTrue(functionBody(gate, "private fun isDefaultHome(").contains("isRoleHeld(RoleManager.ROLE_HOME)"))
-        assertTrue(functionBody(gate, "fun refresh(").contains("defaultHome = isDefaultHome()"))
+        // Whether it is done comes from the shared reader. See HomeRoleWiringTest.
+        assertTrue(functionBody(gate, "fun refresh(").contains("defaultHome = activity.isDefaultHome(),"))
     }
 }

@@ -30,6 +30,7 @@ import dev.molasses.core.lock.LockRegistry
 import dev.molasses.core.latency.Segment
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.FrictionDecision
+import dev.molasses.core.safety.ConsoleExit
 import dev.molasses.core.safety.HomeFirstWatch
 import dev.molasses.core.safety.MediaPause
 import dev.molasses.core.safety.PauseWindow
@@ -65,6 +66,7 @@ import dev.molasses.overlay.LeaseGateOverlayManager
 import dev.molasses.overlay.LockOverlayManager
 import dev.molasses.overlay.ShutterOverlayManager
 import dev.molasses.sensing.MovementDetector
+import dev.molasses.ui.launcher.LauncherActivity
 import java.io.FileDescriptor
 import java.io.PrintWriter
 import javax.inject.Inject
@@ -306,6 +308,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             // runs on scroll.
             onAbandoned = { },
             goHome = ::goHomeQuietly,
+            openConsole = ::openConsole,
             pauseMedia = { MediaPauseKey.send(this) },
             isVideoApp = ::isVideoApp,
             fontScale = { fontScaleMultiplier },
@@ -325,6 +328,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                 runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
                     .onFailure { Log.w(TAG, "GLOBAL_ACTION_HOME refused", it) }
             },
+            openConsole = ::openConsole,
             fontScale = { fontScaleMultiplier },
             onWindowsChanged = ::onOverlayWindowsChanged,
         )
@@ -339,6 +343,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                 runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
                     .onFailure { Log.w(TAG, "GLOBAL_ACTION_HOME refused", it) }
             },
+            openConsole = ::openConsole,
             pauseMedia = { MediaPauseKey.send(this) },
             isVideoApp = ::isVideoApp,
             onLeaseTaken = ::grantLease,
@@ -1132,6 +1137,34 @@ class MolassesAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * [ ARCHITECT'S SPACE ] and back, on every gate and on the lock: Jitter's
+     * console, by name, and the home action only if that start throws. The
+     * one function every overlay exit calls. See `ConsoleExit`.
+     *
+     * Sent while the overlay is still up: each manager starts this before it
+     * takes its window down. An accessibility service may start an activity
+     * from the background, which [relaunchTarget] already relies on.
+     *
+     * NEW_TASK because this is not an activity context. CLEAR_TOP so anything
+     * stacked above the console in its task goes, and the console is what
+     * shows. The launcher is singleTask, so a running one is brought forward
+     * rather than a second one made.
+     */
+    private fun openConsole() {
+        val route = ConsoleExit.open(
+            start = {
+                startActivity(
+                    Intent(this, LauncherActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                )
+            },
+            fallback = ::goHomeQuietly,
+            onRefused = { Log.w(HOME_FIRST_TAG, "console start refused; sending GLOBAL_ACTION_HOME instead", it) },
+        )
+        Log.i(HOME_FIRST_TAG, "overlay exit: route=$route")
+    }
+
+    /**
      * Today's foreground total and visit count for one package.
      *
      * Runs on IO: this is an IPC followed by a replay of a day of events. See
@@ -1147,21 +1180,16 @@ class MolassesAccessibilityService : AccessibilityService() {
             set(java.util.Calendar.MILLISECOND, 0)
         }.timeInMillis
         val endMs = wall.wallMs()
-        val events = usm.queryEvents(startOfDay, endMs)
-        val event = android.app.usage.UsageEvents.Event()
-        val transitions = mutableListOf<DayUsage.Transition>()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            if (event.packageName != pkg) continue
-            val kind = when (event.eventType) {
-                android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED -> DayUsage.Kind.RESUMED
-                android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED -> DayUsage.Kind.PAUSED
-                else -> null
-            } ?: continue
-            transitions += DayUsage.Transition(pkg, kind, event.timeStamp)
-        }
-        DayUsage.replay(transitions, startOfDay, endMs).entry(pkg)
+        // Every package's events, not only this one's: another app's resume
+        // or the screen going off is what bounds an interval whose own close
+        // never came. See ForegroundIntervals.
+        val events = usm.foregroundEvents(startOfDay, endMs)
+        DayUsage.replay(events, startOfDay, endMs, interactiveNow = isInteractive()).entry(pkg)
     }.getOrNull()
+
+    /** The screen is interactive now. Unknown reads as not, so an open interval is not run to now on a guess. */
+    private fun isInteractive(): Boolean =
+        getSystemService(android.os.PowerManager::class.java)?.isInteractive ?: false
 
     /**
      * True when nothing may be drawn on screen, for any reason.

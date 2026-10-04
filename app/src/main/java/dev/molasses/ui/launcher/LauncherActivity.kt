@@ -11,6 +11,7 @@ import android.os.BatteryManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import android.provider.Settings
@@ -77,6 +78,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -122,6 +124,7 @@ import dev.molasses.core.command.CommandRegistry
 import dev.molasses.core.command.DeferredWait
 import dev.molasses.core.command.ReadingWindow
 import dev.molasses.core.console.ConsoleLine
+import dev.molasses.core.diag.ServiceOffLine
 import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.remind.Reminder
 import dev.molasses.core.remind.ReminderBook
@@ -156,6 +159,7 @@ import dev.molasses.data.repo.CycleReadout
 import dev.molasses.data.repo.SettingsRepository
 import dev.molasses.monitor.ReminderAlarms
 import dev.molasses.monitor.ServiceDiagnostics
+import dev.molasses.monitor.foregroundEvents
 import dev.molasses.ui.canResolve
 import dev.molasses.ui.lock.lockOpensAtText
 import dev.molasses.ui.settings.SettingsActivity
@@ -208,6 +212,15 @@ class LauncherActivity : ComponentActivity() {
      * because it registers an activity result. See SetupFlowGate.
      */
     private val setup = SetupFlowController(this) { settingsRepository }
+
+    /** Where a refused start is said. The console page fills it in; see ConsoleRefusal. */
+    private val consoleRefusal = ConsoleRefusal()
+
+    /**
+     * Between onStart and onStop. The service-off line measures its grace
+     * and re-reads the service only while this is true. See ServiceOffLine.
+     */
+    private var consoleVisible by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -276,6 +289,28 @@ class LauncherActivity : ComponentActivity() {
             val reminders by settingsRepository.reminders
                 .collectAsState(initial = emptyList())
 
+            // The service-off line. Read on resume like the home line, then
+            // once a second while the console is visible and the service is
+            // not working, and only then. Shown after ServiceOffLine's grace,
+            // so a boot, which resumes the console before the service has
+            // connected, shows nothing at all.
+            val working = setup.grants.serviceWorking
+            val visible = consoleVisible
+            var offSince by remember { mutableStateOf<Long?>(null) }
+            var offReadAtMs by remember { mutableLongStateOf(0L) }
+            LaunchedEffect(visible, working) {
+                while (true) {
+                    val now = SystemClock.elapsedRealtime()
+                    val workingNow = setup.grants.serviceWorking
+                    offSince = ServiceOffLine.since(offSince, workingNow, visible, now)
+                    offReadAtMs = now
+                    if (!visible || workingNow) break
+                    delay(SERVICE_OFF_POLL_MS)
+                    setup.refresh()
+                }
+            }
+            val serviceOff = ServiceOffLine.shown(offSince, working, offReadAtMs)
+
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showDrawer by remember { mutableStateOf(false) }
                 // A long console lock waiting on the full-screen panel. Held
@@ -314,10 +349,11 @@ class LauncherActivity : ComponentActivity() {
                             onEditTargets = {
                                 // CFG opens on TARGETS with the flow stepped
                                 // aside, and Back there returns here.
-                                startActivity(
+                                startFromConsole(
                                     Intent(this@LauncherActivity, SettingsActivity::class.java)
                                         .putExtra(SettingsActivity.EXTRA_OPEN_SECTION, CfgAccordion.Section.TARGETS.name)
                                         .putExtra(SettingsActivity.EXTRA_SETUP_DETOUR, true),
+                                    consoleRefusal,
                                 )
                             },
                         ) {
@@ -326,7 +362,7 @@ class LauncherActivity : ComponentActivity() {
                                 pagerState = pagerState,
                                 onOpenDrawer = { showDrawer = true },
                                 onOpenSettings = {
-                                    startActivity(Intent(this@LauncherActivity, SettingsActivity::class.java))
+                                    startFromConsole(Intent(this@LauncherActivity, SettingsActivity::class.java), consoleRefusal)
                                 },
                                 onLaunchPackage = ::launchPackage,
                                 cycle = cycle,
@@ -382,7 +418,10 @@ class LauncherActivity : ComponentActivity() {
                                         showLedger = {
                                             scope.launch { pagerState.animateScrollToPage(PAGE_LEDGER) }
                                         },
-                                        startIntent = ::startIfHandled,
+                                        // False when refused, so a command
+                                        // gives its own answer in place of
+                                        // the helper's line.
+                                        startIntent = { startFromConsole(it, consoleRefusal) },
                                         canResolve = ::canResolve,
                                         lockRemainingMs = { pkg ->
                                             locks.remainingMs(pkg, settingsRepository.nowStamped())
@@ -447,11 +486,21 @@ class LauncherActivity : ComponentActivity() {
                                     )
                                 },
                                 onDialer = {
-                                    startActivity(Intent(Intent.ACTION_DIAL))
+                                    startFromConsole(Intent(Intent.ACTION_DIAL), consoleRefusal)
                                 },
                                 messagingApps = ::messagingApps,
                                 onLaunchLadder = ::launchLadder,
                                 onOpenWellbeingSettings = ::openWellbeing,
+                                refusal = consoleRefusal,
+                                // Read on this activity's resume, by the same
+                                // reader as CFG. See HomeRole.
+                                homeLost = !setup.grants.defaultHome,
+                                onOpenHomeSettings = setup::openHomeSettings,
+                                // ServiceHealthPolicy.working, through the same
+                                // grants CFG's service row and the first-run
+                                // flow read, after ServiceOffLine's grace.
+                                serviceOff = serviceOff,
+                                onOpenAccessibility = setup::openAccessibility,
                             )
 
                             AnimatedVisibility(
@@ -488,6 +537,16 @@ class LauncherActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        consoleVisible = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        consoleVisible = false
+    }
+
     override fun onResume() {
         super.onResume()
         setup.onResume()
@@ -497,7 +556,7 @@ class LauncherActivity : ComponentActivity() {
 
     private fun launchPackage(pkg: String) {
         val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return
-        startActivity(intent)
+        startFromConsole(intent, consoleRefusal)
     }
 
     /**
@@ -534,7 +593,7 @@ class LauncherActivity : ComponentActivity() {
             // A package rung's launch intent is already known to exist, so it
             // needs no second resolve; an action rung does.
             if (rung.pkg == null && !canResolve(intent)) continue
-            if (startIfHandled(intent)) return true
+            if (startFromConsole(intent, consoleRefusal)) return true
         }
         Log.w(TAG_LAUNCHER, "no rung of the ladder resolved: $ladder")
         return false
@@ -609,19 +668,10 @@ class LauncherActivity : ComponentActivity() {
             Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS),
         )
         val resolved = candidates.firstOrNull { canResolve(it) } ?: return
-        runCatching { startActivity(resolved) }
-            .onFailure { Log.w(TAG_LAUNCHER, "wellbeing intent refused", it) }
+        // Refused or not, the helper's answer is the whole of it: it logs,
+        // and says the line when the console is there to say it.
+        startFromConsole(resolved, consoleRefusal)
     }
-
-
-    /**
-     * @return false when nothing handled it, so the caller can say that rather
-     *   than reporting a success that did nothing.
-     */
-    private fun startIfHandled(intent: Intent): Boolean = runCatching {
-        startActivity(intent)
-        true
-    }.getOrDefault(false)
 
     /** Whether anything on this device handles [intent]. See the shared helper's doc. */
     private fun canResolve(intent: Intent): Boolean = packageManager.canResolve(intent)
@@ -781,7 +831,7 @@ const val PAGE_CONSOLE = 0
 const val PAGE_LEDGER = 1
 
 @Composable
-fun MainLauncherWorkspace(
+private fun MainLauncherWorkspace(
     appList: List<LaunchableApp>,
     pagerState: androidx.compose.foundation.pager.PagerState,
     actions: LauncherActions,
@@ -807,6 +857,22 @@ fun MainLauncherWorkspace(
     /** Walks a ShortcutLadder. False when no rung resolved. */
     onLaunchLadder: (List<ShortcutLadder.Candidate>) -> Boolean,
     onOpenWellbeingSettings: () -> Unit,
+    /**
+     * Jitter is not the home app. One line under the header until it is,
+     * read on resume and never polled. See HomeRole.
+     */
+    homeLost: Boolean,
+    onOpenHomeSettings: () -> Unit,
+    /** Where a refused start is said. Handed to the console page. */
+    refusal: ConsoleRefusal,
+    /**
+     * The accessibility service is not working, by `ServiceHealthPolicy.working`,
+     * and has not been for ServiceOffLine's grace. One line under the header
+     * until it is, above the home line because nothing else on this screen
+     * works without it.
+     */
+    serviceOff: Boolean,
+    onOpenAccessibility: () -> Unit,
 ) {
 
     // Queried once by the Activity and passed down, rather than re-run on
@@ -855,6 +921,34 @@ fun MainLauncherWorkspace(
             )
         }
 
+        // Above the pager, so they hold on both pages and nothing scrolls them
+        // away. Each goes when its cause is fixed and the console reads it
+        // again.
+        if (serviceOff) {
+            Text(
+                text = stringResource(R.string.launcher_service_off),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                color = PhosphorGreen,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenAccessibility() }
+                    .padding(top = 10.dp, bottom = 2.dp),
+            )
+        }
+        if (homeLost) {
+            Text(
+                text = stringResource(R.string.launcher_home_lost),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                color = PhosphorGreen,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenHomeSettings() }
+                    .padding(top = 10.dp, bottom = 2.dp),
+            )
+        }
+
         Spacer(Modifier.height(14.dp))
 
         // Above the pager on purpose. The pager disposes the off-screen page,
@@ -890,6 +984,7 @@ fun MainLauncherWorkspace(
                     onDialer = onDialer,
                     messagingApps = messagingApps,
                     onLaunchLadder = onLaunchLadder,
+                    refusal = refusal,
                 )
                 PAGE_LEDGER -> TextualWellbeingView(
                     shown = pagerState.settledPage == PAGE_LEDGER,
@@ -903,7 +998,7 @@ fun MainLauncherWorkspace(
 }
 
 @Composable
-fun TerminalHomeView(
+private fun TerminalHomeView(
     /**
      * Origin for Bit's tick, held above the pager so swiping to the ledger
      * and back does not restart the blink schedule.
@@ -937,6 +1032,8 @@ fun TerminalHomeView(
     messagingApps: () -> List<LaunchableApp>,
     /** Walks a ShortcutLadder. False when no rung resolved. */
     onLaunchLadder: (List<ShortcutLadder.Candidate>) -> Boolean,
+    /** Set to this page's answer line while it is composed. See ConsoleRefusal. */
+    refusal: ConsoleRefusal,
 ) {
     val context = LocalContext.current
 
@@ -1254,10 +1351,22 @@ fun TerminalHomeView(
         if (!onLaunchLadder(ladder)) {
             react(
                 BitStateMachine.Reaction.Unavailable(
-                    context.getString(R.string.launcher_fav_none),
+                    context.getString(R.string.launcher_open_refused),
                 ),
             )
         }
+    }
+
+    // A start the shared helper refused: the drawer, quick launch, [phone],
+    // a rung or a command. The same face and the same line as a ladder with
+    // no rung, because to the user it is the same thing. Said at once, so a
+    // command's own answer, given after, replaces it rather than racing it.
+    val sayRefused by rememberUpdatedState {
+        react(BitStateMachine.Reaction.Unavailable(context.getString(R.string.launcher_open_refused)))
+    }
+    DisposableEffect(refusal) {
+        refusal.say = { sayRefused() }
+        onDispose { refusal.say = null }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -2205,7 +2314,13 @@ fun TextualWellbeingView(
         // first frame of the ledger page. The previous call was a single
         // aggregate read and got away with running here.
         val day = withContext(Dispatchers.Default) {
-            readDayUsage(usm, startOfDay, now, exclude = setOf(context.packageName))
+            readDayUsage(
+                usm, startOfDay, now,
+                exclude = setOf(context.packageName),
+                // Unknown reads as not interactive, so an open interval is not
+                // run to now on a guess.
+                interactiveNow = context.getSystemService(PowerManager::class.java)?.isInteractive ?: false,
+            )
         }
         // Every value is assigned on every read, so a refresh can clear a
         // row as well as add one. Null (no grant, failed query) and an empty
@@ -2457,23 +2572,11 @@ private fun readDayUsage(
     startMs: Long,
     endMs: Long,
     exclude: Set<String>,
+    interactiveNow: Boolean,
 ): DayUsage.Result? = try {
-    val events = usm.queryEvents(startMs, endMs)
-    val event = UsageEvents.Event()
-    val transitions = mutableListOf<DayUsage.Transition>()
-    while (events.hasNextEvent()) {
-        events.getNextEvent(event)
-        val kind = when (event.eventType) {
-            UsageEvents.Event.ACTIVITY_RESUMED -> DayUsage.Kind.RESUMED
-            UsageEvents.Event.ACTIVITY_PAUSED -> DayUsage.Kind.PAUSED
-            else -> null
-        }
-        val pkg = event.packageName
-        if (kind != null && pkg != null) {
-            transitions += DayUsage.Transition(pkg, kind, event.timeStamp)
-        }
-    }
-    DayUsage.replay(transitions, startMs, endMs, exclude)
+    // The shared reader and the shared bounding rule, the same as the gate's
+    // "today" and the reconciler. See ForegroundIntervals.
+    DayUsage.replay(usm.foregroundEvents(startMs, endMs), startMs, endMs, interactiveNow, exclude)
 } catch (e: SecurityException) {
     null
 } catch (e: Exception) {
@@ -2879,6 +2982,12 @@ private fun AppDrawerOverlay(
 }
 
 private const val TAG_LAUNCHER = "Molasses.Launcher"
+
+/**
+ * How often the console re-reads the service while it is visible and the
+ * service is not working. Not at all otherwise.
+ */
+private const val SERVICE_OFF_POLL_MS = 1_000L
 
 /**
  * How long each placeholder suggestion holds.

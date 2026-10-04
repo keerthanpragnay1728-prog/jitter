@@ -8,8 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * CFG's service row and the first-run flow answer "is the service working"
- * with one function, so they cannot disagree.
+ * CFG's service row, the first-run flow and the console's off line answer
+ * "is the service working" with one function, so they cannot disagree.
  *
  * They did once: the row ticked on `acceptingEvents`, which admits STALE, and
  * the flow required HEALTHY. Pure over every state, and as text over the two
@@ -19,6 +19,8 @@ class ServiceWorkingAgreementTest {
 
     private val cfg = repoFile("app/src/main/java/dev/molasses/ui/settings/SettingsScreen.kt").readText()
     private val flow = repoFile("app/src/main/java/dev/molasses/ui/setup/SetupFlow.kt").readText()
+    private val launcher = repoFile("app/src/main/java/dev/molasses/ui/launcher/LauncherActivity.kt").readText()
+    private val vm = repoFile("app/src/main/java/dev/molasses/ui/settings/SettingsViewModel.kt").readText()
 
     private val states = ServiceHealth.entries.flatMap { h -> listOf(h to true, h to false) }
 
@@ -66,5 +68,46 @@ class ServiceWorkingAgreementTest {
         assertTrue(flow.contains("serviceWorking = ServiceHealthPolicy.working(ServiceDiagnostics.health(), permissions.accessibility)"))
         assertFalse(flow.contains("acceptingEvents"))
         assertFalse(flow.contains("ServiceHealth.HEALTHY"))
+    }
+
+    @Test
+    fun `the console's off line reads the flow's field, so it agrees with CFG's row`() {
+        // CFG's health and permission come from the same two sources the
+        // flow reads.
+        assertTrue(vm.contains("health = ServiceDiagnostics.health(),"))
+        assertTrue(vm.contains("repo.permissionState()"))
+        assertTrue(launcher.contains("val working = setup.grants.serviceWorking"))
+        assertTrue("after the pure grace", launcher.contains("val serviceOff = ServiceOffLine.shown(offSince, working, offReadAtMs)"))
+        assertTrue(launcher.contains("serviceOff = serviceOff,"))
+        assertTrue(launcher.contains("onOpenAccessibility = setup::openAccessibility,"))
+        // Code only: the comments name the rule they defer to.
+        val code = launcher.replace(Regex("""/\*[\s\S]*?\*/"""), "").replace(Regex("""//[^\n]*"""), "")
+        assertFalse("no rule of its own", code.contains("ServiceHealthPolicy") || code.contains("ServiceHealth.HEALTHY"))
+        val workspace = dev.molasses.core.functionBody(launcher, "fun MainLauncherWorkspace(")
+        val line = workspace.indexOf("if (serviceOff) {")
+        assertTrue(line >= 0 && line < workspace.indexOf("HorizontalPager("))
+        val body = workspace.substring(line).substringBefore("\n        }\n")
+        assertTrue(body.contains("R.string.launcher_service_off"))
+        assertTrue(body.contains(".clickable { onOpenAccessibility() }"))
+        assertTrue(flow.contains("fun openAccessibility() = openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))"))
+        val strings = repoFile("app/src/main/res/values/strings.xml").readText()
+        assertTrue(strings.contains("<string name=\"launcher_service_off\">Jitter is off: its service is not running. Tap to fix.</string>"))
+    }
+
+    @Test
+    fun `the console re-reads the service only while visible and not working`() {
+        val effect = launcher.substring(launcher.indexOf("LaunchedEffect(visible, working) {")).substringBefore("\n            }\n            val serviceOff")
+        assertTrue(effect.contains("offSince = ServiceOffLine.since(offSince, workingNow, visible, now)"))
+        val stop = effect.indexOf("if (!visible || workingNow) break")
+        assertTrue("it stops before the next read when either is false", stop in 0 until effect.indexOf("delay(SERVICE_OFF_POLL_MS)"))
+        assertTrue(effect.indexOf("setup.refresh()") > effect.indexOf("delay(SERVICE_OFF_POLL_MS)"))
+        assertTrue(launcher.contains("private const val SERVICE_OFF_POLL_MS = 1_000L"))
+        // Visible means started: the flag is set and cleared by the lifecycle.
+        assertTrue(dev.molasses.core.functionBody(launcher, "override fun onStart()").contains("consoleVisible = true"))
+        assertTrue(dev.molasses.core.functionBody(launcher, "override fun onStop()").contains("consoleVisible = false"))
+        assertTrue(launcher.contains("val visible = consoleVisible"))
+        for (banned in listOf("NotificationManager", "NotificationCompat", "AlarmManager", "WorkManager")) {
+            assertFalse(banned, launcher.contains(banned))
+        }
     }
 }

@@ -154,6 +154,10 @@ class SettingsActivity : ComponentActivity() {
                                 onRequestActivityRecognition = { requestActivityRecognition() },
                                 onOpenDebug = { showDebug = true },
                                 onOpenOnboarding = { SetupSession.update(Onboarding::request) },
+                                // Read on this activity's resume, by the same
+                                // reader as the console. See HomeRole.
+                                defaultHome = setup.grants.defaultHome,
+                                onOpenHomeSettings = setup::openHomeSettings,
                                 openSection = openSection,
                                 onSectionOpened = { openSection = null },
                             )

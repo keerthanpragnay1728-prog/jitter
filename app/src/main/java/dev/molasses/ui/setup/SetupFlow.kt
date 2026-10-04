@@ -2,7 +2,6 @@ package dev.molasses.ui.setup
 
 import android.app.role.RoleManager
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -106,21 +105,10 @@ class SetupFlowController(
             serviceWorking = ServiceHealthPolicy.working(ServiceDiagnostics.health(), permissions.accessibility),
             accessibilityEnabled = permissions.accessibility,
             usageAccess = permissions.usageAccess,
-            defaultHome = isDefaultHome(),
+            // The shared reader. CFG's SETUP row and the console's line read
+            // this same field, so all three agree. See HomeRole.
+            defaultHome = activity.isDefaultHome(),
         )
-    }
-
-    /**
-     * The role where the device has one, which on this app's minSdk is
-     * nearly always. Otherwise whatever the HOME intent resolves to by
-     * default: the resolver itself when nothing is chosen, which is not us.
-     */
-    private fun isDefaultHome(): Boolean {
-        val rm = roleManager
-        if (rm != null && rm.isRoleAvailable(RoleManager.ROLE_HOME)) return rm.isRoleHeld(RoleManager.ROLE_HOME)
-        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        val resolved = activity.packageManager.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)
-        return resolved?.activityInfo?.packageName == activity.packageName
     }
 
     fun openAccessibility() = openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

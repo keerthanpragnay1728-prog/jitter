@@ -80,7 +80,7 @@ the gate, and taking a lease reopens it.
 **Then you choose how long you are staying.** At zero the countdown is replaced
 by three answers: 5m, 10m or 15m. There is no unlimited option. You do not have
 to wait for zero to leave: [ ARCHITECT'S SPACE ] is on the gate from the first
-frame and sends you home, and pressing back does the same.
+frame and opens Jitter's console, and pressing back does the same.
 
 **When a lease runs out, the app goes home under the gate.** The gate
 checks your lease at its deadline, without waiting for you to touch anything,
@@ -111,7 +111,7 @@ gate: about twelve steps, or eight seconds of walking-shaped motion if your
 phone has no step sensor. **If walking is not something you can or should
 do,** the same setting offers a short untimed typing task in its place. No
 sensors run in that mode. You can always leave with [ ARCHITECT'S SPACE ] or
-back; that sends you home without buying anything, and the gate comes back
+back; that opens Jitter's console without buying anything, and the gate comes back
 when you next scroll.
 
 **The counter resets six hours after the cycle started.** The cycle starts
@@ -148,7 +148,9 @@ Nothing samples in the background. No wake locks are ever held.
   and Bit.
 - **The ledger.** Swipe across from the console for today's screen time per
   app and the current cycle: how far into its horizon the deepest app is, and
-  when the cycle resets.
+  when the cycle resets. An app's time stops at the earliest of the screen
+  going off, the lock screen showing, and the next app opening, even when the
+  app never reports that it closed.
 - **The lease gate.** What stands in front of a tracked app: the countdown,
   then 5, 10 or 15 minutes.
 
@@ -185,6 +187,10 @@ APK yourself.
 
 5. **Finish setup in the app.** Open Jitter. The setup guide asks for what it
    needs: two permissions (accessibility, usage access) and your home app.
+   If another app later takes over as home, Jitter says so: one line on the
+   console, and a row in CFG's SETUP section that opens the home app settings.
+   If its accessibility service stops running for more than a few seconds,
+   the console says that too.
 
 **Moving from the old tester build (`dev.molasses`)?** Uninstall it first. It
 is a separate app to Android, and its data does not carry over.

@@ -223,6 +223,9 @@
     <string name="settings_perm_usage_body">Required. Rebuilds your time if Jitter is killed mid-session.</string>
     <string name="settings_perm_activity_title">Physical activity</string>
     <string name="settings_perm_activity_body">Preferred. Uses the step sensor for the movement gate. Without it the gate falls back to motion analysis.</string>
+    <string name="settings_home_title">Jitter is your home app</string>
+    <string name="settings_home_body">The Home button opens the console.</string>
+    <string name="settings_home_lost_title">Jitter is not your home app</string>
 
     <string name="settings_targets_hint">Scrolling in these apps accumulates time.</string>
     <string name="settings_targets_search">Filter apps</string>
@@ -368,9 +371,10 @@
     <!--
       Said rather than swallowed. These rows used to wrap startActivity in a
       runCatching and discard the result, so a device with no handler got a
-      row that did nothing, silently, every time.
+      row that did nothing, silently, every time. The same line answers any
+      start from the console that the platform refused.
     -->
-    <string name="launcher_fav_none">Nothing on this device handles that.</string>
+    <string name="launcher_open_refused">Nothing on this phone can open that.</string>
     <string name="launcher_fav_none_messaging">No messaging app found. Try the drawer.</string>
     <!-- The bar itself is drawn cell by cell so the charging cell can be
          brightened individually, so the line is three pieces rather than one
@@ -384,6 +388,10 @@
     <string name="launcher_clock_fmt" translatable="false">%1$s  %2$s</string>
     <string name="launcher_cursor" translatable="false">\u2588</string>
     <string name="launcher_cfg">[CFG]</string>
+    <!-- On the console until Jitter is the home app again. Tapping it opens the home app settings. -->
+    <string name="launcher_home_lost">Jitter is not your home app. Tap to set it.</string>
+    <!-- On the console once the accessibility service has not been working for ten seconds: switched off, crashed or stuck. Tapping it opens accessibility settings. -->
+    <string name="launcher_service_off">Jitter is off: its service is not running. Tap to fix.</string>
     <!-- Decorative glyphs. Shown on screen, never reworded or translated. -->
     <string name="launcher_prompt_symbol" translatable="false">$ </string>
     <string name="launcher_chevron_glyph" translatable="false">v</string>
