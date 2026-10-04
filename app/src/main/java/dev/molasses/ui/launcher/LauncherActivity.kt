@@ -831,7 +831,7 @@ const val PAGE_CONSOLE = 0
 const val PAGE_LEDGER = 1
 
 @Composable
-fun MainLauncherWorkspace(
+private fun MainLauncherWorkspace(
     appList: List<LaunchableApp>,
     pagerState: androidx.compose.foundation.pager.PagerState,
     actions: LauncherActions,
@@ -998,7 +998,7 @@ fun MainLauncherWorkspace(
 }
 
 @Composable
-fun TerminalHomeView(
+private fun TerminalHomeView(
     /**
      * Origin for Bit's tick, held above the pager so swiping to the ledger
      * and back does not restart the blink schedule.
