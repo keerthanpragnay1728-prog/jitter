@@ -76,7 +76,8 @@ class ServiceWorkingAgreementTest {
         // flow reads.
         assertTrue(vm.contains("health = ServiceDiagnostics.health(),"))
         assertTrue(vm.contains("repo.permissionState()"))
-        assertTrue(launcher.contains("val serviceOff = !setup.grants.serviceWorking"))
+        assertTrue(launcher.contains("val working = setup.grants.serviceWorking"))
+        assertTrue("after the pure grace", launcher.contains("val serviceOff = ServiceOffLine.shown(offSince, working, offReadAtMs)"))
         assertTrue(launcher.contains("serviceOff = serviceOff,"))
         assertTrue(launcher.contains("onOpenAccessibility = setup::openAccessibility,"))
         // Code only: the comments name the rule they defer to.
@@ -90,16 +91,21 @@ class ServiceWorkingAgreementTest {
         assertTrue(body.contains(".clickable { onOpenAccessibility() }"))
         assertTrue(flow.contains("fun openAccessibility() = openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))"))
         val strings = repoFile("app/src/main/res/values/strings.xml").readText()
-        assertTrue(strings.contains("<string name=\"launcher_service_off\">Jitter is off: accessibility is disabled. Tap to fix.</string>"))
+        assertTrue(strings.contains("<string name=\"launcher_service_off\">Jitter is off: its service is not running. Tap to fix.</string>"))
     }
 
     @Test
-    fun `the console re-reads the service only while the off line shows`() {
-        val effect = launcher.substring(launcher.indexOf("LaunchedEffect(serviceOff) {")).substringBefore("\n            }\n            }\n")
-        assertTrue(effect.contains("while (serviceOff) {"))
-        assertTrue(effect.contains("delay(SERVICE_OFF_POLL_MS)"))
-        assertTrue(effect.contains("setup.refresh()"))
+    fun `the console re-reads the service only while visible and not working`() {
+        val effect = launcher.substring(launcher.indexOf("LaunchedEffect(visible, working) {")).substringBefore("\n            }\n            val serviceOff")
+        assertTrue(effect.contains("offSince = ServiceOffLine.since(offSince, workingNow, visible, now)"))
+        val stop = effect.indexOf("if (!visible || workingNow) break")
+        assertTrue("it stops before the next read when either is false", stop in 0 until effect.indexOf("delay(SERVICE_OFF_POLL_MS)"))
+        assertTrue(effect.indexOf("setup.refresh()") > effect.indexOf("delay(SERVICE_OFF_POLL_MS)"))
         assertTrue(launcher.contains("private const val SERVICE_OFF_POLL_MS = 1_000L"))
+        // Visible means started: the flag is set and cleared by the lifecycle.
+        assertTrue(dev.molasses.core.functionBody(launcher, "override fun onStart()").contains("consoleVisible = true"))
+        assertTrue(dev.molasses.core.functionBody(launcher, "override fun onStop()").contains("consoleVisible = false"))
+        assertTrue(launcher.contains("val visible = consoleVisible"))
         for (banned in listOf("NotificationManager", "NotificationCompat", "AlarmManager", "WorkManager")) {
             assertFalse(banned, launcher.contains(banned))
         }

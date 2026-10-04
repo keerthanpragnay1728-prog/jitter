@@ -390,8 +390,8 @@
     <string name="launcher_cfg">[CFG]</string>
     <!-- On the console until Jitter is the home app again. Tapping it opens the home app settings. -->
     <string name="launcher_home_lost">Jitter is not your home app. Tap to set it.</string>
-    <!-- On the console while the accessibility service is not working. Tapping it opens accessibility settings. -->
-    <string name="launcher_service_off">Jitter is off: accessibility is disabled. Tap to fix.</string>
+    <!-- On the console once the accessibility service has not been working for ten seconds: switched off, crashed or stuck. Tapping it opens accessibility settings. -->
+    <string name="launcher_service_off">Jitter is off: its service is not running. Tap to fix.</string>
     <!-- Decorative glyphs. Shown on screen, never reworded or translated. -->
     <string name="launcher_prompt_symbol" translatable="false">$ </string>
     <string name="launcher_chevron_glyph" translatable="false">v</string>

@@ -124,6 +124,7 @@ import dev.molasses.core.command.CommandRegistry
 import dev.molasses.core.command.DeferredWait
 import dev.molasses.core.command.ReadingWindow
 import dev.molasses.core.console.ConsoleLine
+import dev.molasses.core.diag.ServiceOffLine
 import dev.molasses.core.launch.QuickLaunch
 import dev.molasses.core.remind.Reminder
 import dev.molasses.core.remind.ReminderBook
@@ -215,6 +216,12 @@ class LauncherActivity : ComponentActivity() {
     /** Where a refused start is said. The console page fills it in; see ConsoleRefusal. */
     private val consoleRefusal = ConsoleRefusal()
 
+    /**
+     * Between onStart and onStop. The service-off line measures its grace
+     * and re-reads the service only while this is true. See ServiceOffLine.
+     */
+    private var consoleVisible by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Edge to edge stays here: it is a window layout attribute and it is
@@ -282,18 +289,27 @@ class LauncherActivity : ComponentActivity() {
             val reminders by settingsRepository.reminders
                 .collectAsState(initial = emptyList())
 
-            // The service is not working. Read on resume like the home line,
-            // and re-read every second while it shows, and only then: a cold
-            // start resumes the console before the service has connected, and
-            // a line read once would go on saying "off" about a service that
-            // came up a moment later.
-            val serviceOff = !setup.grants.serviceWorking
-            LaunchedEffect(serviceOff) {
-                while (serviceOff) {
+            // The service-off line. Read on resume like the home line, then
+            // once a second while the console is visible and the service is
+            // not working, and only then. Shown after ServiceOffLine's grace,
+            // so a boot, which resumes the console before the service has
+            // connected, shows nothing at all.
+            val working = setup.grants.serviceWorking
+            val visible = consoleVisible
+            var offSince by remember { mutableStateOf<Long?>(null) }
+            var offReadAtMs by remember { mutableLongStateOf(0L) }
+            LaunchedEffect(visible, working) {
+                while (true) {
+                    val now = SystemClock.elapsedRealtime()
+                    val workingNow = setup.grants.serviceWorking
+                    offSince = ServiceOffLine.since(offSince, workingNow, visible, now)
+                    offReadAtMs = now
+                    if (!visible || workingNow) break
                     delay(SERVICE_OFF_POLL_MS)
                     setup.refresh()
                 }
             }
+            val serviceOff = ServiceOffLine.shown(offSince, working, offReadAtMs)
 
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showDrawer by remember { mutableStateOf(false) }
@@ -482,7 +498,7 @@ class LauncherActivity : ComponentActivity() {
                                 onOpenHomeSettings = setup::openHomeSettings,
                                 // ServiceHealthPolicy.working, through the same
                                 // grants CFG's service row and the first-run
-                                // flow read.
+                                // flow read, after ServiceOffLine's grace.
                                 serviceOff = serviceOff,
                                 onOpenAccessibility = setup::openAccessibility,
                             )
@@ -519,6 +535,16 @@ class LauncherActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        consoleVisible = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        consoleVisible = false
     }
 
     override fun onResume() {
@@ -840,9 +866,10 @@ fun MainLauncherWorkspace(
     /** Where a refused start is said. Handed to the console page. */
     refusal: ConsoleRefusal,
     /**
-     * The accessibility service is not working, by `ServiceHealthPolicy.working`.
-     * One line under the header until it is, above the home line because
-     * nothing else on this screen works without it.
+     * The accessibility service is not working, by `ServiceHealthPolicy.working`,
+     * and has not been for ServiceOffLine's grace. One line under the header
+     * until it is, above the home line because nothing else on this screen
+     * works without it.
      */
     serviceOff: Boolean,
     onOpenAccessibility: () -> Unit,
@@ -2956,7 +2983,10 @@ private fun AppDrawerOverlay(
 
 private const val TAG_LAUNCHER = "Molasses.Launcher"
 
-/** How often the console re-reads the service while its off line shows. Not at all otherwise. */
+/**
+ * How often the console re-reads the service while it is visible and the
+ * service is not working. Not at all otherwise.
+ */
 private const val SERVICE_OFF_POLL_MS = 1_000L
 
 /**
