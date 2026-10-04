@@ -282,6 +282,19 @@ class LauncherActivity : ComponentActivity() {
             val reminders by settingsRepository.reminders
                 .collectAsState(initial = emptyList())
 
+            // The service is not working. Read on resume like the home line,
+            // and re-read every second while it shows, and only then: a cold
+            // start resumes the console before the service has connected, and
+            // a line read once would go on saying "off" about a service that
+            // came up a moment later.
+            val serviceOff = !setup.grants.serviceWorking
+            LaunchedEffect(serviceOff) {
+                while (serviceOff) {
+                    delay(SERVICE_OFF_POLL_MS)
+                    setup.refresh()
+                }
+            }
+
             MolassesTheme(fontScale = fontScale.multiplier) {
                 var showDrawer by remember { mutableStateOf(false) }
                 // A long console lock waiting on the full-screen panel. Held
@@ -462,11 +475,16 @@ class LauncherActivity : ComponentActivity() {
                                 messagingApps = ::messagingApps,
                                 onLaunchLadder = ::launchLadder,
                                 onOpenWellbeingSettings = ::openWellbeing,
+                                refusal = consoleRefusal,
                                 // Read on this activity's resume, by the same
                                 // reader as CFG. See HomeRole.
-                                refusal = consoleRefusal,
                                 homeLost = !setup.grants.defaultHome,
                                 onOpenHomeSettings = setup::openHomeSettings,
+                                // ServiceHealthPolicy.working, through the same
+                                // grants CFG's service row and the first-run
+                                // flow read.
+                                serviceOff = serviceOff,
+                                onOpenAccessibility = setup::openAccessibility,
                             )
 
                             AnimatedVisibility(
@@ -821,6 +839,13 @@ fun MainLauncherWorkspace(
     onOpenHomeSettings: () -> Unit,
     /** Where a refused start is said. Handed to the console page. */
     refusal: ConsoleRefusal,
+    /**
+     * The accessibility service is not working, by `ServiceHealthPolicy.working`.
+     * One line under the header until it is, above the home line because
+     * nothing else on this screen works without it.
+     */
+    serviceOff: Boolean,
+    onOpenAccessibility: () -> Unit,
 ) {
 
     // Queried once by the Activity and passed down, rather than re-run on
@@ -869,8 +894,21 @@ fun MainLauncherWorkspace(
             )
         }
 
-        // Above the pager, so it holds on both pages and nothing scrolls it
-        // away. It goes when the role comes back and the console resumes.
+        // Above the pager, so they hold on both pages and nothing scrolls them
+        // away. Each goes when its cause is fixed and the console reads it
+        // again.
+        if (serviceOff) {
+            Text(
+                text = stringResource(R.string.launcher_service_off),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                color = PhosphorGreen,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenAccessibility() }
+                    .padding(top = 10.dp, bottom = 2.dp),
+            )
+        }
         if (homeLost) {
             Text(
                 text = stringResource(R.string.launcher_home_lost),
@@ -2917,6 +2955,9 @@ private fun AppDrawerOverlay(
 }
 
 private const val TAG_LAUNCHER = "Molasses.Launcher"
+
+/** How often the console re-reads the service while its off line shows. Not at all otherwise. */
+private const val SERVICE_OFF_POLL_MS = 1_000L
 
 /**
  * How long each placeholder suggestion holds.
