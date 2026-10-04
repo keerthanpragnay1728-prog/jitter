@@ -9,12 +9,14 @@ import android.util.Log
 import dev.molasses.core.friction.CycleRollover
 import dev.molasses.core.model.EngineSnapshot
 import dev.molasses.core.model.EventType
+import dev.molasses.core.session.TargetScope
 import dev.molasses.core.time.ClockTamperClamp
 import dev.molasses.core.time.CycleWindow
 import dev.molasses.core.time.ForegroundIntervals
 import dev.molasses.core.time.ForegroundReplay
 import dev.molasses.core.time.StampedInstant
 import dev.molasses.data.datastore.CycleStateStore
+import dev.molasses.data.datastore.DEFAULT_TARGETS
 import dev.molasses.data.datastore.anchorInstant
 import dev.molasses.data.datastore.toEngineSnapshot
 import dev.molasses.engine.FrictionLedger
@@ -68,7 +70,15 @@ class ForegroundReconciler(
         val now = StampedInstant(wallMs = nowWall, elapsedMs = nowElapsed, bootId = bootId)
 
         val bootChanged = state.lastSeenWallMs != 0L && state.bootId != bootId
-        val targets = state.targetPackagesList.toSet()
+        // Through resolve, like every reader of the tracked set. The stored
+        // list is empty on a fresh install while the defaults are being
+        // tracked, and read raw it made this credit nothing at all after a
+        // process death there. See CLAUDE.md, "The stored target list is not
+        // the tracked set".
+        val targets = TargetScope.resolve(
+            TargetScope.Selection(stored = state.targetPackagesList, chosen = state.targetsChosen),
+            DEFAULT_TARGETS,
+        )
 
         // Nothing to reconcile on a first run.
         if (state.lastSeenWallMs == 0L) {
