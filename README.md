@@ -148,7 +148,9 @@ Nothing samples in the background. No wake locks are ever held.
   and Bit.
 - **The ledger.** Swipe across from the console for today's screen time per
   app and the current cycle: how far into its horizon the deepest app is, and
-  when the cycle resets.
+  when the cycle resets. An app's time stops at the earliest of the screen
+  going off, the lock screen showing, and the next app opening, even when the
+  app never reports that it closed.
 - **The lease gate.** What stands in front of a tracked app: the countdown,
   then 5, 10 or 15 minutes.
 
@@ -187,6 +189,8 @@ APK yourself.
    needs: two permissions (accessibility, usage access) and your home app.
    If another app later takes over as home, Jitter says so: one line on the
    console, and a row in CFG's SETUP section that opens the home app settings.
+   If its accessibility service stops running for more than a few seconds,
+   the console says that too.
 
 **Moving from the old tester build (`dev.molasses`)?** Uninstall it first. It
 is a separate app to Android, and its data does not carry over.
