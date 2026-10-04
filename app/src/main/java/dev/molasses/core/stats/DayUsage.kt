@@ -1,5 +1,7 @@
 package dev.molasses.core.stats
 
+import dev.molasses.core.time.ForegroundIntervals
+
 /**
  * Per-app foreground milliseconds over an arbitrary window, from the system's
  * own event stream.
@@ -22,19 +24,20 @@ package dev.molasses.core.stats
  *     minutes may be missing entirely while yesterday's are double counted.
  *
  * `queryEvents` has none of that: it is a raw, timestamped stream, and the
- * pairing arithmetic here clips every interval to the window.
+ * pairing clips every interval to the window.
  *
- * ## Why this is not [ForegroundReplay][dev.molasses.core.time.ForegroundReplay]
- * That one answers a different question. It replays only the monitored
- * targets, to reconcile a session the process died in the middle of, and it
- * deliberately *drops* a PAUSED with no matching RESUMED because the interval
- * before the window was already counted in `accumulated_ms`.
+ * ## What it shares with [ForegroundReplay][dev.molasses.core.time.ForegroundReplay]
+ * The pairing. Both read [ForegroundIntervals], so an interval is bounded the
+ * same way in the ledger as in the reconciler's credit, and an interval with
+ * no close of its own cannot run to the moment of reading in one and not the
+ * other.
  *
- * Here the window is the day and there is no prior accounting, so the same
- * event means the opposite: an app that was in front before midnight is owed
- * its time from midnight to the pause. Merging the two functions would mean a
- * flag that reverses the meaning of an event, which is how one of them ends
- * up wrong.
+ * They differ in what one event means: a close with nothing before it. Here
+ * the window is the day and there is no prior accounting, so an app that was
+ * in front before midnight is owed its time from midnight, bounded like any
+ * other interval. There, the interval before the window was already counted
+ * in `accumulated_ms`. Each caller names its answer, as
+ * [ForegroundIntervals.Orphan], so neither inherits the other's by default.
  *
  * Pure, so `DayUsageTest` can exercise the cases a synthetic `UsageEvents`
  * stream cannot: its `Event` has no public constructor.
@@ -55,10 +58,6 @@ object DayUsage {
      * opens because that is what a visit is to the person having it.
      */
     const val VISIT_GAP_MS = 2_000L
-
-    enum class Kind { RESUMED, PAUSED }
-
-    data class Transition(val pkg: String, val kind: Kind, val wallMs: Long)
 
     data class Entry(
         val pkg: String,
@@ -112,77 +111,47 @@ object DayUsage {
     }
 
     /**
-     * @param transitions need not be sorted and need not be balanced.
-     * @param exclude packages to leave out entirely. The launcher's own
-     *   package belongs here.
+     * @param events need not be sorted and need not be balanced. Every
+     *   package's, not only the ones being asked about: another app's resume
+     *   is what bounds an interval whose own close never arrived.
+     * @param interactiveNow the screen is interactive at [windowEndMs]. See
+     *   [ForegroundIntervals] for why it matters.
+     * @param exclude packages to leave out of the result. The launcher's own
+     *   package belongs here. They still bound everyone else's intervals: the
+     *   console in front means nothing else is.
      */
     fun replay(
-        transitions: List<Transition>,
+        events: List<ForegroundIntervals.Event>,
         windowStartMs: Long,
         windowEndMs: Long,
+        interactiveNow: Boolean,
         exclude: Set<String> = emptySet(),
     ): Result {
-        require(windowEndMs >= windowStartMs) {
-            "windowEndMs ($windowEndMs) precedes windowStartMs ($windowStartMs)"
-        }
+        // The pairing, and every bound on it, is the shared rule. An app in
+        // front across the window start is owed its time from the start, so
+        // a close with nothing before it is credited from there.
+        val intervals = ForegroundIntervals.bound(
+            events = events,
+            windowStartMs = windowStartMs,
+            windowEndMs = windowEndMs,
+            interactiveNow = interactiveNow,
+            orphan = ForegroundIntervals.Orphan.CREDIT_FROM_WINDOW_START,
+        ).filter { it.pkg !in exclude }
 
         val totals = mutableMapOf<String, Long>()
-        // Per package, because the stream interleaves: A resumed, B resumed,
-        // A paused is an ordinary sequence when an app hands off to another.
-        val openSince = mutableMapOf<String, Long>()
-        val seen = mutableSetOf<String>()
         val opens = mutableMapOf<String, Int>()
-        /** When each package was last not in front, for the visit rule. */
-        val lastClosed = mutableMapOf<String, Long>()
-
-        val ordered = transitions
-            .filter { it.pkg.isNotEmpty() && it.pkg !in exclude }
-            .sortedWith(compareBy({ it.wallMs }, { it.kind.ordinal }))
-
-        for (t in ordered) {
-            val at = t.wallMs.coerceIn(windowStartMs, windowEndMs)
-            when (t.kind) {
-                Kind.RESUMED -> {
-                    if (t.pkg !in openSince) {
-                        val closed = lastClosed[t.pkg]
-                        if (closed == null || at - closed >= VISIT_GAP_MS) {
-                            opens[t.pkg] = (opens[t.pkg] ?: 0) + 1
-                        }
-                    }
-                    // A second RESUMED with no PAUSED between (an app
-                    // recreating its task) keeps the earlier timestamp, so
-                    // the interval is not silently dropped.
-                    openSince.putIfAbsent(t.pkg, at)
-                }
-                Kind.PAUSED -> {
-                    // A PAUSED whose RESUMED is the first thing we know about
-                    // this package happened before the window opened. Credit
-                    // from the window start, clipped: that is the part of the
-                    // interval that falls inside today.
-                    val from = openSince.remove(t.pkg)
-                        ?: if (t.pkg in seen) {
-                            null
-                        } else {
-                            // In front since before the window opened. That
-                            // is a visit the user is having inside it, so it
-                            // counts as one.
-                            opens[t.pkg] = (opens[t.pkg] ?: 0) + 1
-                            windowStartMs
-                        }
-                    if (from != null && at > from) {
-                        totals[t.pkg] = (totals[t.pkg] ?: 0L) + (at - from)
-                    }
-                    if (from != null) lastClosed[t.pkg] = at
-                }
+        for ((pkg, list) in intervals.groupBy { it.pkg }) {
+            totals[pkg] = list.sumOf { it.ms }
+            // A visit is an interval more than the gap after the one before
+            // it. Zero-length intervals take part, as a resume always did.
+            var lastEnd: Long? = null
+            var count = 0
+            for (i in list.sortedBy { it.startMs }) {
+                val prev = lastEnd
+                if (prev == null || i.startMs - prev >= VISIT_GAP_MS) count++
+                lastEnd = maxOf(prev ?: i.endMs, i.endMs)
             }
-            seen += t.pkg
-        }
-
-        // Whatever is still open ran up to the moment we looked.
-        for ((pkg, from) in openSince) {
-            if (windowEndMs > from) {
-                totals[pkg] = (totals[pkg] ?: 0L) + (windowEndMs - from)
-            }
+            opens[pkg] = count
         }
 
         val apps = totals

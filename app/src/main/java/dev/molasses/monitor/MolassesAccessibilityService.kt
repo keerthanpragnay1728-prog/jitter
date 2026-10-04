@@ -1180,21 +1180,16 @@ class MolassesAccessibilityService : AccessibilityService() {
             set(java.util.Calendar.MILLISECOND, 0)
         }.timeInMillis
         val endMs = wall.wallMs()
-        val events = usm.queryEvents(startOfDay, endMs)
-        val event = android.app.usage.UsageEvents.Event()
-        val transitions = mutableListOf<DayUsage.Transition>()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            if (event.packageName != pkg) continue
-            val kind = when (event.eventType) {
-                android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED -> DayUsage.Kind.RESUMED
-                android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED -> DayUsage.Kind.PAUSED
-                else -> null
-            } ?: continue
-            transitions += DayUsage.Transition(pkg, kind, event.timeStamp)
-        }
-        DayUsage.replay(transitions, startOfDay, endMs).entry(pkg)
+        // Every package's events, not only this one's: another app's resume
+        // or the screen going off is what bounds an interval whose own close
+        // never came. See ForegroundIntervals.
+        val events = usm.foregroundEvents(startOfDay, endMs)
+        DayUsage.replay(events, startOfDay, endMs, interactiveNow = isInteractive()).entry(pkg)
     }.getOrNull()
+
+    /** The screen is interactive now. Unknown reads as not, so an open interval is not run to now on a guess. */
+    private fun isInteractive(): Boolean =
+        getSystemService(android.os.PowerManager::class.java)?.isInteractive ?: false
 
     /**
      * True when nothing may be drawn on screen, for any reason.

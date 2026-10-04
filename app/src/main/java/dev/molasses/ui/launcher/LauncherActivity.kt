@@ -11,6 +11,7 @@ import android.os.BatteryManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import android.provider.Settings
@@ -157,6 +158,7 @@ import dev.molasses.data.repo.CycleReadout
 import dev.molasses.data.repo.SettingsRepository
 import dev.molasses.monitor.ReminderAlarms
 import dev.molasses.monitor.ServiceDiagnostics
+import dev.molasses.monitor.foregroundEvents
 import dev.molasses.ui.canResolve
 import dev.molasses.ui.lock.lockOpensAtText
 import dev.molasses.ui.settings.SettingsActivity
@@ -2247,7 +2249,13 @@ fun TextualWellbeingView(
         // first frame of the ledger page. The previous call was a single
         // aggregate read and got away with running here.
         val day = withContext(Dispatchers.Default) {
-            readDayUsage(usm, startOfDay, now, exclude = setOf(context.packageName))
+            readDayUsage(
+                usm, startOfDay, now,
+                exclude = setOf(context.packageName),
+                // Unknown reads as not interactive, so an open interval is not
+                // run to now on a guess.
+                interactiveNow = context.getSystemService(PowerManager::class.java)?.isInteractive ?: false,
+            )
         }
         // Every value is assigned on every read, so a refresh can clear a
         // row as well as add one. Null (no grant, failed query) and an empty
@@ -2499,23 +2507,11 @@ private fun readDayUsage(
     startMs: Long,
     endMs: Long,
     exclude: Set<String>,
+    interactiveNow: Boolean,
 ): DayUsage.Result? = try {
-    val events = usm.queryEvents(startMs, endMs)
-    val event = UsageEvents.Event()
-    val transitions = mutableListOf<DayUsage.Transition>()
-    while (events.hasNextEvent()) {
-        events.getNextEvent(event)
-        val kind = when (event.eventType) {
-            UsageEvents.Event.ACTIVITY_RESUMED -> DayUsage.Kind.RESUMED
-            UsageEvents.Event.ACTIVITY_PAUSED -> DayUsage.Kind.PAUSED
-            else -> null
-        }
-        val pkg = event.packageName
-        if (kind != null && pkg != null) {
-            transitions += DayUsage.Transition(pkg, kind, event.timeStamp)
-        }
-    }
-    DayUsage.replay(transitions, startMs, endMs, exclude)
+    // The shared reader and the shared bounding rule, the same as the gate's
+    // "today" and the reconciler. See ForegroundIntervals.
+    DayUsage.replay(usm.foregroundEvents(startMs, endMs), startMs, endMs, interactiveNow, exclude)
 } catch (e: SecurityException) {
     null
 } catch (e: Exception) {
