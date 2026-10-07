@@ -19,15 +19,51 @@ class GatePlayheadWiringTest {
     private val manager by lazy { repoFile("app/src/main/java/dev/molasses/overlay/LeaseGateOverlayManager.kt").readText() }
 
     @Test
-    fun `the playhead reads the same remaining value that drives the numeral`() {
+    fun `the playhead is first and the numeral under it, from the same remaining value`() {
+        val call = gate.indexOf("Playhead(\n                    remainingSec = fields.remainingSec,\n                    totalSec = countdownTotalSec,")
         val numeral = gate.indexOf("text = fields.countdown,")
-        val call = gate.indexOf("Playhead(remainingSec = fields.remainingSec, totalSec = countdownTotalSec)")
-        assertTrue("the numeral is drawn from fields", numeral >= 0)
-        assertTrue("directly under the numeral, in the same branch", call > numeral)
+        assertTrue("the playhead is drawn from fields", call >= 0)
+        assertTrue("the numeral is under it, in the same branch", numeral > call)
         // Both from one Fields, built once per tick by GateReadout.fields.
         val countdownBranch = gate.substring(gate.indexOf("} else {", gate.indexOf("if (controls.leases) {")))
-        assertTrue(countdownBranch.indexOf("Playhead(") < countdownBranch.indexOf("\n            }\n"))
+        assertTrue(countdownBranch.indexOf("Playhead(") < countdownBranch.indexOf("text = fields.countdown,"))
+        assertTrue(countdownBranch.indexOf("text = fields.countdown,") < countdownBranch.indexOf("\n            }\n"))
         assertTrue(playhead.contains("GatePlayhead.playhead(remainingSec, totalSec)"))
+        // Both centred.
+        val numeralBlock = countdownBranch.substring(countdownBranch.indexOf("text = fields.countdown,")).substringBefore(")")
+        assertTrue(numeralBlock.contains("textAlign = TextAlign.Center,"))
+        assertTrue(playhead.contains("textAlign = TextAlign.Center,"))
+    }
+
+    @Test
+    fun `the track is sized once from the gate's width, never wraps, and the numeral is about half its old size`() {
+        assertTrue(gate.contains("BoxWithConstraints("))
+        assertTrue(gate.contains("val gateWidth = maxWidth"))
+        assertTrue(gate.contains("val playheadSp = remember(gateWidth, countdownTotalSec, systemFontScale) {"))
+        assertTrue(gate.contains("GatePlayhead.fontSizeSp(gateWidth.value, countdownTotalSec + 1, systemFontScale)"))
+        assertTrue(gate.contains("val systemFontScale = LocalDensity.current.fontScale"))
+        assertTrue(gate.contains("width = gateWidth - (GatePlayhead.GUTTER_DP * 2).dp,"))
+        assertTrue(playhead.contains("fontSize = fontSizeSp.sp,"))
+        assertTrue(playhead.contains(".requiredWidth(width)"))
+        assertTrue(playhead.contains("maxLines = 1,"))
+        assertTrue(playhead.contains("softWrap = false,"))
+        // The numeral: about half of 44 sp, and larger than the track's cap
+        // and every other text on the gate but Bit's face.
+        val numeralSp = Regex("""text = fields\.countdown,[\s\S]*?fontSize = (\d+)\.sp""").find(gate)!!.groupValues[1].toInt()
+        assertEquals(24, numeralSp)
+        assertTrue(numeralSp > GatePlayhead.MAX_SP)
+        val others = Regex("""fontSize = (\d+)\.sp""").findAll(screen).map { it.groupValues[1].toInt() }.toList()
+        val face = Regex("""text = fields\.face,[\s\S]*?fontSize = (\d+)\.sp""").find(gate)!!.groupValues[1].toInt()
+        assertEquals("the largest but the face", numeralSp, (others - face).maxOrNull())
+    }
+
+    @Test
+    fun `TalkBack reads the numeral, not the track`() {
+        val countdownBranch = gate.substring(gate.indexOf("} else {", gate.indexOf("if (controls.leases) {")))
+        val numeralBlock = countdownBranch.substring(countdownBranch.indexOf("text = fields.countdown,")).substringBefore("\n                )")
+        assertFalse(numeralBlock.contains("clearAndSetSemantics"))
+        assertFalse(numeralBlock.contains("semantics"))
+        assertTrue(playhead.contains(".clearAndSetSemantics { },"))
     }
 
     @Test
@@ -64,7 +100,7 @@ class GatePlayheadWiringTest {
         for (input in listOf("clickable", "pointerInput", "onClick", "combinedClickable", "selectable", "toggleable")) {
             assertFalse(input, playhead.contains(input))
         }
-        assertTrue(playhead.contains("modifier = Modifier.clearAndSetSemantics { },"))
+        assertTrue(playhead.contains(".clearAndSetSemantics { },"))
         assertTrue(playhead.contains("color = PhosphorDim,"))
         assertTrue(playhead.contains("SpanStyle(color = PhosphorGreen)"))
         assertFalse(Regex("""0x[0-9A-Fa-f]{6,8}""").containsMatchIn(playhead))

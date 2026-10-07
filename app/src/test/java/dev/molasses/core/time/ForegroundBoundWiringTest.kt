@@ -26,10 +26,13 @@ class ForegroundBoundWiringTest {
         .replace(Regex("""//[^\n]*"""), "")
 
     @Test
-    fun `one reader maps the event types, a stop closing as a pause does`() {
+    fun `one reader maps the event types, with the class of each activity`() {
         val fn = functionBody(reader, "fun UsageStatsManager.foregroundEvents(")
         assertTrue(fn.contains("UsageEvents.Event.ACTIVITY_RESUMED -> ForegroundIntervals.Kind.RESUMED"))
-        assertTrue(fn.contains("UsageEvents.Event.ACTIVITY_PAUSED,\n            UsageEvents.Event.ACTIVITY_STOPPED -> ForegroundIntervals.Kind.CLOSED"))
+        assertTrue(fn.contains("UsageEvents.Event.ACTIVITY_PAUSED -> ForegroundIntervals.Kind.PAUSED"))
+        assertTrue(fn.contains("UsageEvents.Event.ACTIVITY_STOPPED -> ForegroundIntervals.Kind.STOPPED"))
+        assertTrue("each activity event carries its class", fn.contains("val cls = if (activity) event.className.orEmpty() else \"\""))
+        assertTrue(fn.contains("ForegroundIntervals.Event(kind, event.timeStamp, pkg, cls)"))
         assertTrue(fn.contains("UsageEvents.Event.SCREEN_NON_INTERACTIVE -> ForegroundIntervals.Kind.SCREEN_OFF"))
         assertTrue(fn.contains("UsageEvents.Event.KEYGUARD_SHOWN -> ForegroundIntervals.Kind.KEYGUARD_SHOWN"))
         assertTrue(fn.contains("UsageEvents.Event.DEVICE_SHUTDOWN -> ForegroundIntervals.Kind.SHUTDOWN"))

@@ -26,6 +26,7 @@ import dev.molasses.core.lock.PrefixLock
 import dev.molasses.core.lock.TargetLock
 import dev.molasses.core.model.AppSnapshot
 import dev.molasses.core.model.EngineSnapshot
+import dev.molasses.core.session.DefaultTargets
 import dev.molasses.core.session.TargetScope
 import dev.molasses.core.settings.UntrackSunset
 import dev.molasses.core.time.StampedInstant
@@ -171,14 +172,30 @@ class CycleStateStore(context: Context) {
      * set". Renumbering the enum would reinterpret every stored file instead,
      * which is worse. A user who has explicitly chosen abstinence after the
      * migration keeps it, because [schemaVersion] is already 1 by then.
+     *
+     * Version 2 adds Snapchat to an install still on the old default targets
+     * and never chosen. See `DefaultTargets.migrate` for who moves and why
+     * nobody else does.
+     *
+     * Each step runs only for a file older than it, so a version 1 install
+     * gets the targets step and not the policy step again: that would undo a
+     * policy chosen since.
      */
     suspend fun migrate() {
         store.updateData { old ->
             if (old.schemaVersion >= SCHEMA_VERSION) return@updateData old
-            old.toBuilder()
-                .setResetPolicy(CycleResetPolicyProto.FIXED_WINDOW_6H)
-                .setSchemaVersion(SCHEMA_VERSION)
-                .build()
+            val b = old.toBuilder()
+            if (old.schemaVersion < 1) {
+                b.setResetPolicy(CycleResetPolicyProto.FIXED_WINDOW_6H)
+            }
+            if (old.schemaVersion < 2) {
+                val selection = TargetScope.Selection(
+                    stored = old.targetPackagesList,
+                    chosen = old.targetsChosen,
+                )
+                DefaultTargets.migrate(selection)?.let { b.clearTargetPackages().addAllTargetPackages(it) }
+            }
+            b.setSchemaVersion(SCHEMA_VERSION).build()
         }
     }
 
@@ -761,7 +778,7 @@ class CycleStateStore(context: Context) {
 
     companion object {
         /** Bump alongside a new branch in [migrate]. */
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
     }
 }
 

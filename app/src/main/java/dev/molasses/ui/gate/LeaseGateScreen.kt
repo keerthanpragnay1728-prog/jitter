@@ -3,7 +3,7 @@ package dev.molasses.ui.gate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.SpanStyle
@@ -23,6 +26,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
@@ -98,12 +102,20 @@ fun LeaseGateScreen(
     onOpenBlock: () -> Unit,
     onBlock: (durationMs: Long) -> Unit,
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(JitterBackground),
         contentAlignment = Alignment.Center,
     ) {
+        // The track's size, from the gate's own width, measured here once and
+        // again only if the width changes. The largest that keeps every
+        // column on one line inside the gutters. See GatePlayhead.fontSizeSp.
+        val gateWidth = maxWidth
+        val systemFontScale = LocalDensity.current.fontScale
+        val playheadSp = remember(gateWidth, countdownTotalSec, systemFontScale) {
+            GatePlayhead.fontSizeSp(gateWidth.value, countdownTotalSec + 1, systemFontScale)
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -147,17 +159,26 @@ fun LeaseGateScreen(
             if (controls.leases) {
                 DecisionPanel(onTakeLease = onTakeLease)
             } else {
+                // The track first and the numeral under it, both centred. The
+                // same whole-second value drives both, read from the same
+                // Fields, so the two move together once a second.
+                Playhead(
+                    remainingSec = fields.remainingSec,
+                    totalSec = countdownTotalSec,
+                    fontSizeSp = playheadSp,
+                    width = gateWidth - (GatePlayhead.GUTTER_DP * 2).dp,
+                )
+                Spacer(Modifier.height(8.dp))
+                // About half its old 44 sp, and still the largest text on the
+                // gate: it is what TalkBack reads, the track is not.
                 Text(
                     text = fields.countdown,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 44.sp,
+                    fontSize = 24.sp,
                     color = PhosphorGreen,
+                    textAlign = TextAlign.Center,
                 )
-                // The same whole-second value the numeral prints, read from
-                // the same Fields, so the two move together once a second.
-                Spacer(Modifier.height(6.dp))
-                Playhead(remainingSec = fields.remainingSec, totalSec = countdownTotalSec)
             }
 
             // Outside the leases branch on purpose: both are there from the
@@ -186,7 +207,8 @@ fun LeaseGateScreen(
 
 /**
  * The countdown's playhead: a dim dashed track with a green marker that
- * steps one column left per whole second. See `GatePlayhead`.
+ * steps one column left per whole second, above the numeral. Sized by
+ * `GatePlayhead.fontSizeSp` for [width], so it never wraps. See `GatePlayhead`.
  *
  * Display only. Not clickable and no pointer input, and hidden from TalkBack,
  * because the numeral above it already says how long is left and a line of
@@ -194,7 +216,7 @@ fun LeaseGateScreen(
  * when the tick recomposes the screen, and only then.
  */
 @Composable
-private fun Playhead(remainingSec: Int, totalSec: Int) {
+private fun Playhead(remainingSec: Int, totalSec: Int, fontSizeSp: Float, width: Dp) {
     val line = GatePlayhead.playhead(remainingSec, totalSec)
     Text(
         text = buildAnnotatedString {
@@ -207,12 +229,17 @@ private fun Playhead(remainingSec: Int, totalSec: Int) {
             }
         },
         fontFamily = FontFamily.Monospace,
-        fontSize = 14.sp,
+        fontSize = fontSizeSp.sp,
         color = PhosphorDim,
         textAlign = TextAlign.Center,
         maxLines = 1,
         softWrap = false,
-        modifier = Modifier.clearAndSetSemantics { },
+        // The gate's width less the 16 dp gutters, wider than the column it
+        // sits in: requiredWidth lets it out past the column's padding,
+        // centred, so the size computed for that width is the size drawn.
+        modifier = Modifier
+            .requiredWidth(width)
+            .clearAndSetSemantics { },
     )
 }
 

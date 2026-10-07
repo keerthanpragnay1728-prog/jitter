@@ -15,7 +15,7 @@ class DayUsageTest {
     private val now = midnight + 12 * hour
 
     private fun on(pkg: String, at: Long) = Event(Kind.RESUMED, at, pkg)
-    private fun off(pkg: String, at: Long) = Event(Kind.CLOSED, at, pkg)
+    private fun off(pkg: String, at: Long) = Event(Kind.PAUSED, at, pkg)
 
     /** The ledger's question, read with the screen on unless a test says otherwise. */
     private fun replay(
@@ -304,7 +304,7 @@ class DayUsageOpensTest {
     private val now = midnight + 12 * hour
 
     private fun on(pkg: String, at: Long) = Event(Kind.RESUMED, at, pkg)
-    private fun off(pkg: String, at: Long) = Event(Kind.CLOSED, at, pkg)
+    private fun off(pkg: String, at: Long) = Event(Kind.PAUSED, at, pkg)
 
     /** The ledger's question, read with the screen on unless a test says otherwise. */
     private fun replay(

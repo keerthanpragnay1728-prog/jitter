@@ -282,6 +282,13 @@
     <string name="debug_none_recorded">(none recorded)</string>
 
     <string name="debug_section_state_editor">Set state (debug build only)</string>
+    <string name="debug_section_screen_time">Screen time today, ours against the system (debug build only)</string>
+    <string name="debug_screen_time_reading">reading</string>
+    <string name="debug_screen_time_unavailable">No usage access, or the read failed.</string>
+    <string name="debug_field_screen_time_ours" translatable="false">ours</string>
+    <string name="debug_field_screen_time_system" translatable="false">system</string>
+    <string name="debug_field_screen_time_gap" translatable="false">gap</string>
+    <string name="debug_screen_time_gap_fmt" translatable="false">%1$s, ours is %2$s of the system</string>
     <string name="debug_state_editor_note">Writes accumulated time and tier index straight into the store and rebuilds the engine, so any point on the friction curve can be reached without waiting for it. Any open session is dropped.</string>
     <string name="debug_state_editor_pkg">Package</string>
     <string name="debug_state_editor_minutes">Accumulated minutes</string>

@@ -2,9 +2,10 @@
 
 **Makes your most distracting apps slower the longer you use them.**
 
-Jitter is a home screen and a set of speed bumps for Android. Instagram, X and
-YouTube are never blocked: the longer you stay in one inside a six-hour cycle,
-the more the phone feels like it is failing.
+Jitter is a home screen and a set of speed bumps for Android. Instagram, X,
+YouTube and Snapchat, the apps it tracks until you choose your own, are never
+blocked: the longer you stay in one inside a six-hour cycle, the more the phone
+feels like it is failing.
 
 ![Release](https://img.shields.io/badge/release-v1.0.3-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)

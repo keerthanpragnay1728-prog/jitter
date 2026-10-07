@@ -76,11 +76,7 @@ class AccessibilityConfigTest {
     @Test
     fun `the monitored targets stay in packageNames`() {
         val packages = attr("packageNames")!!.split(",").map { it.trim() }
-        for (target in listOf(
-            "com.instagram.android",
-            "com.twitter.android",
-            "com.google.android.youtube",
-        )) {
+        for (target in dev.molasses.core.session.DefaultTargets.CURRENT) {
             assertTrue("$target missing from packageNames", target in packages)
         }
     }

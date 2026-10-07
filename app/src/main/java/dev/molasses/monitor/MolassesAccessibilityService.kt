@@ -20,6 +20,7 @@ import dev.molasses.core.lease.GateHandover
 import dev.molasses.core.lease.GatePolicy
 import dev.molasses.core.lease.LaunchGate
 import dev.molasses.core.lease.LeaseExpiryCheck
+import dev.molasses.core.lease.LeaseExpirySlot
 import dev.molasses.core.lease.LeaseManager
 import dev.molasses.core.lock.LockEnforcement
 import dev.molasses.core.lock.GateBlock
@@ -182,6 +183,12 @@ class MolassesAccessibilityService : AccessibilityService() {
      */
     private val leaseExpiryHandler = Handler(Looper.getMainLooper())
     private var leaseExpiryCheck: Runnable? = null
+
+    /**
+     * Whose check is pending, and every decision to set, keep or drop it.
+     * Main thread only, with the Handler above. See [LeaseExpirySlot].
+     */
+    private val leaseExpirySlot = LeaseExpirySlot()
 
     /** The configured gate mode. Only in force at the terminal tier. */
     @Volatile
@@ -405,7 +412,7 @@ class MolassesAccessibilityService : AccessibilityService() {
                 // open again, gets its check back. See LeaseExpiryCheck.
                 val open = sessions.openPkg
                 val remaining = open?.let { leases.remainingMs(it, nowStamped()) } ?: 0L
-                applyLeaseExpiryPlan(LeaseExpiryCheck.onConnect(open, remaining), "connect")
+                applyLeaseExpiry(leaseExpirySlot.connect(open, remaining))
             }
             ServiceDiagnostics.onReady()
             Log.i(TAG, "ready: accepting events")
@@ -493,7 +500,7 @@ class MolassesAccessibilityService : AccessibilityService() {
             // ordinary in-memory work on the thread that reads it.
             onCycleRolled = {
                 leases = LeaseManager()
-                cancelLeaseExpiry("rollover")
+                applyLeaseExpiry(leaseExpirySlot.clear("rollover"))
                 scope.launch { cycleStore.clearLeases() }
             },
         )
@@ -987,39 +994,47 @@ class MolassesAccessibilityService : AccessibilityService() {
 
     // ------------------------------------------------------- lease expiry
 
-    /** Schedule [pkg]'s check if it holds a live lease, replacing any pending one. */
-    private fun armLeaseExpiry(pkg: String, why: String) {
-        cancelLeaseExpiry("rearm: $why")
-        applyLeaseExpiryPlan(LeaseExpiryCheck.plan(pkg, leases.remainingMs(pkg, nowStamped())), why)
+    /**
+     * Carry out one of [leaseExpirySlot]'s decisions on the Handler, and log
+     * it with its reason. A kept check is logged only while one is pending,
+     * since every window change in a target app passes through here.
+     */
+    private fun applyLeaseExpiry(action: LeaseExpirySlot.Action) {
+        when (action) {
+            is LeaseExpirySlot.Action.Schedule -> postLeaseExpiry(action.pkg, action.delayMs, action.why)
+            is LeaseExpirySlot.Action.Cancel -> {
+                removeLeaseExpiryCheck()
+                Log.i(LEASE_EXPIRY_TAG, "cancelled pkg=${action.pkg} (${action.why})")
+            }
+            is LeaseExpirySlot.Action.Keep ->
+                if (leaseExpirySlot.pending != null) Log.i(LEASE_EXPIRY_TAG, "kept (${action.why})")
+        }
     }
 
-    private fun applyLeaseExpiryPlan(plan: LeaseExpiryCheck.Plan, why: String) {
-        if (plan is LeaseExpiryCheck.Plan.Schedule) scheduleLeaseExpiry(plan.pkg, plan.delayMs, why)
-    }
-
-    private fun scheduleLeaseExpiry(pkg: String, delayMs: Long, why: String) {
+    /** Post the one check, replacing any pending one. */
+    private fun postLeaseExpiry(pkg: String, delayMs: Long, why: String) {
+        removeLeaseExpiryCheck()
         val check = Runnable { onLeaseExpiryCheck(pkg) }
         leaseExpiryCheck = check
         leaseExpiryHandler.postDelayed(check, delayMs)
         Log.i(LEASE_EXPIRY_TAG, "scheduled pkg=$pkg delay=${delayMs}ms ($why)")
     }
 
-    private fun cancelLeaseExpiry(reason: String) {
-        val check = leaseExpiryCheck ?: return
-        leaseExpiryHandler.removeCallbacks(check)
+    private fun removeLeaseExpiryCheck() {
+        leaseExpiryCheck?.let { leaseExpiryHandler.removeCallbacks(it) }
         leaseExpiryCheck = null
-        Log.i(LEASE_EXPIRY_TAG, "cancelled ($reason)")
     }
 
     /** The check fired. Re-reads the open session and the lease; trusts neither the schedule nor its time. */
     private fun onLeaseExpiryCheck(pkg: String) {
         leaseExpiryCheck = null
         if (!ready) {
+            leaseExpirySlot.clear("fired before ready")
             Log.i(LEASE_EXPIRY_TAG, "fired pkg=$pkg stillOpen=unknown gateRaised=no (not ready)")
             return
         }
         val open = sessions.openPkg
-        when (val fire = LeaseExpiryCheck.onFire(pkg, open, leases.remainingMs(pkg, nowStamped()))) {
+        when (val fire = leaseExpirySlot.fire(pkg, open, leases.remainingMs(pkg, nowStamped()))) {
             LeaseExpiryCheck.Fire.RaiseGate -> {
                 // The ordinary path, the one a scroll takes, including its
                 // suppression check: a sensitive app or a pause still wins.
@@ -1028,10 +1043,13 @@ class MolassesAccessibilityService : AccessibilityService() {
             }
             is LeaseExpiryCheck.Fire.Reschedule -> {
                 Log.i(LEASE_EXPIRY_TAG, "fired pkg=$pkg stillOpen=yes gateRaised=no (lease has ${fire.delayMs}ms left)")
-                scheduleLeaseExpiry(pkg, fire.delayMs, "time left at fire")
+                postLeaseExpiry(pkg, fire.delayMs, "time left at fire")
             }
+            // The last foreground the service saw, beside the open session:
+            // a session closed while the app was still in front reads as
+            // open=null foreground=pkg, which is the case to look for.
             is LeaseExpiryCheck.Fire.Skip ->
-                Log.i(LEASE_EXPIRY_TAG, "fired pkg=$pkg stillOpen=no gateRaised=no (open=$open)")
+                Log.i(LEASE_EXPIRY_TAG, "fired pkg=$pkg stillOpen=no gateRaised=no (open=$open foreground=$foregroundPkg)")
         }
     }
 
@@ -1060,8 +1078,10 @@ class MolassesAccessibilityService : AccessibilityService() {
         // than fix it.
         leases = leases.grant(pkg, now, durationMs, accumulated)
         // One check at the deadline, so an expiry is noticed without a
-        // scroll. Replaces any check already pending.
-        armLeaseExpiry(pkg, "new grant")
+        // scroll. Set whatever is open: a lease chosen on a gate over the
+        // launcher is granted before its app is relaunched, and nothing on
+        // the way back may drop it. Replaces any check already pending.
+        applyLeaseExpiry(leaseExpirySlot.grant(pkg, sessions.openPkg, leases.remainingMs(pkg, nowStamped())))
         // Re-attach: the user is in the app with permission now, and the
         // shutter came down when the gate went up.
         if (!overlaysSuppressed()) {
@@ -1307,10 +1327,10 @@ class MolassesAccessibilityService : AccessibilityService() {
             armWatchdog(pkg, id)
             return
         }
-        // Let through, and possibly on a lease still running from an earlier
-        // visit: that lease needs its expiry check again, since leaving
-        // cancelled it. A no-op without a live lease.
-        armLeaseExpiry(pkg, "enter")
+        // Let through, and possibly on a lease. A check set at the grant is
+        // kept, never re-armed here; a lease from an earlier visit, whose
+        // check went when the user left, gets one. See LeaseExpirySlot.
+        applyLeaseExpiry(leaseExpirySlot.enter(pkg, leases.remainingMs(pkg, nowStamped())))
 
         shutter.setCurrentPackage(pkg)
         if (!overlaysSuppressed()) shutter.attach()
@@ -1415,7 +1435,10 @@ class MolassesAccessibilityService : AccessibilityService() {
      */
     private fun leaveTarget(id: ForegroundSessionTracker.SessionId, reason: String) {
         val pkg = sessions.close(id) ?: return
-        cancelLeaseExpiry("left $pkg ($reason)")
+        // Drops the check only if it is this app's and the app has opened
+        // since it was set. A late leave of the session before the grant
+        // keeps it. See LeaseExpirySlot.
+        applyLeaseExpiry(leaseExpirySlot.leave(pkg, reason))
         watchdogJob?.cancel()
         watchdogJob = null
         engine.onForegroundExit(pkg, now())
@@ -1649,7 +1672,7 @@ class MolassesAccessibilityService : AccessibilityService() {
 
     private fun teardown() {
         ready = false
-        cancelLeaseExpiry("teardown")
+        applyLeaseExpiry(leaseExpirySlot.clear("teardown"))
         homeFirstWatchJob?.cancel()
         ServiceDiagnostics.onDestroyed()
         sessions.closeCurrent()

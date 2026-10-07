@@ -35,7 +35,7 @@ class ForegroundReplayTest {
         val r = replay(
             transitions = listOf(
                 Transition(ig, Kind.RESUMED, t0),
-                Transition(ig, Kind.CLOSED, t0 + 90_000),
+                Transition(ig, Kind.PAUSED, t0 + 90_000),
             ),
             windowStartMs = t0,
             windowEndMs = t0 + 120_000,
@@ -55,7 +55,7 @@ class ForegroundReplayTest {
         val r = replay(
             transitions = listOf(
                 Transition(yt, Kind.RESUMED, t0 + 5_000),
-                Transition(yt, Kind.CLOSED, t0 + 15_000),
+                Transition(yt, Kind.PAUSED, t0 + 15_000),
             ),
             windowStartMs = t0,
             windowEndMs = t0 + 200_000,
@@ -124,6 +124,32 @@ class ForegroundReplayTest {
     }
 
     @Test
+    fun `the reconciler credits in-app navigation fully, and no more than the bound`() {
+        // Died mid-session in Instagram; the user moved between three screens
+        // for ten minutes, then went home.
+        val events = mutableListOf<Event>()
+        val screens = listOf("Feed", "Profile", "Reel")
+        for (i in 1..9) {
+            val at = t0 + i * 60_000L
+            val from = screens[(i - 1) % 3]
+            val to = screens[i % 3]
+            events += Event(Kind.PAUSED, at, ig, from)
+            events += Event(Kind.RESUMED, at + 20, ig, to)
+            events += Event(Kind.STOPPED, at + 400, ig, from)
+        }
+        events += Event(Kind.PAUSED, t0 + 600_000, ig, screens[0])
+        events += Event(Kind.RESUMED, t0 + 600_020, "org.jitteros.app", "Launcher")
+        val r = replay(events, t0, t0 + 3_600_000, targets, assumeOpenPkg = ig)
+        // The seed's unknown activity closes at the first pause; from the next
+        // resume on the app is in front through every screen change, less the
+        // 20 ms between each pause and the next resume, nine of them.
+        assertEquals(600_000L - 9 * 20, r.foregroundMsByPkg[ig])
+        val bounded = ForegroundIntervals.bound(events, t0, t0 + 3_600_000, true, ForegroundIntervals.Orphan.DROP, ig)
+        assertTrue(r.foregroundMsByPkg.getValue(ig) <= bounded.filter { it.pkg == ig }.sumOf { it.ms })
+        assertNull(r.stillOpenPkg)
+    }
+
+    @Test
     fun `a reconciler credit can never exceed the bounded interval`() {
         // Over many shapes of stream: what the reconciler credits a target is
         // exactly what the shared bound gives it, and all targets together
@@ -136,7 +162,7 @@ class ForegroundReplayTest {
                 val at = t0 + rnd.nextLong(-60_000, 3_700_000)
                 when (rnd.nextInt(5)) {
                     0, 1 -> Transition(pkgs.random(rnd), Kind.RESUMED, at)
-                    2 -> Transition(pkgs.random(rnd), Kind.CLOSED, at)
+                    2 -> Transition(pkgs.random(rnd), Kind.PAUSED, at)
                     3 -> Event(Kind.SCREEN_OFF, at)
                     else -> Event(Kind.KEYGUARD_SHOWN, at)
                 }
@@ -194,7 +220,7 @@ class ForegroundReplayTest {
     @Test
     fun `a death mid-session followed by a pause we did observe`() {
         val r = replay(
-            transitions = listOf(Transition(ig, Kind.CLOSED, t0 + 30_000)),
+            transitions = listOf(Transition(ig, Kind.PAUSED, t0 + 30_000)),
             windowStartMs = t0,
             windowEndMs = t0 + 120_000,
             targets = targets,
@@ -209,7 +235,7 @@ class ForegroundReplayTest {
         val r = replay(
             transitions = listOf(
                 Transition(chrome, Kind.RESUMED, t0),
-                Transition(chrome, Kind.CLOSED, t0 + 60_000),
+                Transition(chrome, Kind.PAUSED, t0 + 60_000),
             ),
             windowStartMs = t0,
             windowEndMs = t0 + 120_000,
@@ -225,8 +251,8 @@ class ForegroundReplayTest {
             transitions = listOf(
                 Transition(ig, Kind.RESUMED, t0),
                 Transition(yt, Kind.RESUMED, t0 + 20_000),
-                Transition(ig, Kind.CLOSED, t0 + 25_000),
-                Transition(yt, Kind.CLOSED, t0 + 80_000),
+                Transition(ig, Kind.PAUSED, t0 + 25_000),
+                Transition(yt, Kind.PAUSED, t0 + 80_000),
             ),
             windowStartMs = t0,
             windowEndMs = t0 + 120_000,
@@ -244,7 +270,7 @@ class ForegroundReplayTest {
             transitions = listOf(
                 Transition(ig, Kind.RESUMED, t0),
                 Transition(ig, Kind.RESUMED, t0 + 30_000),
-                Transition(ig, Kind.CLOSED, t0 + 60_000),
+                Transition(ig, Kind.PAUSED, t0 + 60_000),
             ),
             windowStartMs = t0,
             windowEndMs = t0 + 120_000,
@@ -256,7 +282,7 @@ class ForegroundReplayTest {
     @Test
     fun `an orphan pause is dropped rather than credited`() {
         val r = replay(
-            transitions = listOf(Transition(ig, Kind.CLOSED, t0 + 30_000)),
+            transitions = listOf(Transition(ig, Kind.PAUSED, t0 + 30_000)),
             windowStartMs = t0,
             windowEndMs = t0 + 120_000,
             targets = targets,
@@ -269,7 +295,7 @@ class ForegroundReplayTest {
         val r = replay(
             transitions = listOf(
                 Transition(ig, Kind.RESUMED, t0 - 500_000),
-                Transition(ig, Kind.CLOSED, t0 + 500_000),
+                Transition(ig, Kind.PAUSED, t0 + 500_000),
             ),
             windowStartMs = t0,
             windowEndMs = t0 + 60_000,
@@ -282,7 +308,7 @@ class ForegroundReplayTest {
     fun `unsorted input is handled`() {
         val r = replay(
             transitions = listOf(
-                Transition(ig, Kind.CLOSED, t0 + 60_000),
+                Transition(ig, Kind.PAUSED, t0 + 60_000),
                 Transition(ig, Kind.RESUMED, t0),
             ),
             windowStartMs = t0,

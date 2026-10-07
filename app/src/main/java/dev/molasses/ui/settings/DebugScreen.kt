@@ -1,5 +1,8 @@
 package dev.molasses.ui.settings
 
+import android.app.usage.UsageStatsManager
+import android.content.Context
+import android.os.PowerManager
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,14 +40,18 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.molasses.R
 import dev.molasses.core.diag.LedgerExport
+import dev.molasses.core.diag.ScreenTimeDrift
 import dev.molasses.core.diag.ServiceHealth
 import dev.molasses.core.friction.FrictionCurve
 import dev.molasses.core.friction.HorizonReading
 import dev.molasses.core.session.IgnoreReason
+import dev.molasses.core.stats.DayUsage
 import dev.molasses.debug.DebugSurface
 import dev.molasses.engine.TierPolicy
+import dev.molasses.monitor.foregroundEvents
 import dev.molasses.sensing.Thresholds
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -375,6 +383,13 @@ fun DebugScreen(
             }
         }
 
+        // Debug builds only: today by our rule beside the system aggregate.
+        // Read once per visit, nothing written.
+        if (DebugSurface.ENABLED) {
+            item { Header(R.string.debug_section_screen_time) }
+            item { ScreenTimeDriftRow() }
+        }
+
         if (DebugSurface.ENABLED) {
             item { Header(R.string.debug_section_state_editor) }
             item { StateEditor(targets = ladder.map { it.pkg }, onApply = vm::setAppStateForDebug) }
@@ -487,6 +502,61 @@ fun DebugScreen(
  * useful in practice than the gate bypass, because it reaches the tier under
  * test directly.
  */
+/**
+ * Today's total by the ledger's rule next to the system's aggregate, so
+ * drift is visible without opening Digital Wellbeing. See ScreenTimeDrift.
+ * Debug builds only; it reads and never writes.
+ */
+@Composable
+private fun ScreenTimeDriftRow() {
+    val context = LocalContext.current
+    var reading by remember { mutableStateOf<ScreenTimeDrift.Reading?>(null) }
+    var read by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        reading = withContext(Dispatchers.IO) {
+            runCatching { readScreenTimeDrift(context) }
+                .onFailure { Log.w("Molasses.Debug", "screen time drift read failed", it) }
+                .getOrNull()
+        }
+        read = true
+    }
+    val r = reading
+    when {
+        !read -> Mono(stringResource(R.string.debug_screen_time_reading))
+        r == null -> Mono(stringResource(R.string.debug_screen_time_unavailable))
+        else -> {
+            MonoRow(R.string.debug_field_screen_time_ours, formatDuration(r.oursMs))
+            MonoRow(R.string.debug_field_screen_time_system, formatDuration(r.systemMs))
+            val gap = if (r.gapMs < 0) "-" + formatDuration(-r.gapMs) else formatDuration(r.gapMs)
+            val share = r.oursPercentOfSystem?.let { "$it%" } ?: "--"
+            MonoRow(R.string.debug_field_screen_time_gap, stringResource(R.string.debug_screen_time_gap_fmt, gap, share))
+        }
+    }
+}
+
+/**
+ * Both totals from local midnight to now, our own package left out of each.
+ * Ours is the ledger's: the shared reader and DayUsage's bounded replay.
+ */
+private fun readScreenTimeDrift(context: Context): ScreenTimeDrift.Reading? {
+    val usm = context.getSystemService(UsageStatsManager::class.java) ?: return null
+    val start = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val now = System.currentTimeMillis()
+    val own = setOf(context.packageName)
+    val interactive = context.getSystemService(PowerManager::class.java)?.isInteractive ?: false
+    val ours = DayUsage.replay(usm.foregroundEvents(start, now), start, now, interactive, own).totalMs
+    val system = ScreenTimeDrift.systemTotal(
+        usm.queryAndAggregateUsageStats(start, now).mapValues { it.value.totalTimeInForeground },
+        exclude = own,
+    )
+    return ScreenTimeDrift.Reading(oursMs = ours, systemMs = system)
+}
+
 @Composable
 private fun StateEditor(targets: List<String>, onApply: (String, Long, Int) -> Unit) {
     var pkg by remember(targets) { mutableStateOf(targets.firstOrNull().orEmpty()) }

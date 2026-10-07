@@ -17,7 +17,7 @@ class ForegroundIntervalsTest {
     private val end = t0 + 6 * hour
 
     private fun on(pkg: String, at: Long) = Event(Kind.RESUMED, at, pkg)
-    private fun off(pkg: String, at: Long) = Event(Kind.CLOSED, at, pkg)
+    private fun off(pkg: String, at: Long) = Event(Kind.PAUSED, at, pkg)
     private fun screenOff(at: Long) = Event(Kind.SCREEN_OFF, at)
     private fun keyguard(at: Long) = Event(Kind.KEYGUARD_SHOWN, at)
     private fun shutdown(at: Long) = Event(Kind.SHUTDOWN, at)
@@ -167,6 +167,171 @@ class ForegroundIntervalsTest {
             val r = bound(events, interactive = rnd.nextBoolean(), openAtStart = pkgs.random(rnd).takeIf { rnd.nextBoolean() })
             assertTrue(r.all { it.ms >= 0 && it.startMs >= t0 && it.endMs <= end })
             // Zero-length intervals hold no time and may share an instant.
+            val sorted = r.filter { it.ms > 0 }.sortedBy { it.startMs }
+            for (i in 1 until sorted.size) {
+                assertTrue("$events gave overlapping $sorted", sorted[i].startMs >= sorted[i - 1].endMs)
+            }
+            assertTrue(r.sumOf { it.ms } <= end - t0)
+        }
+    }
+
+    // ------------------------------------------------- per activity
+
+    private fun on(pkg: String, cls: String, at: Long) = Event(Kind.RESUMED, at, pkg, cls)
+    private fun pause(pkg: String, cls: String, at: Long) = Event(Kind.PAUSED, at, pkg, cls)
+    private fun stop(pkg: String, cls: String, at: Long) = Event(Kind.STOPPED, at, pkg, cls)
+
+    /**
+     * The gap between X's pause and Y's resume in [navigate]. The set is
+     * empty for that long, so each screen change costs it: the rule closes
+     * the interval when the last activity pauses and opens a new one at the
+     * next resume. Twenty milliseconds a change, against minutes a change
+     * under the first rule.
+     */
+    private val handoff = 20L
+
+    /** One screen change inside [pkg] at [at]: X paused, Y resumed, then X stopped. */
+    private fun navigate(pkg: String, from: String, to: String, at: Long) = listOf(
+        pause(pkg, from, at),
+        on(pkg, to, at + handoff),
+        stop(pkg, from, at + 400),
+    )
+
+    @Test
+    fun `X paused, Y resumed, X stopped keeps the app open through Y`() {
+        val wa = "com.whatsapp"
+        val r = bound(
+            listOf(on(wa, "Home", t0 + minute)) +
+                navigate(wa, "Home", "Conversation", t0 + 2 * minute) +
+                listOf(pause(wa, "Conversation", t0 + 12 * minute), on("org.jitteros.app", "Launcher", t0 + 12 * minute + 20)),
+        )
+        // The first rule closed it at X's stop, 400 ms into the chat, and
+        // counted the rest of the chat as nothing.
+        assertEquals(11 * minute - handoff, msOf(r, wa))
+    }
+
+    @Test
+    fun `repeated in-app navigation over 30 minutes gives 30 minutes`() {
+        val chess = "com.chess"
+        val screens = listOf("Home", "Game", "Analysis", "Game")
+        val events = mutableListOf(on(chess, "Home", t0))
+        for (i in 1 until 30) events += navigate(chess, screens[(i - 1) % 4], screens[i % 4], t0 + i * minute)
+        events += pause(chess, screens[29 % 4], t0 + 30 * minute)
+        events += on("org.jitteros.app", "Launcher", t0 + 30 * minute + 20)
+        // Thirty minutes, less the twenty-nine handoffs.
+        assertEquals(30 * minute - 29 * handoff, msOf(bound(events), chess))
+    }
+
+    @Test
+    fun `two screens of one class stay open across the change`() {
+        // One chat, then another: the same class, two instances, and the
+        // first one's stop arrives after the second has resumed.
+        val wa = "com.whatsapp"
+        val r = bound(
+            listOf(on(wa, "Conversation", t0 + minute)) +
+                navigate(wa, "Conversation", "Conversation", t0 + 2 * minute) +
+                listOf(screenOff(t0 + 9 * minute)),
+        )
+        assertEquals(8 * minute - handoff, msOf(r, wa))
+    }
+
+    @Test
+    fun `Y's own pause, then another package's resume, closes the app`() {
+        val app = "com.example"
+        val r = bound(
+            listOf(on(app, "X", t0 + minute)) +
+                navigate(app, "X", "Y", t0 + 2 * minute) +
+                listOf(pause(app, "Y", t0 + 5 * minute), on("com.other", "Main", t0 + 5 * minute + 20), stop(app, "Y", t0 + 5 * minute + 400)),
+        )
+        assertEquals(4 * minute - handoff, msOf(r, app))
+        assertTrue(r.none { it.pkg == app && it.runsToEnd })
+    }
+
+    @Test
+    fun `another package's resume closes the app with activities still in its set`() {
+        // Y never paused: a translucent window of another app, or a lost
+        // event. The other app's resume ends it all the same.
+        val app = "com.example"
+        val r = bound(listOf(on(app, "X", t0 + minute), on(app, "Y", t0 + 2 * minute), on("com.other", "Main", t0 + 3 * minute)))
+        assertEquals(2 * minute, msOf(r, app))
+    }
+
+    @Test
+    fun `screen-off closes the app with activities still in its set`() {
+        val app = "com.example"
+        val r = bound(listOf(on(app, "X", t0 + minute), on(app, "Y", t0 + 2 * minute), screenOff(t0 + 6 * minute)))
+        assertEquals(5 * minute, msOf(r, app))
+        // And the stops that follow the screen going off close nothing more.
+        val after = bound(
+            listOf(on(app, "X", t0 + minute), screenOff(t0 + 6 * minute), pause(app, "X", t0 + 6 * minute + 50), stop(app, "X", t0 + 6 * minute + 500)),
+        )
+        assertEquals(5 * minute, msOf(after, app))
+    }
+
+    @Test
+    fun `a stop for an activity not in the set is ignored`() {
+        val app = "com.example"
+        val r = bound(listOf(on(app, "Y", t0 + minute), stop(app, "Stale", t0 + 2 * minute), screenOff(t0 + 4 * minute)))
+        assertEquals(3 * minute, msOf(r, app))
+    }
+
+    @Test
+    fun `a stop with no pause before it still closes its activity, the YONO shape with classes`() {
+        val yono = "com.sbi.lotusintouch"
+        val at = t0 + hour
+        val r = bound(
+            listOf(
+                on(yono, "Splash", at), stop(yono, "Splash", at + 3 * second), on("com.android.vending", "Main", at + 3 * second),
+                on(yono, "Splash", at + 19 * second), stop(yono, "Splash", at + 21 * second),
+                on(yono, "Splash", at + 33 * second), stop(yono, "Splash", at + 41 * second),
+                screenOff(at + 4 * hour),
+            ),
+        )
+        assertEquals(13 * second, msOf(r, yono))
+    }
+
+    @Test
+    fun `one resume, no close, a later screen-off still gives minutes`() {
+        val yono = "com.sbi.lotusintouch"
+        val r = bound(listOf(on(yono, "Main", t0 + hour), screenOff(t0 + hour + 3 * minute), screenOff(t0 + 5 * hour)))
+        assertEquals(3 * minute, msOf(r, yono))
+    }
+
+    @Test
+    fun `an event with no class closes the whole app, as the package-only rule did`() {
+        val app = "com.example"
+        val r = bound(listOf(on(app, "X", t0 + minute), on(app, "Y", t0 + 2 * minute), off(app, t0 + 4 * minute), screenOff(t0 + 9 * minute)))
+        assertEquals(3 * minute, msOf(r, app))
+    }
+
+    @Test
+    fun `a seeded session of unknown class closes at the first close of any of its activities`() {
+        val r = bound(listOf(pause("ig", "Feed", t0 + 30 * second), on("ig", "Reel", t0 + 31 * second), stop("ig", "Feed", t0 + 32 * second)), orphan = Orphan.DROP, openAtStart = "ig")
+        // Open at the start, the unknown activity paused at +30 s, a new one
+        // resumed at +31 s and runs to the end with the screen on.
+        assertEquals(30 * second + (end - t0 - 31 * second), msOf(r, "ig"))
+    }
+
+    @Test
+    fun `with classes, intervals still never overlap and never exceed the window`() {
+        val rnd = kotlin.random.Random(23)
+        val pkgs = listOf("a", "b", "c")
+        val classes = listOf("", "X", "Y", "Z")
+        repeat(400) {
+            val events = List(rnd.nextInt(0, 50)) {
+                val at = t0 + rnd.nextLong(-hour, 7 * hour)
+                val pkg = pkgs.random(rnd)
+                val cls = classes.random(rnd)
+                when (rnd.nextInt(8)) {
+                    0, 1, 2 -> Event(Kind.RESUMED, at, pkg, cls)
+                    3 -> Event(Kind.PAUSED, at, pkg, cls)
+                    4, 5 -> Event(Kind.STOPPED, at, pkg, cls)
+                    6 -> screenOff(at)
+                    else -> keyguard(at)
+                }
+            }
+            val r = bound(events, interactive = rnd.nextBoolean(), openAtStart = pkgs.random(rnd).takeIf { rnd.nextBoolean() })
+            assertTrue(r.all { it.ms >= 0 && it.startMs >= t0 && it.endMs <= end })
             val sorted = r.filter { it.ms > 0 }.sortedBy { it.startMs }
             for (i in 1 until sorted.size) {
                 assertTrue("$events gave overlapping $sorted", sorted[i].startMs >= sorted[i - 1].endMs)

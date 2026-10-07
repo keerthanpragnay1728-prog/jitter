@@ -5,6 +5,7 @@ import androidx.datastore.core.Serializer
 import com.google.protobuf.InvalidProtocolBufferException
 import dev.molasses.CycleResetPolicyProto
 import dev.molasses.CycleState
+import dev.molasses.core.session.DefaultTargets
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -33,8 +34,9 @@ object CycleStateSerializer : Serializer<CycleState> {
     override suspend fun writeTo(t: CycleState, output: OutputStream) = t.writeTo(output)
 }
 
-val DEFAULT_TARGETS: List<String> = listOf(
-    "com.instagram.android",
-    "com.twitter.android",
-    "com.google.android.youtube",
-)
+/**
+ * The apps tracked until the user chooses a list. Held in [DefaultTargets],
+ * which is pure, so its migration and the declared profile can be tested
+ * against it.
+ */
+val DEFAULT_TARGETS: List<String> = DefaultTargets.CURRENT

@@ -25,7 +25,7 @@
     android:canRetrieveWindowContent="false"
     android:canPerformGestures="false"
     android:notificationTimeout="0"
-    android:packageNames="org.jitteros.app,com.instagram.android,com.twitter.android,com.google.android.youtube"
+    android:packageNames="org.jitteros.app,com.instagram.android,com.twitter.android,com.google.android.youtube,com.snapchat.android"
     android:isAccessibilityTool="false"
     android:settingsActivity="dev.molasses.ui.settings.SettingsActivity"
     android:description="@string/a11y_service_description"/>
